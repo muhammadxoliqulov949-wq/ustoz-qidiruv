@@ -41,7 +41,6 @@ export function FormatEditorial() {
                 </p>
                 <ButtonLink
                   href={item.action.href}
-                  prefetch={false} // Phase 2.1: filtered course results
                   variant="ghost"
                   size="sm"
                   className="-ml-3.5 mt-auto w-fit"

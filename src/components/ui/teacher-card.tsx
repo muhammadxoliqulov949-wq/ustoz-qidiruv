@@ -54,7 +54,7 @@ export function TeacherCard({ teacher, className }: TeacherCardProps) {
           <h3 className="text-lg leading-snug font-semibold text-ink-900">
             <Link
               href={`/teachers/${slug}`}
-              prefetch={false} // Phase 3: drop once the profile route exists
+              prefetch={false} // teacher profile lands in a later phase
             className={stretchedLink}
             >
               {name}

@@ -21,7 +21,6 @@ export function CategoryCard({ category, className }: CategoryCardProps) {
     <Card variant="interactive" padded={false} className={cn("h-full", className)}>
       <Link
         href={`/categories/${category.slug}`}
-        prefetch={false} // Phase 2.1: drop once the category pages exist
         className={cn(
           "flex h-full flex-col items-center justify-center gap-3 px-4 py-7 text-center",
           stretchedLink,

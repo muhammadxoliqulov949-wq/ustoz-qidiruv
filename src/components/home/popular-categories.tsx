@@ -18,7 +18,6 @@ export function PopularCategories() {
         action={
           <ButtonLink
             href="/categories"
-            prefetch={false} // Phase 2.1: categories listing
             variant="ghost"
             size="sm"
             trailingIcon={<ArrowRight className="size-4" />}

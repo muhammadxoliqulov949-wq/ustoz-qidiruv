@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ButtonLink, SearchInput } from "@/components/ui";
@@ -23,7 +24,7 @@ export function MobileMenu({
   onClose: () => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const [query, setQuery] = useState("");
+  const router = useRouter();
 
   // Move focus into the panel when it opens.
   useEffect(() => {
@@ -38,11 +39,6 @@ export function MobileMenu({
   }, [open]);
 
   if (!open) return null;
-
-  const closeAnd = (fn?: () => void) => () => {
-    onClose();
-    fn?.();
-  };
 
   return (
     <>
@@ -72,9 +68,10 @@ export function MobileMenu({
             <SearchInput
               size="md"
               label="Kurs yoki ustoz qidirish"
-              value={query}
-              onValueChange={setQuery}
-              onSubmit={closeAnd()}
+              onSubmit={(q) => {
+                onClose();
+                router.push(`/courses?q=${encodeURIComponent(q)}`);
+              }}
             />
           </div>
 
@@ -82,7 +79,7 @@ export function MobileMenu({
             <Link
               key={item.href}
               href={item.href}
-              prefetch={false} // Phase 2: drop once the routes exist
+              prefetch={item.prefetch} // unbuilt routes stay inert (site.ts data)
               onClick={onClose}
               className={cn(
                 "flex items-center justify-between rounded-lg px-3 py-2.5",
@@ -104,7 +101,7 @@ export function MobileMenu({
           <div className="flex flex-col gap-2 p-1">
             <ButtonLink
               href={loginNav.href}
-              prefetch={false}
+              prefetch={loginNav.prefetch}
               variant="outline"
               fullWidth
               onClick={onClose}
@@ -113,7 +110,7 @@ export function MobileMenu({
             </ButtonLink>
             <ButtonLink
               href={becomeTeacherNav.href}
-              prefetch={false}
+              prefetch={becomeTeacherNav.prefetch}
               fullWidth
               onClick={onClose}
             >

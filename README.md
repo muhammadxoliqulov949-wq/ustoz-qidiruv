@@ -1,9 +1,11 @@
 # USTOZ — Frontend
 
 Marketplace for finding courses and teachers (Uzbekistan). This repository
-implements the **Phase 1 foundation** per the approved USTOZ Master Frontend
-Specification: design tokens, global layout, UI primitives, navigation and the
-hero of the homepage. Marketplace pages arrive in later phases.
+implements the approved USTOZ Master Frontend Specification phase by phase:
+**Phase 1** foundation (tokens, primitives, header, hero), **Phase 2** the
+full homepage, and **Phase 3** browse & search (`/courses` results engine +
+`/categories` routes). Detail pages, auth and everything after land in later
+phases.
 
 ## Stack
 
@@ -52,7 +54,7 @@ Key decisions:
   floating surface (`backdrop-blur` + hairline border + `shadow-md`).
 - Mobile/tablet (< lg): simple top header (logo + menu). The menu panel holds
   search, nav links, Kirish and the Ustoz bo‘lish CTA.
-  **Bottom navigation is intentionally not built yet** (Phase 2 mobile spec).
+  **Bottom navigation is intentionally not built yet** (later mobile phase).
 
 ## Component inventory
 
@@ -63,7 +65,7 @@ Key decisions:
 | `Button`, `ButtonLink` | 5 variants × 3 sizes, `loading`, icon slots; `ButtonLink` keeps `<Link>` semantics |
 | `IconButton` | requires accessible `label`; `onDark` variant for dark surfaces |
 | `Input` | labelled field; hint/error slots; exports the shared `fieldBaseClasses` skin |
-| `SearchInput` | `md` (header) / `lg` (lists, Phase 2) / `xl` (hero); form-wrapped, clearable, submit callback |
+| `SearchInput` | `md` (header) / `lg` (results pages) / `xl` (hero); form-wrapped, clearable, submit callback |
 | `Badge` | soft/solid tones incl. status dot |
 | `Avatar` | initials fallback, status dot, 5 sizes |
 | `Card`, `CardMedia`, `LinkCard` | default / interactive / quiet; whole-card link for future listing pages |
@@ -90,7 +92,25 @@ Icons resolve through `src/components/icons.tsx` (data stores string keys →
 lucide components; models stay serializable for the future API). Display
 numbers/prices format via `src/lib/format.ts` (SSR-deterministic, no Intl).
 Card cover photography and teacher portraits are placeholder mock assets in
-`public/media/`.
+`public/media/`. The hero quick-filter row and the header/menu searches
+navigate into the Phase 3 results engine (URL is the contract).
+
+## Browse & search (Phase 3)
+
+`/courses` (full catalog) and `/categories/[slug]` (same engine, category
+locked in the path) compose one `CoursesBrowser`; `/categories` is the tile
+index. The **URL is the only state** — `q`, `mode`, `price=free`, `city`,
+`sort` are parsed/sanitized by the pure engine in `src/lib/course-search.ts`
+(whitelist parsing, default-omitting serialization, apostrophe-insensitive
+matching), so every pill/chip/link is server-rendered and shareable. Only
+two client islands exist on these pages: the results search field
+(`components/courses/courses-search.tsx`) and `url-select.tsx` (native
+`<select>` for city/sort that reads/writes one URL param — OS picker on
+mobile, no hand-rolled popover). Active facets without a visible pill state
+(q, city) get removable chips. Empty → one quiet panel, never fake results.
+The mock catalog is 12 courses (`courses.ts` order = “Tavsiya etilgan”);
+cities are derived from the data. `notFound()` guards unknown category
+slugs; titles/descriptions come from `generateMetadata` per route.
 
 ## Conventions
 
@@ -103,10 +123,13 @@ Card cover photography and teacher portraits are placeholder mock assets in
 - Navigation data (labels, routes, hero copy) is centralized in
   `src/data/site.ts`.
 - Icons: lucide only, never inline SVG.
-- Links to not-yet-built routes use `prefetch={false}` (Phase 2 removes it).
+- Per-link prefetch is declared in nav data (`site.ts`): unbuilt routes set
+  `prefetch: false`; built routes omit the flag (e.g. /courses since Phase 3).
 
 ## Deliberately deferred
 
-`/courses` results page, category pages, course/teacher detail pages,
-auth (Kirish flow), dashboards, filters drawer, payment, messaging, real
-API, dark mode evaluation, i18n (`/uz`, `/ru`…), mobile bottom navigation.
+Course/teacher detail pages (`/courses/[slug]`, `/teachers/[slug]`),
+teachers browse (`/teachers`), auth (Kirish flow), dashboards, filters
+drawer (level/languages/price-range facets), pagination (catalog fits one
+page), payment, messaging, save persistence, real API, dark mode
+evaluation, i18n (`/uz`, `/ru`…), mobile bottom navigation.

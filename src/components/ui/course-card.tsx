@@ -4,15 +4,10 @@ import { MapPin, Users } from "lucide-react";
 import { Avatar, Badge, Card } from "@/components/ui";
 import { cn, stretchedLink } from "@/lib/utils";
 import { formatCount, formatPrice } from "@/lib/format";
-import type { Course, CourseFormat } from "@/data/models";
+import { courseFormatLabels } from "@/data/courses";
+import type { Course } from "@/data/models";
 import { Rating, VerifiedMark } from "./rating";
 import { SaveButton } from "./save-button";
-
-const formatLabels: Record<CourseFormat, string> = {
-  online: "Online",
-  offline: "Offline",
-  hybrid: "Gibrid",
-};
 
 export interface CourseCardProps {
   course: Course;
@@ -67,7 +62,7 @@ export function CourseCard({ course, className }: CourseCardProps) {
 
       <div className="flex flex-1 flex-col gap-3 p-6">
         <div className="flex items-center gap-2">
-          <Badge variant="neutral">{formatLabels[format]}</Badge>
+          <Badge variant="neutral">{courseFormatLabels[format]}</Badge>
           {location && format !== "online" ? (
             <span className="inline-flex min-w-0 items-center gap-1 text-sm text-ink-500">
               <MapPin aria-hidden="true" className="size-3.5 shrink-0" />
@@ -79,7 +74,7 @@ export function CourseCard({ course, className }: CourseCardProps) {
         <h3 className="text-lg leading-snug font-semibold text-balance text-ink-900">
           <Link
             href={`/courses/${slug}`}
-            prefetch={false} // Phase 3: drop once the detail route exists
+            prefetch={false} // course detail page lands in a later phase
             className={stretchedLink}
           >
             <span className="line-clamp-2">{title}</span>

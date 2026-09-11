@@ -4,8 +4,9 @@ import { footerGroups } from "@/data/site";
 
 /**
  * Homepage footer — light and minimal (surface band, hairline top).
- * All routes are future-phase destinations → prefetch={false} until
- * their pages exist. No newsletter, no social clutter, no app badges.
+ * Per-link prefetch is declared in the nav data (site.ts): built routes
+ * omit the flag, future-phase routes set prefetch:false. No newsletter,
+ * no social clutter, no app badges.
  */
 export function Footer() {
   return (
@@ -30,7 +31,7 @@ export function Footer() {
                   <li key={link.label}>
                     <Link
                       href={link.href}
-                      prefetch={false} // future pages land in Phase 3+
+                      prefetch={link.prefetch} // unbuilt routes stay inert (site.ts data)
                       className="rounded-md text-sm text-ink-500 transition-colors duration-fast hover:text-ink-900 focus-visible:ring-[length:var(--size-focus-ring)] focus-visible:ring-accent-600/35 focus-visible:outline-none"
                     >
                       {link.label}

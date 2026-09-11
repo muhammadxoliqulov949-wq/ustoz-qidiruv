@@ -1,5 +1,3 @@
-"use client";
-
 import type { ReactNode } from "react";
 import { Building2, Gift, MapPin, Monitor } from "lucide-react";
 import { Pill } from "@/components/ui";
@@ -7,10 +5,10 @@ import { cn } from "@/lib/utils";
 import type { QuickFilter } from "@/data/site";
 
 /* -------------------------------------------------------------------------- */
-/* Hero quick filters.                                                         */
-/* Phase 1: toggles are managed client-side state — the natural demo of the   */
-/* reusable Pill primitive and the exact shape /courses will consume as URL   */
-/* params in Phase 2.                                                          */
+/* Hero quick filters.                                                           */
+/* Phase 1 demoed them as client toggles; Phase 3 promoted them to plain         */
+/* navigational pills — each href is a ready-made /courses URL, so the row       */
+/* works with zero client JS and stays shareable/bookmarkable.                   */
 /* -------------------------------------------------------------------------- */
 
 const icons: Record<QuickFilter["id"], ReactNode> = {
@@ -22,29 +20,24 @@ const icons: Record<QuickFilter["id"], ReactNode> = {
 
 export interface QuickFiltersProps {
   filters: QuickFilter[];
-  selected: ReadonlySet<string>;
-  onToggle: (id: string, next: boolean) => void;
   className?: string;
 }
 
-export function QuickFilters({
-  filters,
-  selected,
-  onToggle,
-  className,
-}: QuickFiltersProps) {
+export function QuickFilters({ filters, className }: QuickFiltersProps) {
   return (
     <div
       role="group"
       aria-label="Tezkor filtrlar"
-      className={cn("flex flex-wrap items-center justify-center gap-2", className)}
+      className={cn(
+        "flex flex-wrap items-center justify-center gap-2",
+        className,
+      )}
     >
       {filters.map((filter) => (
         <Pill
           key={filter.id}
-          as="button"
-          selected={selected.has(filter.id)}
-          onChange={(next) => onToggle(filter.id, next)}
+          as="link"
+          href={filter.href}
           leadingIcon={icons[filter.id]}
         >
           {filter.label}

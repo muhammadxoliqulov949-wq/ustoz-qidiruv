@@ -22,7 +22,6 @@ export function RecommendedCourses() {
         action={
           <ButtonLink
             href="/courses"
-            prefetch={false} // Phase 2.1: course results page
             variant="ghost"
             size="sm"
             trailingIcon={<ArrowRight className="size-4" />}

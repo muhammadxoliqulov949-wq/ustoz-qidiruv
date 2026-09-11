@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useScrolled } from "@/lib/use-scrolled";
@@ -71,7 +72,7 @@ export function Header() {
               <Link
                 key={item.href}
                 href={item.href}
-                prefetch={false} // Phase 2: drop once the routes exist
+                prefetch={item.prefetch} // unbuilt routes stay inert (site.ts data)
                 className={navLinkClass}
               >
                 {item.label}
@@ -87,7 +88,7 @@ export function Header() {
 
             <ButtonLink
               href={loginNav.href}
-              prefetch={false}
+              prefetch={loginNav.prefetch}
               variant="ghost"
               size="sm"
               className="max-lg:hidden"
@@ -98,7 +99,7 @@ export function Header() {
             {/* Primary CTA — hidden on compact headers; lives in the menu */}
             <ButtonLink
               href={becomeTeacherNav.href}
-              prefetch={false}
+              prefetch={becomeTeacherNav.prefetch}
               size="sm"
               className="max-lg:hidden"
             >
@@ -126,20 +127,18 @@ export function Header() {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Header search: Phase 1 captures the query locally; wiring it to
- * /courses?q= lands in Phase 2 (marketplace listing routes).
+ * Header search → /courses?q= (the results engine owns the URL contract;
+ * see lib/course-search.ts). Uncontrolled input, navigation on submit.
  */
 function HeaderSearch() {
-  const [query, setQuery] = useState("");
+  const router = useRouter();
   return (
     <SearchInput
       size="md"
       label="Kurs yoki ustoz qidirish"
-      value={query}
-      onValueChange={setQuery}
-      onSubmit={() => {
-        /* TODO(Phase 2): router.push(`/courses?q=${encodeURIComponent(q)}`) */
-      }}
+      onSubmit={(query) =>
+        router.push(`/courses?q=${encodeURIComponent(query)}`)
+      }
     />
   );
 }

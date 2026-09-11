@@ -1,5 +1,6 @@
 import { HeroSearch } from "./hero-search";
-import { hero } from "@/data/site";
+import { QuickFilters } from "./quick-filters";
+import { hero, quickFilters } from "@/data/site";
 
 /* -------------------------------------------------------------------------- */
 /* Hero — Phase 1 homepage top section.                                        */
@@ -31,8 +32,9 @@ export function Hero() {
           {hero.subtitle}
         </p>
 
-        <div className="mt-12 w-full md:mt-18">
+        <div className="mt-12 flex w-full max-w-[44rem] flex-col gap-5 md:mt-18">
           <HeroSearch />
+          <QuickFilters filters={quickFilters} />
         </div>
       </div>
     </section>

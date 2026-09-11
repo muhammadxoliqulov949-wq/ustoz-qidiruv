@@ -17,7 +17,7 @@ export function TopTeachers() {
         action={
           <ButtonLink
             href="/teachers"
-            prefetch={false} // Phase 2.1: teachers listing
+            prefetch={false} // teachers browse lands in a later phase
             variant="ghost"
             size="sm"
             trailingIcon={<ArrowRight className="size-4" />}

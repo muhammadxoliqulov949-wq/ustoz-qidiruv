@@ -1,5 +1,5 @@
 /**
- * USTOZ domain models — Phase 2.
+ * USTOZ domain models — Phase 2, extended by the Phase 3 browse layer.
  *
  * These interfaces define the exact shape the marketplace UI consumes.
  * Mock data (categories.ts / courses.ts / teachers.ts) satisfies these same
@@ -48,6 +48,9 @@ export interface Course {
   format: CourseFormat;
   /** District/landmark text; meaningful only for offline/hybrid. */
   location: string | null;
+  /** Lowercase city slug ("toshkent" …) for the browse-city facet; null for
+   *  online-only courses. Display label derives from it (capitalize). */
+  city: string | null;
   /** Monthly price in UZS; 0 renders as “Bepul”. */
   priceUzs: number;
   image: string | null;
