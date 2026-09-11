@@ -21,7 +21,10 @@ import type {
  *    visibly does something;
  *  • free courses (priceUzs 0) are all online — coherent product logic.
  */
-export const courses: Course[] = [
+import { courseDetailsById } from "./course-details";
+
+/** List-shape fields only; `detail` is merged below from course-details.ts. */
+const courseSeeds: Omit<Course, "detail">[] = [
   {
     id: "c-ielts-intensive",
     slug: "ielts-intensive-band-7",
@@ -308,6 +311,21 @@ export const courses: Course[] = [
     keywords: ["photoshop", "illustrator", "grafik"],
   },
 ];
+
+/**
+ * The browse/home-facing catalog: seed row + its detail payload in one
+ * object. A missing CourseDetail is a build-time data error — fail loudly
+ * so a course can never ship without its detail fields.
+ */
+export const courses: Course[] = courseSeeds.map((seed) => {
+  const detail = courseDetailsById[seed.id];
+  if (!detail) {
+    throw new Error(
+      `Missing CourseDetail for "${seed.id}" — add it to src/data/course-details.ts`,
+    );
+  }
+  return { ...seed, detail };
+});
 
 /** Home shortcut: the first N entries act as the curated “recommended” row. */
 export const recommendedCourses: Course[] = courses.slice(0, 6);

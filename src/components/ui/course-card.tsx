@@ -72,11 +72,7 @@ export function CourseCard({ course, className }: CourseCardProps) {
         </div>
 
         <h3 className="text-lg leading-snug font-semibold text-balance text-ink-900">
-          <Link
-            href={`/courses/${slug}`}
-            prefetch={false} // course detail page lands in a later phase
-            className={stretchedLink}
-          >
+          <Link href={`/courses/${slug}`} className={stretchedLink}>
             <span className="line-clamp-2">{title}</span>
           </Link>
         </h3>

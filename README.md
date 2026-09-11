@@ -3,9 +3,10 @@
 Marketplace for finding courses and teachers (Uzbekistan). This repository
 implements the approved USTOZ Master Frontend Specification phase by phase:
 **Phase 1** foundation (tokens, primitives, header, hero), **Phase 2** the
-full homepage, and **Phase 3** browse & search (`/courses` results engine +
-`/categories` routes). Detail pages, auth and everything after land in later
-phases.
+full homepage, **Phase 3** browse & search (`/courses` results engine +
+`/categories` routes), and **Phase 4** course detail pages
+(`/courses/[slug]`). Auth, teacher profiles and everything after land in
+later phases.
 
 ## Stack
 
@@ -131,6 +132,42 @@ lexicographically sortable — SSR-deterministic) powers “Eng yangi”.
 `notFound()` guards unknown slugs; metadata is per-route with the quoted
 query in the title.
 
+## Course detail (Phase 4)
+
+`/courses/[slug]` is the evaluation surface: hero (identity, rating,
+teacher, media) + a **solid sticky enrollment card** + six server-rendered
+sections — Kurs haqida, Dastur (flat numbered syllabus), Jadval va
+guruhlar, Ustoz, Fikrlar, Savol-javob — reached through a restrained
+sticky section nav (anchors, IntersectionObserver active state, no tabs).
+
+**Groups are the core interaction.** `CourseGroup` records live in
+`course-details.ts`; selection is a URL param (`?group=`) replaced with
+`router.replace` (same contract as Phase 3 facets: no back-stack spam,
+shareable, reload-safe). The enrollment card’s summary/availability and
+the schedule section are two projections of the same server-resolved
+value, so they can never drift; full groups (`seatsRemaining: 0`) render
+disabled.
+
+**Enrollment stops at the honest handoff**: the CTA opens a dialog (same
+a11y recipe as the filter sheet) showing course + group + price and a
+Kirish / Ro‘yxatdan o‘tish handoff — routes arrive in Phase 7, nothing
+fakes a submitted enrollment or a payment. Mobile trades the rail for a
+fixed bottom bar (price + Yozilish) with safe-area padding and page-level
+bottom clearance.
+
+Data model: detail content is grouped under `Course.detail`
+(`summary`, `longDescription`, `audience`, `learningOutcomes`,
+`teachingLanguages`, `pricePeriod`, `groups`, `syllabus`) so list views
+keep consuming the light row shape; `courseDetailsById` covers every
+course and the merge in `courses.ts` throws at build time if one is
+missing. FAQ answers are *generated* from listing fields
+(`course-faq.ts`) — venue, seat caps and price wording cannot contradict
+the card. Reviews are a deliberately small store (`reviews.ts`); courses
+without entries get an honest empty state, and the section never inflates
+the listing aggregates. Teachers gained full records (photo, `bio`) in
+`teachers.ts`; `/teachers/[slug]` remains a deferred seam (link with
+`prefetch={false}`).
+
 ## Conventions
 
 - Server components by default; `"use client"` only where state/events live
@@ -143,12 +180,12 @@ query in the title.
   `src/data/site.ts`.
 - Icons: lucide only, never inline SVG.
 - Per-link prefetch is declared in nav data (`site.ts`): unbuilt routes set
-  `prefetch: false`; built routes omit the flag (e.g. /courses since Phase 3).
+  `prefetch: false`; built routes omit the flag (/courses and
+  /courses/[slug] since Phase 3/4).
 
 ## Deliberately deferred
 
-Course/teacher detail pages (`/courses/[slug]`, `/teachers/[slug]`),
-teachers browse (`/teachers`), auth (Kirish flow), dashboards, filters
-drawer (level/languages/price-range facets), pagination (catalog fits one
+Teacher detail pages (`/teachers/[slug]`),
+teachers browse (`/teachers`), auth (Kirish flow), dashboards, pagination (catalog fits one
 page), payment, messaging, save persistence, real API, dark mode
 evaluation, i18n (`/uz`, `/ru`…), mobile bottom navigation.
