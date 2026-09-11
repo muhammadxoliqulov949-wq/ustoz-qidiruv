@@ -2,20 +2,40 @@ import type { ReactNode } from "react";
 import { SearchX } from "lucide-react";
 import { ButtonLink, Card, CourseCard } from "@/components/ui";
 import { categories } from "@/data/categories";
+import {
+  cityLabel,
+  courseCities,
+  courseFormatLabels,
+  courseLevelLabels,
+  courseRatingFilters,
+  courseScheduleLabels,
+} from "@/data/courses";
 import { coursesPage } from "@/data/site";
-import { formatCount } from "@/lib/format";
-import { applyCourseBrowse, type CourseBrowseParams } from "@/lib/course-search";
+import {
+  applyCourseBrowse,
+  buildBrowseHref,
+  hasActiveFilters,
+  serializeBrowseParams,
+  type CourseBrowseParams,
+} from "@/lib/course-search";
 import type { Course } from "@/data/models";
-import { BrowseToolbar } from "./browse-toolbar";
+import { FilterPanel, type FilterOptionData, type FilterSectionData } from "./filter-panel";
+import { FilterSheet } from "./filter-sheet";
+import { activeChipList, ResultsToolbar } from "./results-toolbar";
 import { CoursesSearch } from "./courses-search";
 
 /* -------------------------------------------------------------------------- */
-/* CoursesBrowser — the canonical results screen: page header, search,           */
-/* toolbar, result count, card grid, empty state. Composed by BOTH               */
-/* /courses (whole catalog) and /categories/[slug] (category-scoped source) —    */
-/* the routes only differ in data they feed and the heading they show.           */
-/* Everything here is server-rendered; stateful behavior lives in two small      */
-/* islands (search field, URL selects).                                         */
+/* CoursesBrowser — the canonical results screen per the Phase 3 spec:           */
+/*   desktop: 264px sticky filter sidebar + results column (count/sort/chips/    */
+/*            grid);  mobile/tablet: [Filtrlar][Saralash] over the count, with   */
+/*            the same sections inside a bottom sheet.                           */
+/* Composed by BOTH /courses (whole catalog) and /categories/[slug] (scoped     */
+/* source + locked category) — routes only differ in data and heading.          */
+/*                                                                               */
+/* Presentation here is pure server rendering; the only interactivity is the    */
+/* FilterPanel island (sidebar+sheet) and the search/select islands. The        */
+/* sections below are DESCRIPTORS (label/href/selected) — the URL contract in    */
+/* lib/course-search.ts stays the single source of truth.                       */
 /* -------------------------------------------------------------------------- */
 
 const categoryNameById = new Map(categories.map((c) => [c.id, c.name]));
@@ -49,10 +69,100 @@ export function CoursesBrowser({
     params,
     (id) => categoryNameById.get(id) ?? "",
   );
+  const chips = activeChipList(basePath, params);
+  const filtersActive = hasActiveFilters(params);
+
+  /** Facet link builder: selecting sets the param, tapping the active one
+   *  clears it — no “Barchasi” clutter on every list. */
+  const toggle = (
+    label: string,
+    active: boolean,
+    set: Partial<CourseBrowseParams>,
+  ): FilterOptionData => ({
+    label,
+    selected: active,
+    href: buildBrowseHref(basePath, {
+      ...params,
+      ...(active ? Object.fromEntries(Object.keys(set).map((k) => [k, null])) : set),
+    }),
+  });
+
+  const sections: FilterSectionData[] = [
+    {
+      key: "category",
+      title: coursesPage.sections.category,
+      options: [
+        {
+          label: "Barcha kurslar",
+          selected: activeCategorySlug === null,
+          href: `/courses${serializeBrowseParams(params)}`,
+          push: true, // cross-route navigation keeps history entries
+        },
+        ...categories.map((category) => ({
+          label: category.name,
+          selected: activeCategorySlug === category.slug,
+          href: buildBrowseHref(`/categories/${category.slug}`, params),
+          push: true,
+        })),
+      ],
+    },
+    {
+      key: "format",
+      title: coursesPage.sections.format,
+      options: (["online", "offline", "hybrid"] as const).map((value) =>
+        toggle(courseFormatLabels[value], params.format === value, { format: value }),
+      ),
+    },
+    {
+      key: "level",
+      title: coursesPage.sections.level,
+      options: (["boshlangich", "orta", "yuqori"] as const).map((value) =>
+        toggle(courseLevelLabels[value], params.level === value, { level: value }),
+      ),
+    },
+    {
+      key: "city",
+      title: coursesPage.sections.city,
+      options: courseCities.map((city) =>
+        toggle(cityLabel(city), params.city === city, { city }),
+      ),
+    },
+    {
+      key: "price",
+      title: coursesPage.sections.price,
+      options: [
+        toggle(coursesPage.priceOptions.free, params.price === "free", { price: "free" }),
+        toggle(coursesPage.priceOptions.paid, params.price === "paid", { price: "paid" }),
+      ],
+    },
+    {
+      key: "schedule",
+      title: coursesPage.sections.schedule,
+      options: (["morning", "day", "evening"] as const).map((value) =>
+        toggle(courseScheduleLabels[value], params.schedule === value, { schedule: value }),
+      ),
+    },
+    {
+      key: "rating",
+      title: coursesPage.sections.rating,
+      options: courseRatingFilters.map((filter) =>
+        toggle(filter.label, params.minRating === filter.min, { minRating: filter.min }),
+      ),
+    },
+  ];
+
+  const panelProps = {
+    sections,
+    basePath,
+    priceMin: params.priceMin !== null ? String(params.priceMin) : "",
+    priceMax: params.priceMax !== null ? String(params.priceMax) : "",
+    hasActiveFilters: filtersActive,
+    clearHref: basePath,
+  };
 
   return (
     <div className="site-container flex flex-col gap-8 pb-18 pt-14 md:gap-10 md:pb-26 md:pt-18">
-      {/* Page opener */}
+      {/* Page opener + search */}
       <div className="flex flex-col gap-2">
         {breadcrumb}
         {eyebrow ? (
@@ -68,75 +178,88 @@ export function CoursesBrowser({
             {description}
           </p>
         ) : null}
+        <div className="mt-4 max-w-2xl">
+          {/* Remount when the URL query changes (back/forward) so the field
+              always mirrors canonical state. */}
+          <CoursesSearch
+            key={params.q}
+            basePath={basePath}
+            initialQuery={params.q}
+          />
+        </div>
       </div>
 
-      <div className="max-w-2xl">
-        {/* Remount when the URL query changes (e.g. browser back) so the
-            field always mirrors the canonical state. */}
-        <CoursesSearch
-          key={params.q}
-          basePath={basePath}
-          initialQuery={params.q}
-        />
-      </div>
-
-      <BrowseToolbar
-        basePath={basePath}
-        params={params}
-        activeCategorySlug={activeCategorySlug}
-      />
-
-      {results.length > 0 ? (
-        <>
-          <p className="text-base text-ink-500" aria-live="polite">
-            {params.q ? (
-              <>
-                “{params.q}” so‘rovi bo‘yicha{" "}
-                <strong className="font-semibold text-ink-900">
-                  {formatCount(results.length)}
-                </strong>{" "}
-                ta kurs topildi
-              </>
-            ) : (
-              <>
-                <strong className="font-semibold text-ink-900">
-                  {formatCount(results.length)}
-                </strong>{" "}
-                ta kurs
-              </>
-            )}
-          </p>
-
-          <ul className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-            {results.map((course) => (
-              <li key={course.id} className="flex">
-                <CourseCard course={course} className="w-full" />
-              </li>
-            ))}
-          </ul>
-        </>
-      ) : (
-        <Card
-          variant="quiet"
-          className="flex flex-col items-center gap-4 px-6 py-16 text-center"
+      <div className="grid min-w-0 gap-8 lg:grid-cols-[16.5rem_minmax(0,1fr)] lg:gap-10">
+        {/* Desktop filter sidebar — solid surface, sticky; capped to the
+            viewport so a tall panel scrolls internally instead of pinning
+            against the row bottom and scrolling out of view. */}
+        <aside
+          aria-label={coursesPage.filtersWord}
+          className="hidden lg:sticky lg:top-[calc(var(--height-header)+1.5rem)] lg:block lg:max-h-[calc(100dvh-var(--height-header)-3rem)] lg:self-start lg:overflow-y-auto"
         >
-          <span
-            aria-hidden="true"
-            className="grid size-12 place-items-center rounded-pill bg-surface text-ink-400 shadow-xs [&>svg]:size-6 [&>svg]:stroke-[1.75]"
-          >
-            <SearchX />
-          </span>
-          <h2 className="text-2xl font-semibold tracking-[-0.01em] text-ink-900">
-            {coursesPage.empty.title}
-          </h2>
-          <p className="max-w-md text-base text-pretty text-ink-500">
-            {coursesPage.empty.text}
-          </p>
-          <ButtonLink href={basePath} variant="outline" size="sm">
-            {coursesPage.clearFilters}
-          </ButtonLink>
-        </Card>
-      )}
+          <FilterPanel {...panelProps} variant="sidebar" />
+        </aside>
+
+        {/* Results column */}
+        <div className="flex min-w-0 flex-col gap-5">
+          <ResultsToolbar
+            basePath={basePath}
+            params={params}
+            resultCount={results.length}
+            chips={chips}
+            sheetTrigger={
+              <FilterSheet
+                {...panelProps}
+                resultCount={results.length}
+                activeCount={chips.length}
+              />
+            }
+          />
+
+          {results.length > 0 ? (
+            <ul className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+              {results.map((course) => (
+                <li key={course.id} className="flex">
+                  <CourseCard course={course} className="w-full" />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            /* Empty state (spec §8) — never a dead grid */
+            <Card
+              variant="quiet"
+              className="flex flex-col items-center gap-4 px-6 py-16 text-center"
+            >
+              <span
+                aria-hidden="true"
+                className="grid size-12 place-items-center rounded-pill bg-surface text-ink-400 shadow-xs [&>svg]:size-6 [&>svg]:stroke-[1.75]"
+              >
+                <SearchX />
+              </span>
+              <h2 className="text-2xl font-semibold tracking-[-0.01em] text-ink-900">
+                {coursesPage.empty.title}
+              </h2>
+              <p className="max-w-md text-base text-pretty text-ink-500">
+                {coursesPage.empty.text}
+              </p>
+              <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+                <ButtonLink href={basePath} variant="outline" size="sm">
+                  {coursesPage.clearFilters}
+                </ButtonLink>
+                {params.q ? (
+                  <ButtonLink
+                    href={buildBrowseHref(basePath, { ...params, q: "" })}
+                    variant="ghost"
+                    size="sm"
+                  >
+                    {coursesPage.empty.clearSearch}
+                  </ButtonLink>
+                ) : null}
+              </div>
+            </Card>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

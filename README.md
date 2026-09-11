@@ -97,20 +97,39 @@ navigate into the Phase 3 results engine (URL is the contract).
 
 ## Browse & search (Phase 3)
 
-`/courses` (full catalog) and `/categories/[slug]` (same engine, category
-locked in the path) compose one `CoursesBrowser`; `/categories` is the tile
-index. The **URL is the only state** — `q`, `mode`, `price=free`, `city`,
-`sort` are parsed/sanitized by the pure engine in `src/lib/course-search.ts`
-(whitelist parsing, default-omitting serialization, apostrophe-insensitive
-matching), so every pill/chip/link is server-rendered and shareable. Only
-two client islands exist on these pages: the results search field
-(`components/courses/courses-search.tsx`) and `url-select.tsx` (native
-`<select>` for city/sort that reads/writes one URL param — OS picker on
-mobile, no hand-rolled popover). Active facets without a visible pill state
-(q, city) get removable chips. Empty → one quiet panel, never fake results.
-The mock catalog is 12 courses (`courses.ts` order = “Tavsiya etilgan”);
-cities are derived from the data. `notFound()` guards unknown category
-slugs; titles/descriptions come from `generateMetadata` per route.
+`/courses` is the discovery surface (Search → Filter → Compare); it opens
+with a page title, search field, real filtered count, sort control, a
+**264px sticky filter sidebar** (desktop) and a results grid.
+`/categories/[slug]` composes the same `CoursesBrowser` with the category
+locked in the path; `/categories` is the tile index.
+
+The **URL is the only state**: `q`, `format` (legacy `mode` still parsed),
+`level`, `city`, `price=free|paid`, `pmin/pmax`, `schedule`, `rating`,
+`sort` are whitelisted by the pure engine in `src/lib/course-search.ts`
+(parse → sanitize; serialize omits defaults → canonical URLs). Facets are
+single-select — tapping the active option clears it, no “Barchasi” clutter.
+Filter links are real `<a href>`s (shareable, right-clickable); a click
+routes through `router.replace` inside the `FilterPanel` island so
+filtering feels instant and never spams the back-stack; category options
+cross routes and keep normal push. Sorting is deterministic: “Tavsiya
+etilgan” = curated data order, others are comparators with explicit
+tie-breaks (`publishedAt`, then `id`); no fake relevance.
+Empty → “Mos kurs topilmadi” panel with clear-filters/clear-search actions.
+
+Islands (all of the client JS on these pages): `filter-panel.tsx` (facet
+options + price-range form, shared by sidebar and sheet), `filter-sheet.tsx`
+(mobile bottom sheet — `role=dialog`, aria-modal, Escape, backdrop close,
+focus trap + return, scroll lock, live “N ta kursni ko‘rsatish” CTA),
+`courses-search.tsx` and `url-select.tsx` (native select writing one URL
+param). Everything else is server-rendered. No modal library, no new
+interaction systems, CourseCard reused unchanged.
+
+Data: 15 mock courses (`courses.ts`; order = recommended sort) cover every
+facet value (5 cities, 3 levels, 3 schedules, free/paid, ratings across
+4.0/4.5); cities + labels derive from the data; `publishedAt` (ISO,
+lexicographically sortable — SSR-deterministic) powers “Eng yangi”.
+`notFound()` guards unknown slugs; metadata is per-route with the quoted
+query in the title.
 
 ## Conventions
 

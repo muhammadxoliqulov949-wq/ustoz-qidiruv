@@ -37,8 +37,8 @@ export type QuickFilter = {
 
 export const quickFilters: QuickFilter[] = [
   { id: "toshkent", label: "Toshkent", href: "/courses?city=toshkent" },
-  { id: "online", label: "Online", href: "/courses?mode=online" },
-  { id: "offline", label: "Offline", href: "/courses?mode=offline" },
+  { id: "online", label: "Online", href: "/courses?format=online" },
+  { id: "offline", label: "Offline", href: "/courses?format=offline" },
   { id: "bepul", label: "Bepul kurslar", href: "/courses?price=free" },
 ];
 
@@ -54,31 +54,48 @@ export const hero = {
 } as const;
 
 /** Browse pages copy — /courses and /categories results (Phase 3).
- *  `{count}` is interpolated by the components, never stored here. */
+ *  `{count}` is interpolated by the components, never stored here.
+ *  URL contract (see lib/course-search.ts): q, format, level, city,
+ *  price, pmin, pmax, schedule, rating, sort — single-select facets. */
 export const coursesPage = {
   title: "Kurslar",
   intro:
     "Yo‘nalish, format va narx bo‘yicha filtrlab, o‘zingizga mos kursni toping.",
   searchLabel: "Kurs qidirish",
   searchPlaceholder: "Kurs, ustoz yoki yo‘nalish nomi…",
-  anyMode: "Barchasi",
-  freeOnly: "Faqat bepul",
-  anyCity: "Barcha shaharlar",
-  cityLabel: "Shahar",
+  resultsWord: "ta natija",
   sortLabel: "Saralash",
   sorts: {
     recommended: "Tavsiya etilgan",
-    rating: "Yuqori reyting",
-    popular: "Ommabop",
-    "price-asc": "Avval arzon",
-    "price-desc": "Avval qimmat",
+    rating: "Reyting",
+    "price-asc": "Narx: arzon",
+    "price-desc": "Narx: qimmat",
+    newest: "Eng yangi",
   } as Record<string, string>,
+  sections: {
+    category: "Kategoriya",
+    format: "Format",
+    level: "Daraja",
+    city: "Shahar",
+    price: "Narx",
+    range: "Oylik narx oralig‘i",
+    schedule: "Dars vaqti",
+    rating: "Reyting",
+  },
+  priceOptions: { free: "Bepul", paid: "Pullik" },
+  range: { from: "dan", to: "gacha", apply: "Qo‘llash", unit: "so‘m" },
   filtersWord: "Filtrlar",
   clearFilters: "Filtrlarni tozalash",
+  sheet: {
+    open: "Filtrlar",
+    title: "Filtrlar",
+    close: "Filtrlarni yopish",
+    cta: "ta kursni ko‘rsatish",
+  },
   empty: {
-    title: "Hech narsa topilmadi",
-    text:
-      "So‘rovingizni o‘zgartirib ko‘ring yoki filtrlarni tozalang — katalogimiz doimiy to‘ldiriladi.",
+    title: "Mos kurs topilmadi",
+    text: "Filtrlarni o‘zgartirib ko‘ring yoki qidiruvni tozalang.",
+    clearSearch: "Qidiruvni tozalash",
   },
 } as const;
 
@@ -188,13 +205,13 @@ export const formatEditorial = {
       id: "online",
       title: "Online",
       text: "Uydan, sayohatda yoki dam olish kunlari — istalgan joydan turib onlayn kurslarga yozilishingiz mumkin.",
-      action: { label: "Online kurslarni ko‘rish", href: "/courses?mode=online" },
+      action: { label: "Online kurslarni ko‘rish", href: "/courses?format=online" },
     },
     {
       id: "offline",
       title: "Offline",
       text: "Shahringizdagi yaqin kurslar va ustozlarni toping: guruh bilan, yuzma-yuz, tanish muhitda o‘qing.",
-      action: { label: "Offline kurslarni topish", href: "/courses?mode=offline" },
+      action: { label: "Offline kurslarni topish", href: "/courses?format=offline" },
     },
   ],
 } as const;

@@ -28,6 +28,8 @@ export interface UrlSelectProps {
   defaultValue: string;
   /** Route the query belongs to: /courses or /categories/<slug>. */
   basePath: string;
+  /** History-polite updates (facet-style controls that feel live). */
+  replace?: boolean;
   className?: string;
 }
 
@@ -37,6 +39,7 @@ export function UrlSelect({
   options,
   defaultValue,
   basePath,
+  replace = false,
   className,
 }: UrlSelectProps) {
   const router = useRouter();
@@ -50,7 +53,9 @@ export function UrlSelect({
     if (value === defaultValue) next.delete(paramName);
     else next.set(paramName, value);
     const query = next.toString();
-    router.push(`${basePath}${query ? `?${query}` : ""}`);
+    const href = `${basePath}${query ? `?${query}` : ""}`;
+    if (replace) router.replace(href);
+    else router.push(href);
   };
 
   return (

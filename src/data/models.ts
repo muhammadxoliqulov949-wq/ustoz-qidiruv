@@ -11,6 +11,12 @@
 
 export type CourseFormat = "online" | "offline" | "hybrid";
 
+/** Course difficulty — drives the Phase 3 level facet (labels in courses.ts). */
+export type CourseLevel = "boshlangich" | "orta" | "yuqori";
+
+/** Representative lesson time-of-day — drives the Phase 3 schedule facet. */
+export type CourseSchedule = "morning" | "day" | "evening";
+
 export type CategoryIconKey =
   | "languages"
   | "award"
@@ -51,6 +57,14 @@ export interface Course {
   /** Lowercase city slug ("toshkent" …) for the browse-city facet; null for
    *  online-only courses. Display label derives from it (capitalize). */
   city: string | null;
+  level: CourseLevel;
+  schedule: CourseSchedule;
+  /** Date the listing went public — ISO “YYYY-MM-DD”, lexicographically
+   *  sortable (source for the deterministic “Eng yangi” sort). Mock value. */
+  publishedAt: string;
+  /** Lowercase Uzbek search keywords (synonyms, exam names) — added to the
+   *  search haystack; never rendered as chips. */
+  keywords: string[];
   /** Monthly price in UZS; 0 renders as “Bepul”. */
   priceUzs: number;
   image: string | null;

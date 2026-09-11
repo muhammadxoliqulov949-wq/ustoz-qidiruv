@@ -55,7 +55,7 @@ interface PillLinkProps
   children: ReactNode;
 }
 
-/** Navigational pill (e.g. “Online” → /courses?mode=online). */
+/** Navigational pill (e.g. “Online” → /courses?format=online). */
 export function PillLink({
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- `as` is the union discriminator; consumed by <Pill>, must not reach the DOM
   as: _as = "link",
