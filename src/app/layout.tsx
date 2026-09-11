@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import "@fontsource-variable/inter/standard.css"; // self-hosted Inter (offline-safe builds)
 import { env } from "@/lib/env";
 import { Header } from "@/components/navigation/header";
+import { Footer } from "@/components/layout/footer";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -40,7 +41,7 @@ export default function RootLayout({
         <main id="main" className="flex-1">
           {children}
         </main>
-        {/* Phase 2+: <Footer /> */}
+        <Footer />
       </body>
     </html>
   );

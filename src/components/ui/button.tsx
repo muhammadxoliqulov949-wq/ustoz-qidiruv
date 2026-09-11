@@ -9,7 +9,7 @@ import { cn, focusRing } from "@/lib/utils";
 /* these. Do not replicate these class strings outside this file.             */
 /* -------------------------------------------------------------------------- */
 
-type Variant = "primary" | "secondary" | "outline" | "ghost" | "danger";
+type Variant = "primary" | "secondary" | "outline" | "ghost" | "danger" | "invert";
 type Size = "sm" | "md" | "lg";
 
 const base =
@@ -27,6 +27,9 @@ const variantClasses: Record<Variant, string> = {
     "border border-line-strong bg-surface text-ink-900 hover:border-ink-300 hover:bg-surface-muted active:bg-[#f1f1ee]",
   ghost: "text-ink-700 hover:bg-ink-900/[0.05] active:bg-ink-900/[0.08]",
   danger: "bg-danger text-white shadow-xs hover:bg-danger/90 active:bg-danger",
+  /** On dark brand surfaces (emerald editorial cards). */
+  invert:
+    "bg-white text-accent-700 shadow-xs hover:bg-accent-50 active:bg-accent-100",
 };
 
 const sizeClasses: Record<Size, string> = {

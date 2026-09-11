@@ -66,10 +66,28 @@ Key decisions:
 | `Card`, `CardMedia`, `LinkCard` | default / interactive / quiet; whole-card link for future listing pages |
 | `Pill` | one skin, two shapes: `as="button"` (real hidden checkbox, keyboard/screen-reader friendly) and `as="link"` |
 | `SectionHeader` | eyebrow/title/description/action opener for every page section |
+| `CourseCard` | 16:10 media, save control, stretched-link title; whole card clickable except the heart; focus ring drawn by Card `focus-within` |
+| `TeacherCard` | dominant 5:4 photo, identity + trust band, language chips, course count |
+| `CategoryCard` | icon tile + name + course count, stretched link |
+| `Rating`, `VerifiedMark` | shared card meta: star readout (`--color-rating`) and accessibility-complete verification mark |
+| `SaveButton` | `aria-pressed` toggle, z-above stretched link, stops propagation; persistence arrives with the API phase |
 
 App shell: `navigation/header.tsx`, `navigation/logo.tsx`,
-`navigation/mobile-menu.tsx`; home: `home/hero.tsx`, `home/hero-search.tsx`
-(client island holding search + quick-filter state), `home/quick-filters.tsx`.
+`navigation/mobile-menu.tsx`, `layout/footer.tsx` (light 4-group footer),
+`layout/section.tsx` (canonical section rhythm).
+
+## Homepage (Phase 2)
+
+`hero → popular-categories → recommended-courses → format-editorial →
+top-teachers → how-it-works → trust-promises → teacher-cta → footer`
+
+All sections are server-rendered from the typed mock layer
+(`src/data/models.ts` + `categories.ts` / `courses.ts` / `teachers.ts`).
+Icons resolve through `src/components/icons.tsx` (data stores string keys →
+lucide components; models stay serializable for the future API). Display
+numbers/prices format via `src/lib/format.ts` (SSR-deterministic, no Intl).
+Card cover photography and teacher portraits are placeholder mock assets in
+`public/media/`.
 
 ## Conventions
 
@@ -82,8 +100,8 @@ App shell: `navigation/header.tsx`, `navigation/logo.tsx`,
 - Icons: lucide only, never inline SVG.
 - Links to not-yet-built routes use `prefetch={false}` (Phase 2 removes it).
 
-## Deliberately deferred to Phase 2+
+## Deliberately deferred
 
-Categories page, course/teacher cards, search results (`/courses?q=…` wiring),
-auth (Kirish flow), dashboards, footer, bottom navigation, filters drawer,
-detail pages, dark mode evaluation, i18n (`/uz`, `/ru`…), CMS/API data layer.
+`/courses` results page, category pages, course/teacher detail pages,
+auth (Kirish flow), dashboards, filters drawer, payment, messaging, real
+API, dark mode evaluation, i18n (`/uz`, `/ru`…), mobile bottom navigation.
