@@ -171,7 +171,6 @@ export default async function CourseDetailPage({
               {teacher ? (
                 <Link
                   href={`/teachers/${teacher.slug}`}
-                  prefetch={false}
                   className={cn(
                     "inline-flex items-center gap-2.5 rounded-pill py-1 pe-1",
                     "transition-colors duration-fast hover:text-accent-700",

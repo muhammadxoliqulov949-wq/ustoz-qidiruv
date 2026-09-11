@@ -134,6 +134,13 @@ export interface Course {
   detail: CourseDetail;
 }
 
+/** Profile-page content for a teacher (Phase 5). Kept out of the list
+ *  shape so browse rows stay light — same split as Course.detail. */
+export interface TeacherProfile {
+  /** How this teacher runs lessons — the “O‘qitish uslubi” paragraph. */
+  approach: string;
+}
+
 export interface Teacher {
   id: string;
   slug: string;
@@ -144,6 +151,8 @@ export interface Teacher {
   specialization: string;
   /** 2–3 sentence profile blurb for the course-detail teacher block. */
   bio: string;
+  /** Profile-page payload (/teachers/[slug]). */
+  detail: TeacherProfile;
   rating: number;
   reviews: number;
   students: number;

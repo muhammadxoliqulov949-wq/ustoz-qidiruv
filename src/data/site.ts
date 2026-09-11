@@ -10,7 +10,7 @@ export type NavItem = { label: string; href: string; prefetch?: boolean };
 
 export const primaryNav: NavItem[] = [
   { label: "Kurslar", href: "/courses" },
-  { label: "Ustozlar", href: "/teachers", prefetch: false }, // teachers browse lands later
+  { label: "Ustozlar", href: "/teachers" },
   { label: "Kategoriyalar", href: "/categories" },
 ];
 
@@ -99,6 +99,49 @@ export const coursesPage = {
   },
 } as const;
 
+/** Teacher browse copy — /teachers (Phase 5). Same conventions as
+ *  coursesPage: `{count}` is interpolated by components; URL contract
+ *  lives in lib/teacher-search.ts (q, subject, format, city, lang,
+ *  rating, exp, verified, sort — single-select facets). */
+export const teachersPage = {
+  title: "Ustozlar",
+  intro:
+    "Yo‘nalish, shahar, til va reyting bo‘yicha filtrlab, o‘quvchilari baholagan ustozni toping.",
+  searchLabel: "Ustoz qidirish",
+  searchPlaceholder: "Ustoz nomi, yo‘nalishi yoki tili…",
+  resultsWord: "ta ustoz",
+  sortLabel: "Saralash",
+  sorts: {
+    recommended: "Tavsiya etilgan",
+    rating: "Reyting",
+    students: "O‘quvchilar soni",
+    experience: "Tajriba",
+  } as Record<string, string>,
+  sections: {
+    subject: "Yo‘nalish",
+    format: "Dars formati",
+    city: "Shahar",
+    language: "O‘quv tili",
+    rating: "Reyting",
+    experience: "Tajriba",
+    verified: "Profil",
+  },
+  verifiedOption: "Faqat tasdiqlanganlar",
+  filtersWord: "Filtrlar",
+  clearFilters: "Filtrlarni tozalash",
+  sheet: {
+    open: "Filtrlar",
+    title: "Filtrlar",
+    close: "Filtrlarni yopish",
+    cta: "ta ustozni ko‘rsatish",
+  },
+  empty: {
+    title: "Mos ustoz topilmadi",
+    text: "Filtrlarni o‘zgartirib ko‘ring yoki qidiruvni tozalang.",
+    clearSearch: "Qidiruvni tozalash",
+  },
+} as const;
+
 export const categoriesPage = {
   title: "Kategoriyalar",
   intro:
@@ -113,7 +156,7 @@ export const footerGroups: { title: string; links: NavItem[] }[] = [
     title: "O‘rganish",
     links: [
       { label: "Kurslar", href: "/courses" },
-      { label: "Ustozlar", href: "/teachers", prefetch: false },
+      { label: "Ustozlar", href: "/teachers" },
       { label: "Kategoriyalar", href: "/categories" },
     ],
   },

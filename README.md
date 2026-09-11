@@ -4,8 +4,9 @@ Marketplace for finding courses and teachers (Uzbekistan). This repository
 implements the approved USTOZ Master Frontend Specification phase by phase:
 **Phase 1** foundation (tokens, primitives, header, hero), **Phase 2** the
 full homepage, **Phase 3** browse & search (`/courses` results engine +
-`/categories` routes), and **Phase 4** course detail pages
-(`/courses/[slug]`). Auth, teacher profiles and everything after land in
+`/categories` routes), **Phase 4** course detail pages
+(`/courses/[slug]`), and **Phase 5** teacher discovery + profiles
+(`/teachers`, `/teachers/[slug]`). Auth and everything after land in
 later phases.
 
 ## Stack
@@ -168,6 +169,36 @@ the listing aggregates. Teachers gained full records (photo, `bio`) in
 `teachers.ts`; `/teachers/[slug]` remains a deferred seam (link with
 `prefetch={false}`).
 
+## Teacher marketplace (Phase 5)
+
+`/teachers` re-expresses the Phase 3 architecture for a new entity: URL is
+the only state (`q`, `subject`, `format`, `city`, `lang`, `rating`, `exp`,
+`verified=1`, `sort` — whitelisted + canonical in `src/lib/teacher-search.ts`),
+facet pills route through `router.replace` (shareable, refresh-safe, no
+back-stack spam), a 264px sticky sidebar on desktop and the same sections
+inside an accessible bottom sheet on mobile, live filtered count, removable
+chips, deterministic sorts (tie-breaks on reviews/`id`). A price-range
+facet is deliberately absent: teachers have no price of their own — only
+their courses do.
+
+Teacher browse data is **derived, never duplicated**
+(`src/data/teacher-rows.ts`): every teacher row computes its courses,
+covered categories/cities/formats and cheapest course price from
+`courses.ts`, so a card or profile can never contradict the catalog.
+`activeCourses` is derived the same way — it is no longer hand-written.
+The registry also validates itself at build time: every `course.teacher.id`
+must exist and every teacher needs a `TeacherProfile`
+(`teacher-profiles.ts`) — a missing record fails `next build`.
+
+`/teachers/[slug]` is fully server-rendered: hero (portrait, verification,
+formats, languages, derived location, trust numbers as displayed on cards),
+“Ustoz haqida” + teaching approach, the teacher’s real courses as standard
+`CourseCard`s (deep-link back into Phase 4 detail pages), reviews composed
+from the SAME course review store (honest empty state otherwise), and a
+FAQ generated only from supported facts. The profile’s CTA scrolls to the
+course list — there is deliberately no messaging/booking affordance until
+those phases ship. Unknown slugs 404.
+
 ## Conventions
 
 - Server components by default; `"use client"` only where state/events live
@@ -180,12 +211,12 @@ the listing aggregates. Teachers gained full records (photo, `bio`) in
   `src/data/site.ts`.
 - Icons: lucide only, never inline SVG.
 - Per-link prefetch is declared in nav data (`site.ts`): unbuilt routes set
-  `prefetch: false`; built routes omit the flag (/courses and
-  /courses/[slug] since Phase 3/4).
+  `prefetch: false`; built routes omit the flag (/courses,
+  /courses/[slug] and the /teachers routes since Phase 3–5).
 
 ## Deliberately deferred
 
-Teacher detail pages (`/teachers/[slug]`),
-teachers browse (`/teachers`), auth (Kirish flow), dashboards, pagination (catalog fits one
-page), payment, messaging, save persistence, real API, dark mode
-evaluation, i18n (`/uz`, `/ru`…), mobile bottom navigation.
+Auth (Kirish flow), teacher
+dashboards, pagination (catalogs fit one page), payment, messaging,
+save persistence, real API, dark mode evaluation, i18n (`/uz`, `/ru`…),
+mobile bottom navigation.

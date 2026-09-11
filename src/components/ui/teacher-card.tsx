@@ -52,11 +52,7 @@ export function TeacherCard({ teacher, className }: TeacherCardProps) {
       <div className="flex flex-1 flex-col gap-1.5 p-6">
         <div className="flex items-center gap-1.5">
           <h3 className="text-lg leading-snug font-semibold text-ink-900">
-            <Link
-              href={`/teachers/${slug}`}
-              prefetch={false} // teacher profile lands in a later phase
-            className={stretchedLink}
-            >
+            <Link href={`/teachers/${slug}`} className={stretchedLink}>
               {name}
             </Link>
           </h3>

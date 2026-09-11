@@ -98,8 +98,6 @@ export function CourseTeacher({ course }: { course: Course }) {
           href={`/teachers/${teacher.slug}`}
           variant="outline"
           className="mt-5"
-          prefetch={false}
-          title="Ustoz profili keyingi bosqichda ochiladi"
         >
           Ustoz profilini ko‘rish
           <ArrowRight className="size-4" aria-hidden="true" />

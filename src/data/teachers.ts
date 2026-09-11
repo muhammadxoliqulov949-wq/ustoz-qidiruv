@@ -1,13 +1,23 @@
 import type { Teacher } from "./models";
+import { courses } from "./courses";
+import { teacherProfilesById } from "./teacher-profiles";
 
-/**
- * MOCK data only — the teacher registry behind the home “Eng yaxshi
- * ustozlar” row and the Phase 4 course-detail teacher block.
- * All profiles are neutral fictional persons; no real or celebrity
- * identities are referenced. Future API responses must satisfy
- * `Teacher` (see models.ts).
- */
-export const teachers: Teacher[] = [
+/* -------------------------------------------------------------------------- */
+/* Teacher registry — Phase 2 record set, completed by Phase 5.                  */
+/* MOCK data only; all profiles are neutral fictional persons.                   */
+/*                                                                                 */
+/* Integrity rules (enforced at build time):                                       */
+/*  • every course.teacher.id must exist here (no phantom course authors);        */
+/*  • `activeCourses` is DERIVED from courses.ts — never hand-set — so the card   */
+/*    badge and /teachers/[slug] can never contradict each other;                 */
+/*  • every teacher needs a TeacherProfile (teacher-profiles.ts).                 */
+/* Future API responses must satisfy `Teacher` (see models.ts).                    */
+/* -------------------------------------------------------------------------- */
+
+/** Everything except the two derived/merged fields. */
+type TeacherSeed = Omit<Teacher, "activeCourses" | "detail">;
+
+const teacherSeeds: TeacherSeed[] = [
   {
     id: "t-dilshod-rahimov",
     slug: "dilshod-rahimov",
@@ -21,7 +31,6 @@ export const teachers: Teacher[] = [
     students: 1260,
     experienceYears: 11,
     languages: ["UZ", "EN", "RU"],
-    activeCourses: 6,
   },
   {
     id: "t-nodira-yusupova",
@@ -36,7 +45,6 @@ export const teachers: Teacher[] = [
     students: 890,
     experienceYears: 14,
     languages: ["UZ", "RU"],
-    activeCourses: 4,
   },
   {
     id: "t-sardor-qodirov",
@@ -51,7 +59,6 @@ export const teachers: Teacher[] = [
     students: 2100,
     experienceYears: 8,
     languages: ["UZ", "EN", "RU"],
-    activeCourses: 5,
   },
   {
     id: "t-malika-ergasheva",
@@ -66,7 +73,6 @@ export const teachers: Teacher[] = [
     students: 190,
     experienceYears: 6,
     languages: ["UZ", "AR", "RU"],
-    activeCourses: 3,
   },
   {
     id: "t-zilola-akbarova",
@@ -81,7 +87,6 @@ export const teachers: Teacher[] = [
     students: 310,
     experienceYears: 7,
     languages: ["UZ", "EN"],
-    activeCourses: 1,
   },
   {
     id: "t-malika-sattorova",
@@ -96,7 +101,6 @@ export const teachers: Teacher[] = [
     students: 610,
     experienceYears: 5,
     languages: ["UZ", "EN"],
-    activeCourses: 1,
   },
   {
     id: "t-shahnoza-tursunova",
@@ -111,7 +115,6 @@ export const teachers: Teacher[] = [
     students: 205,
     experienceYears: 6,
     languages: ["UZ"],
-    activeCourses: 1,
   },
   {
     id: "t-rustam-alimov",
@@ -126,7 +129,6 @@ export const teachers: Teacher[] = [
     students: 340,
     experienceYears: 12,
     languages: ["UZ", "RU"],
-    activeCourses: 1,
   },
   {
     id: "t-behzod-karimov",
@@ -141,7 +143,6 @@ export const teachers: Teacher[] = [
     students: 1150,
     experienceYears: 7,
     languages: ["UZ", "EN", "RU"],
-    activeCourses: 1,
   },
   {
     id: "t-ubaydullo-nasriddinov",
@@ -156,7 +157,6 @@ export const teachers: Teacher[] = [
     students: 420,
     experienceYears: 20,
     languages: ["UZ", "AR"],
-    activeCourses: 1,
   },
   {
     id: "t-aziza-nazarova",
@@ -171,7 +171,6 @@ export const teachers: Teacher[] = [
     students: 640,
     experienceYears: 6,
     languages: ["UZ", "EN"],
-    activeCourses: 1,
   },
   {
     id: "t-javohir-xolliyev",
@@ -186,9 +185,50 @@ export const teachers: Teacher[] = [
     students: 150,
     experienceYears: 9,
     languages: ["UZ", "RU"],
-    activeCourses: 1,
+  },
+  {
+    id: "t-kamola-yuldosheva",
+    slug: "kamola-yuldosheva",
+    name: "Kamola Yuldosheva",
+    photo: "/media/teachers/kamola-yuldosheva.jpg",
+    verified: false,
+    specialization: "Umumiy ingliz tili (A2–B1)",
+    bio: "Filolog, yetti yildan beri o‘rta va katta yoshli guruhlar bilan ishlaydi. Guruhlarini kichik ushlab, har o‘quvchiga haftada bir marta shaxsiy fikr-qaytaliuv berishni ustuvor ko‘radi.",
+    rating: 4.5,
+    reviews: 64,
+    students: 380,
+    experienceYears: 8,
+    languages: ["UZ", "EN"],
   },
 ];
+
+/** Derived from the canonical course list — the single source of truth. */
+const courseCountById = new Map<string, number>();
+for (const course of courses) {
+  if (!teacherSeeds.some((seed) => seed.id === course.teacher.id)) {
+    throw new Error(
+      `Course "${course.slug}" references unknown teacher "${course.teacher.id}" — add the teacher to src/data/teachers.ts`,
+    );
+  }
+  courseCountById.set(
+    course.teacher.id,
+    (courseCountById.get(course.teacher.id) ?? 0) + 1,
+  );
+}
+
+export const teachers: Teacher[] = teacherSeeds.map((seed) => {
+  const detail = teacherProfilesById[seed.id];
+  if (!detail) {
+    throw new Error(
+      `Missing TeacherProfile for "${seed.id}" — add it to src/data/teacher-profiles.ts`,
+    );
+  }
+  return {
+    ...seed,
+    activeCourses: courseCountById.get(seed.id) ?? 0,
+    detail,
+  };
+});
 
 export const teacherById = new Map(teachers.map((teacher) => [teacher.id, teacher]));
 
