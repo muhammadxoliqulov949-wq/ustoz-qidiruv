@@ -40,13 +40,16 @@
   --color-line: #e8e7e2; /* default borders (warm, matches canvas) */
   --color-line-strong: #d8d7d1; /* emphasized borders */
 
-  /* --- Deep emerald accent scale ------------------------------------------- */
-  --color-accent-50: #eef7f2;
+  /* --- Deep emerald accent scale (USTOZ Master Spec — finalized) -----------
+     Role map (components bind to roles, never raw hex):
+       50 = brand soft tint   600 = primary   500 = hover (darker)
+       700 = pressed / text-on-soft                                            */
+  --color-accent-50: #e7f3ed;  /* brand soft */
   --color-accent-100: #d8ecdf;
   --color-accent-400: #2f9e6c;
-  --color-accent-500: #158257; /* hover */
-  --color-accent-600: #0b6b48; /* primary */
-  --color-accent-700: #095639; /* pressed */
+  --color-accent-500: #12563e; /* hover */
+  --color-accent-600: #176b4d; /* primary brand */
+  --color-accent-700: #0e4531; /* pressed; also text-on-soft */
 
   /* --- Semantic feedback colors (defined now, used from Phase 2+) --------- */
   --color-success: #16a34a;
@@ -62,8 +65,8 @@
   --text-xs--line-height: 1rem;
   --text-sm: 0.8125rem; /* 13 */
   --text-sm--line-height: 1.125rem;
-  --text-base: 0.9375rem; /* 15 */
-  --text-base--line-height: 1.5;
+  --text-base: 1rem; /* 16 */
+  --text-base--line-height: 1.5; /* 16px / 24px — approved default body */
   --text-lg: 1.0625rem; /* 17 */
   --text-lg--line-height: 1.65;
   --text-xl: 1.25rem; /* 20 */
