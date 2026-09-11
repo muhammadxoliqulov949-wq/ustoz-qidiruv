@@ -13,10 +13,10 @@ export function Hero() {
   return (
     <section
       aria-labelledby="hero-title"
-      className="flex flex-col items-center pb-3xl pt-[calc(var(--height-header)+3rem)] md:pb-4xl md:pt-[calc(var(--height-header)+5rem)]"
+      className="flex flex-col items-center pb-18 pt-[calc(var(--height-header)+3rem)] md:pb-26 md:pt-[calc(var(--height-header)+5rem)]"
     >
       <div className="site-container flex flex-col items-center text-center">
-        <p className="mb-md text-sm font-semibold tracking-[0.1em] text-accent-600 uppercase">
+        <p className="mb-4 text-sm font-semibold tracking-[0.1em] text-accent-600 uppercase">
           {hero.eyebrow}
         </p>
 
@@ -27,11 +27,11 @@ export function Hero() {
           {hero.title}
         </h1>
 
-        <p className="mt-md max-w-2xl text-lg text-pretty text-ink-500 md:mt-lg md:text-xl md:leading-relaxed">
+        <p className="mt-4 max-w-2xl text-lg text-pretty text-ink-500 md:mt-6 md:text-xl md:leading-relaxed">
           {hero.subtitle}
         </p>
 
-        <div className="mt-2xl w-full md:mt-3xl">
+        <div className="mt-12 w-full md:mt-18">
           <HeroSearch />
         </div>
       </div>

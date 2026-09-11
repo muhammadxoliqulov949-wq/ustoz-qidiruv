@@ -12,7 +12,7 @@ export interface SectionProps {
 
 /**
  * Canonical homepage content section: main container + the shared vertical
- * rhythm (pt-3xl → md:pt-4xl). Only the last section before the footer
+ * rhythm (pt-18 → md:pt-26). Only the last section before the footer
  * opts into bottom padding. Guarantees one cadence across every page.
  */
 export function Section({ id, ariaLabelledby, className, children }: SectionProps) {
@@ -20,7 +20,7 @@ export function Section({ id, ariaLabelledby, className, children }: SectionProp
     <section
       id={id}
       aria-labelledby={ariaLabelledby}
-      className={cn("site-container pt-3xl md:pt-4xl", className)}
+      className={cn("site-container pt-18 md:pt-26", className)}
     >
       {children}
     </section>

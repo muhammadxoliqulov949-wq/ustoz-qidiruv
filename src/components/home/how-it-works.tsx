@@ -13,7 +13,7 @@ export function HowItWorks() {
         title={<span id="how-it-works-title">{howItWorks.title}</span>}
       />
 
-      <ol className="grid gap-xl md:grid-cols-3 md:gap-2xl">
+      <ol className="grid gap-8 md:grid-cols-3 md:gap-12">
         {howItWorks.steps.map((step) => (
           <li key={step.id} className="flex flex-col gap-2 border-t border-line pt-4">
             <span className="text-sm font-semibold tracking-[0.08em] text-accent-600">

@@ -28,7 +28,7 @@ export function PopularCategories() {
         }
       />
 
-      <ul className="grid grid-cols-2 gap-md md:grid-cols-3 md:gap-lg xl:grid-cols-6">
+      <ul className="grid grid-cols-2 gap-4 md:grid-cols-3 md:gap-6 xl:grid-cols-6">
         {categories.map((category) => (
           <li key={category.id} className="flex">
             <CategoryCard category={category} className="w-full" />

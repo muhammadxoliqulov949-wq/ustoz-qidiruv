@@ -34,11 +34,11 @@ export function SectionHeader({
   return (
     <header
       className={cn(
-        "flex w-full gap-md",
+        "flex w-full gap-4",
         align === "center"
           ? "flex-col items-center text-center"
           : "flex-col-reverse items-start sm:flex-row sm:items-end sm:justify-between",
-        compact ? "mb-md" : "mb-xl md:mb-2xl",
+        compact ? "mb-4" : "mb-8 md:mb-12",
         className,
       )}
     >
@@ -74,7 +74,7 @@ export function SectionHeader({
       </div>
 
       {action ? (
-        <div className="flex shrink-0 items-center gap-xs">{action}</div>
+        <div className="flex shrink-0 items-center gap-2">{action}</div>
       ) : null}
     </header>
   );

@@ -90,7 +90,7 @@ export function Header() {
               prefetch={false}
               variant="ghost"
               size="sm"
-              className="hidden lg:inline-flex"
+              className="max-lg:hidden"
             >
               {loginNav.label}
             </ButtonLink>
@@ -100,7 +100,7 @@ export function Header() {
               href={becomeTeacherNav.href}
               prefetch={false}
               size="sm"
-              className="hidden lg:inline-flex"
+              className="max-lg:hidden"
             >
               {becomeTeacherNav.label}
             </ButtonLink>

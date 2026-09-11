@@ -57,6 +57,10 @@ export interface ButtonProps
 /**
  * USTOZ Button — the only button in the design system.
  * Renders a native <button>; use <ButtonLink> for navigation.
+ *
+ * Responsive hiding: the base already sets `inline-flex`, and in v4 a plain
+ * `hidden` class can lose to it (same layer, later sort). Always hide with
+ * media variants instead — e.g. `max-lg:hidden`, never `hidden lg:flex`.
  */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   function Button(

@@ -32,7 +32,7 @@ export function RecommendedCourses() {
         }
       />
 
-      <ul className="grid grid-cols-1 gap-lg md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <ul className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {recommendedCourses.map((course) => (
           <li key={course.id} className="flex">
             <CourseCard course={course} className="w-full" />

@@ -65,7 +65,7 @@ export function CourseCard({ course, className }: CourseCardProps) {
         />
       </div>
 
-      <div className="flex flex-1 flex-col gap-3 p-lg">
+      <div className="flex flex-1 flex-col gap-3 p-6">
         <div className="flex items-center gap-2">
           <Badge variant="neutral">{formatLabels[format]}</Badge>
           {location && format !== "online" ? (

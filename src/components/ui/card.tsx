@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 /* -------------------------------------------------------------------------- */
 /* Card — one surface recipe, composed from parts.                             */
-/*   <Card>                         padding via p-lg by default                */
+/*   <Card>                         padding via p-6 by default                */
 /*   <Card variant="interactive">   hover + focus state, wraps a Link target  */
 /*   <CardMedia>                    full-bleed top area (course cover, later) */
 /* -------------------------------------------------------------------------- */
@@ -39,7 +39,7 @@ export function Card({
     <div
       className={cn(
         "overflow-hidden rounded-xl",
-        padded && "p-lg",
+        padded && "p-6",
         variantClasses[variant],
         className,
       )}
@@ -62,7 +62,7 @@ export function CardMedia({
   return (
     <div
       className={cn(
-        "relative -m-lg mb-0 aspect-[16/10] bg-surface-muted",
+        "relative -m-6 mb-0 aspect-[16/10] bg-surface-muted",
         className,
       )}
       {...rest}

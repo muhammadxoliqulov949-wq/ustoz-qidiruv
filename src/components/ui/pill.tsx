@@ -14,7 +14,7 @@ import { cn, focusRing } from "@/lib/utils";
 /* -------------------------------------------------------------------------- */
 
 const shell = cn(
-  "inline-flex h-9 items-center gap-xs rounded-pill px-3.5 text-sm font-medium whitespace-nowrap",
+  "inline-flex h-9 items-center gap-2 rounded-pill px-3.5 text-sm font-medium whitespace-nowrap",
   "border transition-[background-color,border-color,color,box-shadow] duration-fast select-none",
   focusRing,
 );

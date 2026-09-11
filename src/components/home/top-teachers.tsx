@@ -27,7 +27,7 @@ export function TopTeachers() {
         }
       />
 
-      <ul className="grid grid-cols-1 gap-lg md:grid-cols-2 xl:grid-cols-4">
+      <ul className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
         {topTeachers.map((teacher) => (
           <li key={teacher.id} className="flex">
             <TeacherCard teacher={teacher} className="w-full" />

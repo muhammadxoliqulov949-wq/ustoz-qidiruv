@@ -16,7 +16,7 @@ export function TrustPromises() {
         compact
       />
 
-      <ul className="grid gap-xl sm:grid-cols-2 xl:grid-cols-4">
+      <ul className="grid gap-8 sm:grid-cols-2 xl:grid-cols-4">
         {trustPromises.items.map((item) => {
           const Icon = trustIcons[item.icon as TrustIconKey];
           return (

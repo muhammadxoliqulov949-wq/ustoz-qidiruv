@@ -35,8 +35,11 @@ Key decisions:
 - Warm canvas `#F7F7F5`, white surfaces, **deep emerald** (`--color-accent-*`)
   as the single accent.
 - Ink text scale (`ink-900 … ink-300`) instead of pure black/gray.
-- Spacing scale keeps the 4px numeric grid and adds *named* steps
-  (`xs/sm/md/lg/xl/2xl/3xl/4xl`) for intent-based use.
+- Spacing = the native 4px numeric grid only (`p-6`, `gap-8`, `pt-18`,
+  `pt-26` for section rhythm). Named steps (`--spacing-4xl` …) were removed:
+  Tailwind v4 resolves bare `max-w-*`/`min-w-*` suffixes against the spacing
+  namespace too, and custom keys there silently hijack `max-w-4xl` etc.
+  — caught by real-browser QA (shrink-to-fit text collapsing to ~1 word).
 - Breakpoints: `xs 416 / sm 640 / md 768 / lg 1024 / xl 1280`; no `2xl` usage —
   content is capped by the container anyway.
 - One focus treatment for everything: `focusRing` in `src/lib/utils.ts`.
@@ -92,9 +95,11 @@ Card cover photography and teacher portraits are placeholder mock assets in
 ## Conventions
 
 - Server components by default; `"use client"` only where state/events live
-  (header, search, pills, quick filters).
+  (header, search, pills, save button).
 - No per-component styles: compose tokens; new visual values go into
   `globals.css` first.
+- Hiding Buttons: use media variants (`max-lg:hidden`), never `hidden` —
+  the base `inline-flex` utility outranks plain `hidden` in v4's sort order.
 - Navigation data (labels, routes, hero copy) is centralized in
   `src/data/site.ts`.
 - Icons: lucide only, never inline SVG.

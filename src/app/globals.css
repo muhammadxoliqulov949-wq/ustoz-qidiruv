@@ -10,7 +10,7 @@
    Usage mapping (Tailwind v4 generates utilities from @theme):
      color:      --color-ink-900      -> text-ink-900 / bg-ink-900 / border-ink-100
      font:       --font-sans          -> font-sans
-     size:       --spacing-lg         -> p-lg / gap-lg / py-lg
+     size:       --spacing (4px grid) -> p-6 / gap-4 / pt-18 … (numeric only)
      radius:     --radius-pill        -> rounded-pill
      shadow:     --shadow-raised      -> shadow-raised
      duration:   --transition-duration-fast  -> duration-fast
@@ -103,14 +103,18 @@
   --spacing-20: 5rem;
   --spacing-24: 6rem;
   --spacing-32: 8rem;
-  --spacing-xs: 0.5rem; /* dense gaps: chips inside pills, icon pairs */
-  --spacing-sm: 0.75rem; /* compact gaps */
-  --spacing-md: 1rem; /* control padding, list gaps */
-  --spacing-lg: 1.5rem; /* card padding */
-  --spacing-xl: 2rem; /* section inner gaps */
-  --spacing-2xl: 3rem; /* between related sections */
-  --spacing-3xl: 4.5rem; /* section rhythm on mobile */
-  --spacing-4xl: 6.5rem; /* section rhythm, desktop */
+  /*
+   * DESIGN-SCALE NOTE (real bug caught in browser QA):
+   * Named steps (--spacing-xs … --spacing-4xl) collided with Tailwind
+   * v4 bare-key resolution for max-width/min-width utilities, which
+   * also consult the spacing namespace. e.g. `max-w-4xl` compiled to
+   * `var(--spacing-4xl)` (104px!) and collapsed every shrink-to-fit
+   * text box.
+   * The numeric 4px grid stays the single scale:
+   *   card padding p-6 · inline gaps gap-4/6/8 · section rhythm
+   *   pt-18/pb-18 (mobile), pt-26/pb-26 (desktop) — utilities derive
+   *   from --spacing (0.25rem) so no custom keys are needed.
+   */
 
   /* --- Radius ----------------------------------------------------------------
      xl = 20px per Master Spec course/card radius (was 18px pre-spec).
