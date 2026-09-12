@@ -15,6 +15,7 @@ import {
   validatePasswordField,
   validatePhoneField,
 } from "@/lib/onboarding";
+import { withNext } from "@/lib/safe-next";
 import {
   readPrototypeDraft,
   usePrototypeDraftHydrated,
@@ -42,9 +43,15 @@ export interface RegisterFormProps {
   initialRole: "student" | "teacher" | null;
   /** ?phone= handoff from /login (already canonical), or null. */
   initialPhone: string | null;
+  /** Safe internal ?next= (e.g. an enrollment flow to return to). */
+  initialNext?: string | null;
 }
 
-export function RegisterForm({ initialRole, initialPhone }: RegisterFormProps) {
+export function RegisterForm({
+  initialRole,
+  initialPhone,
+  initialNext = null,
+}: RegisterFormProps) {
   const router = useRouter();
   const [role, setRole] = useState<"student" | "teacher" | null>(initialRole);
   const [name, setName] = useState("");
@@ -87,14 +94,14 @@ export function RegisterForm({ initialRole, initialPhone }: RegisterFormProps) {
       setErrors({ role: "Rolni tanlang — o‘quvchimisiz yoki ustozmi?" });
       return;
     }
-    const next = {
+    const nextDraft = {
       ...base,
       role: finalRole,
       student: { ...base.student, name: base.student.name || name.trim(), phone },
       teacher: { ...base.teacher, name: base.teacher.name || name.trim(), phone },
     };
-    writePrototypeDraft(next);
-    router.push("/onboarding");
+    writePrototypeDraft(nextDraft);
+    router.push(withNext("/onboarding", initialNext));
   };
 
   return (
@@ -103,7 +110,7 @@ export function RegisterForm({ initialRole, initialPhone }: RegisterFormProps) {
         <AuthNotice title="Bu brauzerda onboarding holati mavjud">
           Avvalgi to‘ldirilgan onboarding ma’lumotlarini yo‘qotmasdan
           <Link
-            href="/onboarding"
+            href={withNext("/onboarding", initialNext)}
             className="ml-1 rounded-md font-medium text-accent-700 underline underline-offset-2 focus-visible:outline-none focus-visible:ring-[length:var(--size-focus-ring)] focus-visible:ring-accent-600/35"
           >
             davom ettirish

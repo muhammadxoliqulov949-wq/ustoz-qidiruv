@@ -39,9 +39,15 @@ import {
 export interface OnboardingCompleteProps {
   role: UserRole;
   onRestart: () => void;
+  /** Safe internal ?next= from the wizard — e.g. back to an enrollment flow. */
+  resumeHref?: string | null;
 }
 
-export function OnboardingComplete({ role, onRestart }: OnboardingCompleteProps) {
+export function OnboardingComplete({
+  role,
+  onRestart,
+  resumeHref = null,
+}: OnboardingCompleteProps) {
   const { draft } = useOnboardingDraft();
 
   if (role === "student") {
@@ -62,6 +68,18 @@ export function OnboardingComplete({ role, onRestart }: OnboardingCompleteProps)
               Qiziqtirgan yo‘nalishingizni <Link href="/courses" className="font-medium text-accent-700 underline underline-offset-2">kurslar</Link>{" "}
               yoki <Link href="/teachers" className="font-medium text-accent-700 underline underline-offset-2">ustozlar</Link>{" "}
               sahifasidagi filtrlardan istalgan payt tanlaysiz.
+              {resumeHref ? (
+                <>
+                  {" "}Yozilish jarayoniga esa{" "}
+                  <Link
+                    href={resumeHref}
+                    className="font-medium text-accent-700 underline underline-offset-2"
+                  >
+                    shu yerdan
+                  </Link>{" "}
+                  qaytasiz.
+                </>
+              ) : null}
             </p>
           </div>
         ) : (
@@ -93,8 +111,20 @@ export function OnboardingComplete({ role, onRestart }: OnboardingCompleteProps)
           ma’lumotlar asosida quriladi.
         </AuthNotice>
 
+        {resumeHref ? (
+          <ButtonLink href={resumeHref} size="lg" fullWidth>
+            Yozilishni davom ettirish
+          </ButtonLink>
+        ) : null}
+
         <div className="flex flex-col gap-2.5 sm:flex-row">
-          <ButtonLink href={studentCoursesHref(answers)} size="lg" fullWidth leadingIcon={<BookOpen />}>
+          <ButtonLink
+            href={studentCoursesHref(answers)}
+            size="lg"
+            variant={resumeHref ? "outline" : "primary"}
+            fullWidth
+            leadingIcon={<BookOpen />}
+          >
             Kurslarni ko‘rish
           </ButtonLink>
           <ButtonLink

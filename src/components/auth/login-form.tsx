@@ -14,6 +14,7 @@ import {
   validatePasswordField,
   validatePhoneField,
 } from "@/lib/onboarding";
+import { withNext } from "@/lib/safe-next";
 
 /* -------------------------------------------------------------------------- */
 /* LoginForm — phone + password front-end contract. NEVER authenticates:        */
@@ -28,7 +29,12 @@ interface FieldErrors {
   password?: string;
 }
 
-export function LoginForm() {
+export interface LoginFormProps {
+  /** Safe internal ?next= target (validated on the server). */
+  initialNext?: string | null;
+}
+
+export function LoginForm({ initialNext = null }: LoginFormProps) {
   const [phone, setPhone] = useState("+998");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -73,9 +79,12 @@ export function LoginForm() {
   };
 
   const phoneDigits = extractUzPhoneDigits(phone);
-  const registerHref = isValidUzPhoneDigits(phoneDigits)
-    ? `/register?phone=${encodeURIComponent(formatUzPhone(phoneDigits))}`
-    : "/register";
+  const registerHref = withNext(
+    isValidUzPhoneDigits(phoneDigits)
+      ? `/register?phone=${encodeURIComponent(formatUzPhone(phoneDigits))}`
+      : "/register",
+    initialNext,
+  );
 
   return (
     <Card>
@@ -136,10 +145,24 @@ export function LoginForm() {
       {submitted ? (
         <div className="mt-4">
           <AuthNotice live title="Autentifikatsiya xizmati hali ulangagan">
-            Kirish so‘rovi faqat shu brauzerda tekshirildi. Hech qanday so‘rov
-            yuborilmadi, sessiya yaratilmadi va parolingiz hech qayoqqa
-            yozilmadi. Tizimga kirish imkoniyati backend ulanganda ishga
-            tushadi.
+            <p>
+              Kirish so‘rovi faqat shu brauzerda tekshirildi. Hech qanday
+              so‘rov yuborilmadi, sessiya yaratilmadi va parolingiz hech
+              qayoqqa yozilmadi. Tizimga kirish imkoniyati backend ulanganda
+              ishga tushadi.
+            </p>
+            {initialNext ? (
+              <p className="mt-2">
+                Yozilish jarayonida sahifaga qaytish — kirish talab qilinmaydi
+                (prototip oqim):{" "}
+                <Link
+                  href={initialNext}
+                  className="rounded-md font-medium text-accent-700 underline underline-offset-2 focus-visible:outline-none focus-visible:ring-[length:var(--size-focus-ring)] focus-visible:ring-accent-600/35"
+                >
+                  Davom etish
+                </Link>
+              </p>
+            ) : null}
           </AuthNotice>
         </div>
       ) : null}

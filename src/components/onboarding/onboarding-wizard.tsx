@@ -38,9 +38,11 @@ import { OnboardingComplete } from "./onboarding-complete";
 export interface OnboardingWizardProps {
   /** Whitelisted ?role= from the server — seeds the draft when undecided. */
   initialRole: UserRole | null;
+  /** Validated internal ?next= — completion offers a route back (enrollment). */
+  initialNext?: string | null;
 }
 
-export function OnboardingWizard({ initialRole }: OnboardingWizardProps) {
+export function OnboardingWizard({ initialRole, initialNext = null }: OnboardingWizardProps) {
   const { ready } = useOnboardingDraft();
 
   if (!ready) {
@@ -60,10 +62,10 @@ export function OnboardingWizard({ initialRole }: OnboardingWizardProps) {
     );
   }
 
-  return <WizardBody initialRole={initialRole} />;
+  return <WizardBody initialRole={initialRole} initialNext={initialNext} />;
 }
 
-function WizardBody({ initialRole }: OnboardingWizardProps) {
+function WizardBody({ initialRole, initialNext }: OnboardingWizardProps) {
   const { draft, update, reset } = useOnboardingDraft();
   // A decided draft always wins over ?role= — switching role mid-flow would
   // silently orphan the other flow's answers.
@@ -261,7 +263,11 @@ function WizardBody({ initialRole }: OnboardingWizardProps) {
 
         {isDone ? (
           <div className="mt-6">
-            <OnboardingComplete role={role} onRestart={handleRestart} />
+            <OnboardingComplete
+              role={role}
+              onRestart={handleRestart}
+              resumeHref={initialNext}
+            />
           </div>
         ) : (
           <form onSubmit={handleContinue} noValidate>

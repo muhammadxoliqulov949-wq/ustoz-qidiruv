@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { AuthPage } from "@/components/auth/auth-page";
 import { LoginForm } from "@/components/auth/login-form";
+import { parseSafeNext } from "@/lib/safe-next";
 
 /* -------------------------------------------------------------------------- */
 /* /login — phone + password entry for the (not yet connected) auth backend.     */
@@ -16,13 +17,20 @@ export const metadata: Metadata = {
   robots: { index: false, follow: true },
 };
 
-export default function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  // ?next= is whitelist-validated server-side (internal paths only — an
+  // open redirect is impossible) and only ever rendered as a plain link.
+  const next = parseSafeNext((await searchParams).next);
   return (
     <AuthPage
       title="Hisobingizga kiring"
       intro="Telefon raqami va parol — USTOZ’da hisob identifikatori telefon raqami."
     >
-      <LoginForm />
+      <LoginForm initialNext={next} />
     </AuthPage>
   );
 }

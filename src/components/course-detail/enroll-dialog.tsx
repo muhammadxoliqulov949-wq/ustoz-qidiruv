@@ -8,6 +8,11 @@ import { cn } from "@/lib/utils";
 export interface EnrollDialogProps {
   /** Course display title shown in the dialog summary. */
   courseTitle: string;
+  /** Phase 7: the real enrollment flow (server-built, canonical ?group=). */
+  flowHref: string;
+  /** Auth routes carrying the flow as their ?next= target. */
+  loginHref: string;
+  registerHref: string;
   /** Selected group summary line, e.g. "A guruhi · Du, Chor · soat 19:00". */
   groupSummary: string;
   /** Price line, e.g. "320 000 so'm / oyiga" or "Bepul". */
@@ -22,10 +27,11 @@ export interface EnrollDialogProps {
 
 /**
  * Enrollment entry point (Phase 4). Clicking never fakes enrollment: the
- * dialog shows the selected course/group summary and hands off to auth —
- * /login and /register are real routes since Phase 6; completing an
- * enrollment additionally needs the auth backend, so the copy below stays
- * honest. Self-contained (trigger + dialog) so the enrollment card and the
+ * dialog shows the selected course/group summary and hands off to the
+ * Phase 7 enrollment flow (/enroll/[slug]?group=) — the flow itself keeps
+ * honest prototype semantics (nothing is sent to a server). Kirish /
+ * Ro'yxatdan o'tish remain as secondary routes with ?next= back into the
+ * flow. Self-contained (trigger + dialog) so the enrollment card and the
  * mobile bar can each host one without shared client state; a future
  * checkout flow mounts over the same trigger slot.
  *
@@ -35,6 +41,9 @@ export interface EnrollDialogProps {
  */
 export function EnrollDialog({
   courseTitle,
+  flowHref,
+  loginHref,
+  registerHref,
   groupSummary,
   priceSummary,
   triggerLabel,
@@ -152,24 +161,36 @@ export function EnrollDialog({
                 </div>
               </dl>
 
-              {/* Step 2 — auth handoff (real routes since Phase 6) */}
+              {/* Step 2 — handoff into the enrollment flow (Phase 7) */}
               <p className="mt-4 text-sm text-ink-700">
-                Yozilish shaklini to‘ldirish va ustozga so‘rov yuborish uchun
-                hisob kerak bo‘ladi: telefon raqami va izoh so‘raladi. To‘lov
-                shartlarini ustoz bilan bevosita kelishasiz.
+                Yozilish shakli guruh, jadval va narx ma’lumotlarini o‘zi
+                olib kiradi — faqat ism, telefon va ixtiyoriy izoh
+                so‘raladi. To‘lov shartlarini ustoz bilan bevosita
+                kelishasiz.
               </p>
               <div className="mt-4 flex flex-col gap-2.5 pb-1">
-                <ButtonLink href="/login" size="lg" fullWidth>
-                  Kirish
+                <ButtonLink href={flowHref} size="lg" fullWidth>
+                  Yozilish shaklini to‘ldirish
                 </ButtonLink>
-                <ButtonLink href="/register" size="lg" variant="outline" fullWidth>
-                  Ro‘yxatdan o‘tish
-                </ButtonLink>
+                <div className="flex gap-2.5">
+                  <ButtonLink href={loginHref} variant="outline" size="sm" fullWidth>
+                    Kirish
+                  </ButtonLink>
+                  <ButtonLink
+                    href={registerHref}
+                    variant="outline"
+                    size="sm"
+                    fullWidth
+                  >
+                    Ro‘yxatdan o‘tish
+                  </ButtonLink>
+                </div>
               </div>
               <p className="pb-4 text-center text-xs text-ink-400">
-                Kirish va ro‘yxatdan o‘tish sahifalari ishlaydi; yozilishni
-                yakunlash uchun autentifikatsiya serveri ulangishi kerak —
-                hozircha yozilishni ustoz bilan bevosita ham kelishish mumkin.
+                Backend ulangaguncha yozilish shakli prototip sifatida
+                ishlaydi — so‘rov serverga yuborilmaydi. Shu sababli hisob
+                ham shart emas; yozilishni ustoz bilan bevosita ham
+                kelishish mumkin.
               </p>
             </div>
           </div>

@@ -3,7 +3,15 @@ import type { Course, CourseGroup } from "@/data/models";
 import { formatPrice } from "@/lib/format";
 import { SaveButton } from "@/components/ui/save-button";
 import { cn } from "@/lib/utils";
+import { withNext } from "@/lib/safe-next";
 import { EnrollDialog } from "./enroll-dialog";
+
+/** Canonical /enroll href — same “first group needs no param” rule as the
+ *  Phase 4 group picker, so links stay shareable and canonical. */
+function enrollFlowHref(course: Course, group: CourseGroup): string {
+  const base = `/enroll/${course.slug}`;
+  return group.id === course.detail.groups[0]?.id ? base : `${base}?group=${group.id}`;
+}
 
 export interface EnrollmentCardProps {
   course: Course;
@@ -47,6 +55,9 @@ export function EnrollmentCard({
   const full = group.seatsRemaining === 0;
   const { format, location } = course;
   const FormatIcon = format === "online" ? Wifi : MapPin;
+  const flowHref = enrollFlowHref(course, group);
+  const loginHref = withNext("/login", flowHref);
+  const registerHref = withNext("/register?role=student", flowHref);
 
   if (variant === "bar") {
     return (
@@ -74,6 +85,9 @@ export function EnrollmentCard({
           </div>
           <EnrollDialog
             courseTitle={course.title}
+            flowHref={flowHref}
+            loginHref={loginHref}
+            registerHref={registerHref}
             groupSummary={groupSummaryLine(group)}
             priceSummary={priceSummaryLine(course)}
             triggerLabel="Yozilish"
@@ -128,6 +142,9 @@ export function EnrollmentCard({
       <div className="mt-4">
         <EnrollDialog
           courseTitle={course.title}
+          flowHref={flowHref}
+          loginHref={loginHref}
+          registerHref={registerHref}
           groupSummary={groupSummaryLine(group)}
           priceSummary={priceSummaryLine(course)}
           triggerLabel="Kursga yozilish"

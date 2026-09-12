@@ -239,6 +239,40 @@ Phase 4 enrollment dialog keeps its architecture and only drops the
 `prefetch={false}` seams + updates the stale footnote). Auth pages are
 `robots: noindex, follow`.
 
+## Enrollment flow (Phase 7)
+
+`/enroll/[courseSlug]?group=<id>` hosts the enrollment wizard: course/group →
+student info → schedule confirmation → review → **honest prototype
+submission**. The route is server-resolved like the detail pages: unknown
+course 404s; a `?group=` pointing at an unknown or full group never gets
+silently replaced — it downgrades to an explicit selection state with a
+notice. Selection changes `router.replace` the query (shareable, canonical,
+no back-stack spam), so back/forward moves between pages, not steps; the
+step itself lives in the client flow and the furthest step resumes on
+refresh.
+
+`src/lib/enroll.ts` is the pure contract behind it all (EnrollCourseLite
+serialization, `resolveEnrollGroup`, the versioned/defensively-parsed
+`ustoz.enroll.draft.v1` codec, per-step validators, the single review
+projection, canonical href builders) — components stay presentational. The
+enrollment draft is deliberately SEPARATE from the Phase 6 onboarding
+draft; it prefills name/phone from it (labeled “Prototip prefill”, never
+account data) and structurally cannot hold passwords, tokens or session ids
+— QA asserts the raw JSON has none. Auth handoff: Kirish/Ro‘yxatdan links
+everywhere carry `?next=`, validated by `lib/safe-next.ts` (internal paths
+only — protocol-relative, schemes, backslashes and oversized values are
+dropped to null), so register → onboarding can hand the student back into
+the exact enroll URL. The Phase 4 enrollment card/dialog were only wired to
+the flow (the dialog now leads with “Yozilish shaklini to‘ldirish”
+carrying the selected group); nothing else about that surface changed.
+
+Submission semantics: the review CTA flips a UI flag after a short busy
+state and shows “So‘rov tayyor.” plus “Backend hali ulanmaganligi sababli
+so‘rov ustozga yuborilmadi” — no “yuborildi”, no receipt, no fake seat
+hold. Price rows state the payment deferral; free courses show “Bepul” with
+no payment step at all. Full groups (seatsRemaining 0) are unselectable with
+a text “Joy qolmagan” state, never color-only.
+
 ## Conventions
 
 - Server components by default; `"use client"` only where state/events live
@@ -253,13 +287,16 @@ Phase 4 enrollment dialog keeps its architecture and only drops the
 - Per-link prefetch is declared in nav data (`site.ts`): unbuilt routes set
   `prefetch: false`; built routes omit the flag (/courses, /courses/[slug]
   and /teachers routes since Phase 3–5; /login, /register and
-  /onboarding since Phase 6).
+  /onboarding since Phase 6; /enroll/[courseSlug] since Phase 7).
 
 ## Deliberately deferred
 
 Auth backend wiring (accounts, sessions, OTP, password recovery — the
-Phase 6 screens are UI-only),
-student/teacher dashboards, real onboarding persistence, course creation
-(teacher flow deliberately does not collect it), pagination (catalogs fit
-one page), payment, messaging, save persistence, real API, premium motion
-pass, dark mode evaluation, i18n (`/uz`, `/ru`…), mobile bottom navigation.
+Phase 6 screens are UI-only), real enrollment submission (the Phase 7 flow
+stops at the honest “request prepared” state; teacher-side request handling,
+seat holds and notifications come with the backend), payment integration
+(never simulated), student/teacher dashboards, real onboarding
+persistence, course creation (teacher flow deliberately does not collect
+it), pagination (catalogs fit one page), messaging, save persistence, real
+API, premium motion pass, dark mode evaluation, i18n (`/uz`, `/ru`…),
+mobile bottom navigation.
