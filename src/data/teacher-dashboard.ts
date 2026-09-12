@@ -60,6 +60,33 @@ function toCourseLite(courseId: string): TeacherCourseLite | null {
       startDate: group.startDate,
       startDateLabel: formatDateUz(group.startDate),
     })),
+    // Authoring snapshot (Phase 10). Derived here, never stored anywhere.
+    authoringSeed: {
+      title: course.title,
+      categoryId: course.categoryId,
+      level: course.level,
+      summary: course.detail.summary,
+      teachingLanguages: course.detail.teachingLanguages,
+      format: course.format,
+      city: course.city,
+      location: course.location ?? "",
+      priceUzs: course.priceUzs,
+      groups: course.detail.groups.map((group) => ({
+        title: group.title,
+        days: group.days,
+        startTime: group.startTime,
+        capacity: group.capacity,
+        startDate: group.startDate,
+      })),
+      syllabus: course.detail.syllabus.map((module) => ({
+        title: module.title,
+        description: module.description,
+        lessons: module.lessons,
+      })),
+      longDescription: course.detail.longDescription,
+      audience: course.detail.audience,
+      learningOutcomes: course.detail.learningOutcomes,
+    },
   };
 }
 

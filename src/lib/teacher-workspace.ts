@@ -7,6 +7,7 @@ import {
   type EnrollGroupLite,
 } from "./enroll";
 import type { TeacherAnswers } from "./onboarding";
+import type { CourseAuthoringSeed } from "./course-draft";
 
 /* -------------------------------------------------------------------------- */
 /* Teacher workspace model — Phase 9. PURE module (no React, no DOM, no        */
@@ -51,6 +52,9 @@ export interface TeacherCourseLite {
   publishedAt: string;
   publishedAtLabel: string;
   groups: TeacherGroupLite[];
+  /** Phase 10: authoring-shaped snapshot used ONLY by "copy into a new local
+   *  draft". Read-only projection of the canonical record. */
+  authoringSeed: CourseAuthoringSeed;
 }
 
 export interface TeacherWorkspaceLite {

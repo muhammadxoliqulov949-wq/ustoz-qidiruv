@@ -7,6 +7,7 @@ import { Badge, ButtonLink, Card } from "@/components/ui";
 import { AuthNotice } from "@/components/auth/auth-notice";
 import { EmptyState } from "@/components/dashboard/empty-state";
 import { WorkspaceGate } from "./workspace-gate";
+import { CopyCourseToDraftButton, CourseDraftsPanel } from "./course-drafts-panel";
 import type { TeacherCourseLite, TeacherDirectory } from "@/lib/teacher-workspace";
 
 /* -------------------------------------------------------------------------- */
@@ -14,7 +15,8 @@ import type { TeacherCourseLite, TeacherDirectory } from "@/lib/teacher-workspac
 /* course.teacher.id relationship (data/teacher-dashboard.ts). No course record  */
 /* is duplicated here; every field is a display string from that projection.     */
 /* Card/list layout (not a wide table) so 390px stays readable.                  */
-/* Read-only by design: create/edit/delete belong to Phase 10.                   */
+/* Canonical entries stay READ-ONLY (Phase 10 rule): the only write action is    */
+/* "copy into a new LOCAL draft", which creates a separate prototype record.     */
 /* -------------------------------------------------------------------------- */
 
 function CourseItem({ course }: { course: TeacherCourseLite }) {
@@ -115,8 +117,9 @@ function CourseItem({ course }: { course: TeacherCourseLite }) {
 
       <div className="flex flex-wrap gap-2">
         <ButtonLink href={`/courses/${course.slug}`} variant="outline" size="sm">
-          Ommaviy sahifa
+          Ko‘rish (ommaviy sahifa)
         </ButtonLink>
+        <CopyCourseToDraftButton courseId={course.id} seed={course.authoringSeed} />
       </div>
     </Card>
   );
@@ -127,10 +130,11 @@ export function TeacherCoursesPanel({ directory }: { directory: TeacherDirectory
     <WorkspaceGate directory={directory} heading="Kurslarim" minHeight="min-h-[40rem]">
       {(workspace) => (
         <div className="flex flex-col gap-6">
-          <AuthNotice title="Kurslarni tahrirlash hali yo‘q">
-            Quyidagi ro‘yxat katalogdagi haqiqiy kurslaringizdan olinadi. Kurs
-            yaratish, tahrirlash va o‘chirish keyingi bosqichda qo‘shiladi —
-            hozircha panel faqat ko‘rish uchun.
+          <AuthNotice title="Katalog kurslari o‘zgarmas">
+            Quyidagi ro‘yxat katalogdagi haqiqiy kurslaringizdan olinadi va faqat
+            ko‘rish uchun — seed ma’lumot hech qachon o‘zgartirilmaydi. Tahrirlash
+            uchun kursdan alohida mahalliy qoralama nusxasi yaratiladi. Yangi kurs
+            qoralamasini esa quyidagi bo‘limdan boshlaysiz.
           </AuthNotice>
 
           <section aria-labelledby="tw-courses" className="flex flex-col gap-4">
@@ -144,7 +148,7 @@ export function TeacherCoursesPanel({ directory }: { directory: TeacherDirectory
             {workspace.courses.length === 0 ? (
               <EmptyState title="Katalogda kursingiz yo‘q">
                 Bu ustoz profiliga bog‘langan e’lon qilingan kurs topilmadi.
-                Kurs qo‘shish oqimi keyingi bosqichda ishga tushadi.
+                Quyida yangi mahalliy kurs qoralamasini boshlashingiz mumkin.
                 <p className="mt-3">
                   <Link
                     href={`/teachers/${workspace.slug}`}
@@ -164,6 +168,8 @@ export function TeacherCoursesPanel({ directory }: { directory: TeacherDirectory
               </ul>
             )}
           </section>
+
+          <CourseDraftsPanel />
         </div>
       )}
     </WorkspaceGate>
