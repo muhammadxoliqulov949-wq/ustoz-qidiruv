@@ -1,16 +1,24 @@
 import type { Metadata } from "next";
-import { courseAuthoringOptions } from "@/data/course-authoring";
-import { teacherWorkspaceOptions } from "@/data/teacher-dashboard";
-import { CourseEditor } from "@/components/teacher-dashboard/course-editor";
+import { categories } from "@/data/categories";
+import { onboardingCities } from "@/lib/onboarding";
+import { NewCourseForm } from "@/components/teacher-dashboard/new-course-form";
+import { requireRolePage } from "@/server/auth/guards";
 
 export const metadata: Metadata = { title: "Yangi kurs" };
 
-/* /teacher/dashboard/courses/new — creates ONE local prototype draft for the
- * current workspace and immediately replaces the URL with the draft's stable
- * edit route, so a refresh resumes instead of creating another draft.
- * Course management deliberately lives inside the teacher dashboard; no public
- * dynamic route is added, so /courses/[slug] stays canonical-only. */
-export default function NewCoursePage() {
+export const dynamic = "force-dynamic";
+
+/* /teacher/dashboard/courses/new — Phase 12.
+ *
+ * Creates ONE server-side draft owned by the signed-in teacher, then redirects
+ * to its stable edit route so a refresh resumes that row instead of creating
+ * another. The draft is private: it is stored with status 'draft' and the
+ * public queries never select it, so filling it in completely does not publish
+ * it. Course management stays inside the dashboard; no public dynamic route is
+ * added. */
+export default async function NewCoursePage() {
+  await requireRolePage("teacher", "/teacher/dashboard/courses/new");
+
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
@@ -18,14 +26,13 @@ export default function NewCoursePage() {
           Yangi kurs qoralamasi
         </h1>
         <p className="max-w-prose text-base text-ink-500">
-          Ma’lumotlar bosqichma-bosqich to‘ldiriladi va faqat shu brauzerda
-          saqlanadi — katalogda chiqmaydi.
+          Qoralama hisobingizga bog‘lanib serverda saqlanadi. U katalogda
+          ko‘rinmaydi — to‘liq to‘ldirilgani uni avtomatik e’lon qilmaydi.
         </p>
       </header>
-      <CourseEditor
-        draftId={null}
-        options={courseAuthoringOptions}
-        teachers={teacherWorkspaceOptions.map(({ id, name }) => ({ id, name }))}
+      <NewCourseForm
+        categories={categories.map(({ id, name }) => ({ id, name }))}
+        cities={[...onboardingCities]}
       />
     </div>
   );

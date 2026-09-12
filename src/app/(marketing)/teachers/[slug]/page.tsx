@@ -10,11 +10,8 @@ import { CourseCard } from "@/components/ui/course-card";
 import { Rating, VerifiedMark } from "@/components/ui/rating";
 import { SectionHeader } from "@/components/ui/section-header";
 import { TeacherReviews } from "@/components/teachers/teacher-reviews";
-import { teacherRowBySlug } from "@/data/teacher-rows";
-import type { Course } from "@/data/models";
-import { teachers } from "@/data/teachers";
-import { courses } from "@/data/courses";
 import { cityLabel, courseFormatLabels } from "@/data/courses";
+import { getPublicTeacherBySlug, listPublicTeacherSlugs } from "@/server/public-repo";
 import { buildTeacherFaq } from "@/data/teacher-faq";
 import { formatCount, formatPrice } from "@/lib/format";
 import { cn, focusRing } from "@/lib/utils";
@@ -22,19 +19,19 @@ import { cn, focusRing } from "@/lib/utils";
 /* -------------------------------------------------------------------------- */
 /* /teachers/[slug] — the teacher profile (Phase 5). Fully server-rendered;        */
 /* the only interactive surfaces are links and native <details> FAQ. Course,       */
-/* review and FAQ content all flow from the canonical data modules, so the          */
-/* profile and the course detail pages are projections of the same records.         */
+/* Phase 12: the profile, its facets and its ACTIVE COURSES all come from one      */
+/* database read. The course list is the set of published courses whose            */
+/* teacher_user_id FK points at this profile, so the relation is owned in exactly   */
+/* one place and cannot be duplicated or contradicted.                              */
+/*                                                                                  */
+/* RENDERING: dynamic SSR — a teacher's published course set changes at runtime.    */
 /* -------------------------------------------------------------------------- */
 
-const coursesByTeacher = new Map<string, Course[]>();
-for (const course of courses) {
-  const list = coursesByTeacher.get(course.teacher.id);
-  if (list) list.push(course);
-  else coursesByTeacher.set(course.teacher.id, [course]);
-}
+export const dynamic = "force-dynamic";
 
-export function generateStaticParams() {
-  return teachers.map((teacher) => ({ slug: teacher.slug }));
+export async function generateStaticParams() {
+  const slugs = await listPublicTeacherSlugs();
+  return slugs.map((slug) => ({ slug }));
 }
 
 export async function generateMetadata({
@@ -43,8 +40,9 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const row = teacherRowBySlug.get(slug);
-  if (!row) return { title: "Ustoz topilmadi" };
+  const found = await getPublicTeacherBySlug(slug);
+  if (!found) return { title: "Ustoz topilmadi" };
+  const { row } = found;
   const { teacher } = row;
   return {
     title: `${teacher.name} — ${teacher.specialization}`,
@@ -62,10 +60,10 @@ export default async function TeacherProfilePage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const row = teacherRowBySlug.get(slug);
-  if (!row) notFound();
+  const found = await getPublicTeacherBySlug(slug);
+  if (!found) notFound();
+  const { row, courses: own } = found;
   const { teacher, formats, cities, minPriceUzs } = row;
-  const own = coursesByTeacher.get(teacher.id) ?? [];
   const faq = buildTeacherFaq(row);
 
   return (

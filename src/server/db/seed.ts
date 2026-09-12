@@ -5,18 +5,22 @@ import { teachers as canonicalTeachers } from "@/data/teachers";
 import { hashPassword } from "../auth/password";
 
 /* -------------------------------------------------------------------------- */
-/* DEVELOPMENT seed — Phase 11.                                                */
+/* DEVELOPMENT seed — updated for Phase 12.                                    */
 /*                                                                              */
-/* CANONICAL SOURCE DURING PHASE 11: the TypeScript datasets in src/data.       */
-/* The public marketplace (/courses, /teachers, …) still reads them directly    */
-/* and is byte-for-byte unchanged. This importer is a ONE-WAY development       */
-/* projection of those datasets into the database so the real schema, the real  */
-/* constraints and the real queries can be exercised end to end.                */
+/* THE DATABASE IS NOW THE RUNTIME SOURCE OF TRUTH for the public marketplace.  */
+/* The TypeScript datasets in src/data are demoted to SEED INPUT: they are read */
+/* here (and by pure fixture tests) but no longer by any public page at         */
+/* runtime. There is exactly one active source at runtime.                      */
 /*                                                                              */
-/* It is explicitly NOT a migration of the marketplace: switching public reads  */
-/* to the DB is Phase 12 work and is called out as such in the README. Until    */
-/* then the two do not diverge because the DB copy is regenerated from the      */
-/* canonical arrays and is never edited by hand.                                */
+/* Seeded catalogue courses are inserted as `published` because they ARE the    */
+/* approved public catalogue. Teacher-created courses start as `draft` and only */
+/* an explicit promotion makes them public — a complete draft never publishes   */
+/* itself.                                                                      */
+/*                                                                              */
+/* Seeded teachers are marked `isPublic` because they own published courses,    */
+/* but their VERIFICATION stays honestly `unverified`: no approval workflow     */
+/* exists, and the canonical `verified` flag was presentation data, not a       */
+/* moderation decision.                                                        */
 /*                                                                              */
 /* Seeded accounts get a password from DEV_SEED_PASSWORD (or a random one that  */
 /* is printed once); no credential is hard-coded and no account is a login      */
@@ -89,6 +93,14 @@ export async function seedDevelopmentData(): Promise<SeedSummary> {
         experienceYears: teacher.experienceYears,
         bio: teacher.bio,
         approach: teacher.detail.approach,
+        photo: teacher.photo,
+        specialization: teacher.specialization,
+        // Marketplace aggregates stored as integers (x10) to keep sorting exact.
+        ratingX10: Math.round(teacher.rating * 10),
+        reviewsCount: teacher.reviews,
+        studentsCount: teacher.students,
+        // Part of the seeded public catalogue.
+        isPublic: true,
         // Seed teachers are NOT auto-verified: verification is a real workflow
         // that does not exist yet (canonical `verified` is presentation data).
         verification: "unverified",
@@ -118,7 +130,16 @@ export async function seedDevelopmentData(): Promise<SeedSummary> {
         audience: course.detail.audience,
         learningOutcomes: course.detail.learningOutcomes,
         teachingLanguages: course.detail.teachingLanguages,
-        status: "ready",
+        schedule: course.schedule,
+        ratingX10: Math.round(course.rating * 10),
+        reviewsCount: course.reviews,
+        studentsCount: course.students,
+        publishedAt: course.publishedAt,
+        keywords: course.keywords,
+        image: course.image,
+        pricePeriod: course.detail.pricePeriod,
+        // The seeded catalogue IS the approved public marketplace.
+        status: "published",
       });
       courseCount += 1;
 
@@ -129,8 +150,12 @@ export async function seedDevelopmentData(): Promise<SeedSummary> {
           title: group.title,
           days: group.days,
           startTime: group.startTime,
-          // Only planned capacity crosses over. seatsRemaining is live
-          // inventory the backend does not own yet, so it is NOT imported.
+          format: group.format,
+          location: group.location,
+          // Only PLANNED capacity crosses over. `seatsRemaining` is live
+          // inventory the backend does not own, so it is NOT imported and
+          // not invented: public availability is derived from real
+          // enrollment rows instead (see repo.ts).
           capacity: group.capacity,
           startDate: group.startDate,
         });

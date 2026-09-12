@@ -4,12 +4,15 @@ import { notFound } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 import { CoursesBrowser } from "@/components/courses/courses-browser";
 import { categories } from "@/data/categories";
-import { courses } from "@/data/courses";
+import { listPublicCourses } from "@/server/public-repo";
 import { parseCourseBrowseParams } from "@/lib/course-search";
 
 /* -------------------------------------------------------------------------- */
 /* /categories/[slug] — a category-scoped view of the SAME results engine         */
 /* as /courses (CoursesBrowser), with the category locked in the path rather      */
+/* than in the query string. Phase 12: the category filter is pushed into SQL      */
+/* (categoryId + published), so the page never loads the full catalogue.           */
+/* RENDERING: dynamic SSR, same reasoning as /courses.                             */
 /* than duplicated as a query param. Facets (mode/price/city/sort/q) live on      */
 /* the query string of this route — links are rewritten against the basePath.     */
 /* -------------------------------------------------------------------------- */
@@ -44,7 +47,7 @@ export default async function CategoryResultsPage({
   if (!category) notFound();
 
   const browseParams = parseCourseBrowseParams(await searchParams);
-  const source = courses.filter((course) => course.categoryId === category.id);
+  const source = await listPublicCourses(browseParams, { categoryId: category.id });
 
   return (
     <CoursesBrowser

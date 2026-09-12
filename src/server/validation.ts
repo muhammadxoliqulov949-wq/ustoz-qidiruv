@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { categories } from "@/data/categories";
 import {
   extractUzPhoneDigits,
   UZ_MOBILE_PREFIXES,
@@ -27,6 +28,11 @@ import {
 const CITY_SET = new Set(onboardingCities);
 const LANG_SET = new Set(onboardingLanguages);
 const CATEGORY_SET = new Set(onboardingCategories.map((category) => category.slug));
+/* Teacher SUBJECTS are stored as category slugs, but `courses.category_id`
+ * stores the category ID. They are different vocabularies, so course schemas
+ * validate against the id set — validating a course against slugs would
+ * reject every legitimate value. */
+const CATEGORY_ID_SET = new Set(categories.map((category) => category.id));
 
 /** Any accepted human input → canonical "+998XXXXXXXXX", or a validation error. */
 export const phoneSchema = z
@@ -135,7 +141,7 @@ export const cancelEnrollmentSchema = z.object({ requestId: idSchema }).strict()
 export const courseDraftCreateSchema = z
   .object({
     title: z.string().trim().min(8).max(120),
-    categoryId: z.string().refine((slug) => CATEGORY_SET.has(slug), "Noma’lum yo‘nalish."),
+    categoryId: z.string().refine((id) => CATEGORY_ID_SET.has(id), "Noma’lum yo‘nalish."),
     level: z.enum(["boshlangich", "orta", "yuqori"]),
     format: z.enum(["online", "offline", "hybrid"]),
     city: citySchema,
@@ -153,6 +159,63 @@ export const courseDraftCreateSchema = z
         : value.city !== null,
     { message: "Oflayn kurs uchun shahar majburiy; onlayn kursda manzil bo‘lmaydi.", path: ["city"] },
   );
+
+/** Editable body of an owned course draft. Same shape as create, no id/status. */
+export const courseDraftUpdateSchema = z
+  .object({
+    title: z.string().trim().min(8).max(120),
+    categoryId: z.string().refine((id) => CATEGORY_ID_SET.has(id), "Noma’lum yo‘nalish."),
+    level: z.enum(["boshlangich", "orta", "yuqori"]),
+    format: z.enum(["online", "offline", "hybrid"]),
+    city: citySchema,
+    location: z.string().trim().max(160).nullable(),
+    priceUzs: z.number().int().min(0).max(100_000_000),
+    summary: z.string().trim().min(40).max(400),
+    longDescription: z.string().trim().max(4000),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      value.format === "online"
+        ? value.city === null && (value.location === null || value.location === "")
+        : value.city !== null,
+    { message: "Oflayn kurs uchun shahar majburiy; onlayn kursda manzil bo‘lmaydi.", path: ["city"] },
+  );
+
+const WEEKDAYS = ["Du", "Se", "Ch", "Pa", "Ju", "Sh", "Ya"] as const;
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * A course group. Only PLANNED data is accepted: title, days, times, start
+ * date and capacity. There is no seatsRemaining input — occupancy is derived
+ * from real enrollment rows and must never be posted by a client.
+ */
+export const courseGroupSchema = z
+  .object({
+    courseId: idSchema,
+    title: z.string().trim().min(2).max(80),
+    days: z.array(z.enum(WEEKDAYS)).min(1).max(7),
+    startTime: z.string().regex(TIME, "Vaqt HH:MM ko‘rinishida bo‘lsin."),
+    endTime: z.string().regex(TIME, "Vaqt HH:MM ko‘rinishida bo‘lsin."),
+    startDate: z.string().regex(DATE, "Sana YYYY-MM-DD ko‘rinishida bo‘lsin."),
+    capacity: z.number().int().min(1).max(500),
+  })
+  .strict()
+  .refine((value) => value.endTime > value.startTime, {
+    message: "Tugash vaqti boshlanishdan keyin bo‘lsin.",
+    path: ["endTime"],
+  });
+
+/** One syllabus module. Position is assigned by the server, never posted. */
+export const syllabusModuleSchema = z
+  .object({
+    courseId: idSchema,
+    title: z.string().trim().min(3).max(120),
+    description: z.string().trim().max(600),
+    lessons: z.number().int().min(1).max(200),
+  })
+  .strict();
 
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;

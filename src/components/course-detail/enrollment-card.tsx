@@ -41,7 +41,7 @@ export function priceSummaryLine(course: Course): string {
 
 /**
  * Enrollment entry point — price, unit, format, the currently selected
- * group summary, mock availability, primary CTA (opens the handoff
+ * group summary, derived availability, primary CTA (opens the handoff
  * dialog) and the secondary save action. Solid surface, never glass.
  * The summary is a pure projection of the `?group=` URL state the page
  * resolved server-side, so card and schedule section can never drift.

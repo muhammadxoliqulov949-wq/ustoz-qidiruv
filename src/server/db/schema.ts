@@ -44,7 +44,16 @@ export const courseFormat = pgEnum("course_format", ["online", "offline", "hybri
 export const courseLevel = pgEnum("course_level", ["boshlangich", "orta", "yuqori"]);
 
 /** Phase 11 keeps the honest two-state lifecycle from Phase 10. */
-export const courseStatus = pgEnum("course_status", ["draft", "ready"]);
+/**
+ * Phase 12 lifecycle. `published` is added because the runtime genuinely uses
+ * it: public marketplace queries select ONLY this value. A finished draft does
+ * NOT become public on its own — promotion is an explicit, validated action.
+ * Nothing beyond these three exists, because no moderation workflow exists.
+ */
+export const courseStatus = pgEnum("course_status", ["draft", "ready", "published"]);
+
+/** Representative lesson time-of-day — drives the Phase 3 schedule facet. */
+export const courseSchedule = pgEnum("course_schedule", ["morning", "day", "evening"]);
 
 /**
  * Conservative enrollment states. approved/rejected/paid/confirmed are
@@ -152,8 +161,19 @@ export const teacherProfiles = pgTable(
     experienceYears: integer("experience_years"),
     bio: text("bio"),
     approach: text("approach"),
-    /** Defaults to UNVERIFIED. Nothing in Phase 11 can set 'verified'. */
+    /** Defaults to UNVERIFIED. No product path sets 'verified'. */
     verification: verificationStatus("verification").notNull().default("unverified"),
+    /* ------------- Phase 12 public-profile parity columns ------------- */
+    photo: text("photo"),
+    /** Short public label, e.g. "IELTS va umumiy ingliz tili". */
+    specialization: text("specialization"),
+    ratingX10: integer("rating_x10").notNull().default(0),
+    reviewsCount: integer("reviews_count").notNull().default(0),
+    studentsCount: integer("students_count").notNull().default(0),
+    /** Only a profile that is public appears in /teachers. Teacher accounts
+     *  created through registration are NOT public until they have a
+     *  published course — see repo.listPublicTeachers(). */
+    isPublic: boolean("is_public").notNull().default(false),
     onboardingCompleted: boolean("onboarding_completed").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -172,6 +192,10 @@ export const teacherProfiles = pgTable(
       "teacher_profiles_experience_check",
       sql`${table.experienceYears} IS NULL OR (${table.experienceYears} >= 0 AND ${table.experienceYears} <= 60)`,
     ),
+    check("teacher_profiles_rating_check", sql`${table.ratingX10} BETWEEN 0 AND 50`),
+    check("teacher_profiles_reviews_check", sql`${table.reviewsCount} >= 0`),
+    check("teacher_profiles_students_check", sql`${table.studentsCount} >= 0`),
+    index("teacher_profiles_public_idx").on(table.isPublic),
   ],
 );
 
@@ -200,12 +224,45 @@ export const courses = pgTable(
     learningOutcomes: text("learning_outcomes").array().notNull().default(sql`'{}'::text[]`),
     teachingLanguages: text("teaching_languages").array().notNull().default(sql`'{}'::text[]`),
     status: courseStatus("status").notNull().default("draft"),
+    /* ---------------------------------------------------------------------
+     * Phase 12 marketplace parity columns. Each one exists because the
+     * APPROVED public UI already renders it; none is speculative.
+     * ------------------------------------------------------------------ */
+    schedule: courseSchedule("schedule").notNull().default("evening"),
+    /** Marketplace aggregate, 0..5 stored x10 as an integer to avoid float
+     *  drift in sorting (45 = 4.5). Displayed as one decimal. */
+    ratingX10: integer("rating_x10").notNull().default(0),
+    reviewsCount: integer("reviews_count").notNull().default(0),
+    studentsCount: integer("students_count").notNull().default(0),
+    /** ISO "YYYY-MM-DD" — the deterministic "Eng yangi" sort key. Set when a
+     *  course is first published; null while it is only a draft. */
+    publishedAt: text("published_at"),
+    /** Lowercase search synonyms; part of the SQL search haystack. */
+    keywords: text("keywords").array().notNull().default(sql`'{}'::text[]`),
+    image: text("image"),
+    pricePeriod: text("price_period").notNull().default("month"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     unique("courses_slug_key").on(table.slug),
     index("courses_teacher_idx").on(table.teacherUserId),
+    // Public listing reads always filter on status; the partial index keeps
+    // that path cheap without indexing the (larger) draft space.
+    index("courses_public_idx").on(table.status, table.categoryId),
+    index("courses_published_at_idx").on(table.publishedAt),
+    check("courses_rating_check", sql`${table.ratingX10} BETWEEN 0 AND 50`),
+    check("courses_reviews_check", sql`${table.reviewsCount} >= 0`),
+    check("courses_students_check", sql`${table.studentsCount} >= 0`),
+    check(
+      "courses_published_at_format",
+      sql`${table.publishedAt} IS NULL OR ${table.publishedAt} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'`,
+    ),
+    // A published course must carry the date the listing went public.
+    check(
+      "courses_published_requires_date",
+      sql`${table.status} <> 'published' OR ${table.publishedAt} IS NOT NULL`,
+    ),
     check("courses_slug_format", sql`${table.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`),
     check("courses_price_check", sql`${table.priceUzs} >= 0 AND ${table.priceUzs} <= 100000000`),
     check("courses_title_check", sql`length(btrim(${table.title})) BETWEEN 8 AND 120`),
@@ -232,6 +289,14 @@ export const courseGroups = pgTable(
     days: text("days").array().notNull().default(sql`'{}'::text[]`),
     /** "HH:MM". */
     startTime: text("start_time").notNull(),
+    /** Optional: the canonical dataset only records a start time, so this is
+     *  nullable rather than back-filled with an invented duration. Teacher
+     *  authoring collects it, so new groups have it. */
+    endTime: text("end_time"),
+    /** A group may run in a different mode than its course (hybrid courses
+     *  have both online and offline groups) — the detail page shows this. */
+    format: courseFormat("format").notNull().default("online"),
+    location: text("location"),
     /** Planned seats. NOTE: there is deliberately no occupied-seat column. */
     capacity: integer("capacity").notNull(),
     startDate: text("start_date").notNull(),
@@ -243,6 +308,10 @@ export const courseGroups = pgTable(
     index("course_groups_course_idx").on(table.courseId),
     check("course_groups_capacity_check", sql`${table.capacity} BETWEEN 1 AND 500`),
     check("course_groups_time_format", sql`${table.startTime} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'`),
+    check(
+      "course_groups_end_time_format",
+      sql`${table.endTime} IS NULL OR (${table.endTime} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' AND ${table.endTime} > ${table.startTime})`,
+    ),
     check("course_groups_date_format", sql`${table.startDate} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'`),
     check("course_groups_days_check", sql`coalesce(array_length(${table.days}, 1), 0) >= 1`),
   ],

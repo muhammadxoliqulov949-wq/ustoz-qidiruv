@@ -432,12 +432,101 @@ They are separate on purpose.
 
 ## Which source is canonical (important)
 
-During Phase 11 **`src/data/*` remains the canonical source for the public
-marketplace.** `/courses`, `/courses/[slug]`, `/teachers` and `/teachers/[slug]`
-still read it and are byte-for-byte unchanged. The database copy is a
-development projection only. Switching public reads to the database is
-**Phase 12** — doing it now would risk the public catalogue for no user-facing
-gain.
+**As of Phase 12 the database is the runtime source of truth for the public
+marketplace.** `/courses`, `/courses/[slug]`, `/teachers`, `/teachers/[slug]`
+and `/categories/[slug]` read PostgreSQL through `src/server/public-repo.ts`.
+There is exactly one active public source; `src/data/*` is now **seed input,
+fixture data and static site copy only**.
+
+### `src/data/*` runtime matrix
+
+| Module | Role after Phase 12 |
+|---|---|
+| `courses.ts`, `teachers.ts` | **Seed-only** for the course/teacher records. The exported *label maps* (`courseFormatLabels`, `courseLevelLabels`, `cityLabel`) remain runtime presentation helpers — they are static vocabulary, not marketplace data. |
+| `teacher-rows.ts`, `course-details.ts` | **Seed/reference only.** The equivalent read model is now derived in SQL by `listPublicTeachers()`. |
+| `categories.ts` | **Runtime, static taxonomy.** Six fixed categories used for routing, labels and the authoring form. Not marketplace inventory. |
+| `reviews.ts` | **Runtime read-only fixtures**, joined to DB courses by stable course id. See "Reviews and FAQ" below. |
+| `course-faq.ts`, `teacher-faq.ts` | **Runtime pure functions.** They take a `Course`/`TeacherRow` (now DB-projected) and compute FAQ text. They hold no records. |
+| `site.ts` | **Runtime static copy** (page titles, intros, footer). |
+| `dashboard-catalog.ts`, `teacher-dashboard.ts`, `teacher-profiles.ts`, `course-authoring.ts` | **Legacy prototype projections.** No longer used by the primary teacher dashboard, which reads the database. Retained for the legacy local-draft editor and option lists. |
+| `models.ts` | **Runtime types.** The repository projects DB rows into these exact types. |
+
+The rule that matters: **no public marketplace page imports a canonical
+`courses`/`teachers` array at runtime.**
+
+## Course lifecycle and visibility
+
+`draft → ready → published`. Only three values exist, and each one is used:
+
+* `draft` — a teacher's private work in progress.
+* `ready` — the teacher marked it finished. **Still private.**
+* `published` — in the public catalogue. Requires `published_at` (DB CHECK).
+
+There is **no approval/rejection/suspension workflow and no teacher-facing
+publish button**, because no moderation system exists and inventing one would be
+fake. A complete draft therefore never publishes itself. Seeded catalogue rows
+are inserted as `published`; everything a teacher creates starts as `draft`.
+
+**Visibility is enforced in SQL, not in the UI.** Every public query filters
+`status = 'published'`, so a draft is never selected — it does not appear in
+listings, search, teacher profiles or `generateStaticParams`, its slug 404s, and
+`enrollment` refuses to target it.
+
+Teacher profiles are public only when `is_public` is set *and* they own at least
+one published course. **Verification remains honestly `unverified`** for every
+seeded and registered teacher; there is no approval workflow to grant it.
+
+## Reviews and FAQ
+
+Reviews stay **read-only fixtures** (`src/data/reviews.ts`), joined to database
+courses by stable course id. There is no reviews table, no submission path and
+no UI control implying one. Building a reviews table with no way to earn a
+review would be a pretend system, so writing reviews is explicitly deferred.
+FAQ content is computed by pure functions from the (now DB-backed) course and
+teacher records.
+
+## Rendering and caching
+
+| Route | Mode | Why |
+|---|---|---|
+| `/courses`, `/categories/[slug]` | Dynamic SSR | Results depend on the URL *and* live DB state; a build-time snapshot would go stale the moment a course changes. |
+| `/courses/[slug]` | Dynamic SSR | Seat availability is derived from live enrollment rows. `generateStaticParams` still enumerates published slugs; unknown slugs 404 at request time. |
+| `/teachers`, `/teachers/[slug]` | Dynamic SSR | The roster and each profile's course set change at runtime. |
+| All `/dashboard` and `/teacher/dashboard` routes | Dynamic | Account-sensitive; never prerendered. |
+
+Writes call `revalidatePath()` for the affected surfaces (`/courses`,
+`/teachers`, the course's public page and the teacher dashboard), so data is not
+served stale after an edit.
+
+## Seat availability is derived, never stored
+
+There is no `seats_remaining` column and no occupancy counter. Remaining seats =
+`capacity − submitted enrollment requests`, computed at read time from real
+rows. Nothing is optimistically decremented and no availability number is
+invented.
+
+## Server-side course management
+
+`src/server/actions/course-manage.ts` implements create/update, groups, ordered
+syllabus modules, the `draft ⇄ ready` transition and course copy. Every action:
+
+1. requires a teacher session (`requireRole`);
+2. parses input with a `.strict()` Zod schema, so `status`, `teacherUserId`,
+   `slug`, `position` and `seatsRemaining` are **rejected** if posted;
+3. puts ownership in the SQL predicate, so another teacher's row matches nothing
+   and id enumeration returns an indistinguishable "not found";
+4. wraps multi-row work in a transaction.
+
+Syllabus order is server-owned: `add` computes `max(position)+1`, and a move
+sends only an id plus a direction — the server reads the current order and swaps
+two positions inside one transaction (parking above the maximum first, because
+`position` is unique per course and CHECKed `>= 1`). Copy produces a new private
+draft with a fresh unique slug, never mutates the original, and does not carry
+over rating, reviews, students, `published_at` or any enrollment state.
+
+Slugs are always server-generated and uniqueness is enforced by a DB constraint;
+a client can never supply or claim one, and a slug is not rewritten on edit, so
+public URLs stay stable.
 
 ## Auth architecture
 
@@ -479,13 +568,13 @@ Nothing was silently deleted; existing browser data still parses.
 | `ustoz.enroll.draft.v1` | **B — retained, demoted** | In-progress form recovery. A signed-in student's submission now writes a real `enrollment_requests` row. |
 | `ustoz.saved.v1` | **C — deferred** | Saved courses/teachers stay browser-local; documented as such in the UI. Phase 12. |
 | `ustoz.teacher.workspace.v1` | **A — replaced** | Superseded by the session. Read only behind the demo flag; the stored value grants nothing. |
-| `ustoz.course.drafts.v1` | **C — deferred** | NOT auto-migrated. Importing a local draft into a server row needs an explicit, user-initiated action; a silent upload would be a data-ownership surprise. |
+| `ustoz.course.drafts.v1` | **C — retained and labelled (Phase 12)** | Still NOT auto-migrated, not uploaded and not deleted. The teacher dashboard now *detects* these drafts and lists them in a separate "Eski brauzer qoralamalari" section marked "Faqat brauzerda", so nothing silently disappears. A one-click import is deliberately not offered: the prototype draft shape carries no owner identity, so importing it would mean guessing an account. |
 
-## What Phase 11 does NOT implement
+## What Phase 12 does NOT implement
 
-Payments · messaging · notifications · teacher approval/verification workflow
-(verification is always honest `unverified`) · live seat reservation or seat
-decrement · real publishing/moderation of courses · file uploads · analytics ·
-an admin dashboard · migrating the public marketplace to the database
-(Phase 12) · enrollment approve/reject (statuses are only `submitted` and
+Payments · messaging · notifications · an admin dashboard · image upload
+infrastructure · a teacher verification/approval workflow (verification stays
+honest `unverified`) · seat reservation or seat decrement · a reviews table or
+review submission · a teacher-facing publish/moderation workflow · advanced
+analytics · enrollment approve/reject (statuses are only `submitted` and
 `cancelled`).

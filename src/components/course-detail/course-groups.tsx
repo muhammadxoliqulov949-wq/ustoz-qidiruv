@@ -19,7 +19,8 @@ export interface CourseGroupsProps {
  * server re-renders this section AND the enrollment card from the new
  * value — one source of truth, no client store, back/forward-safe.
  * Full groups render disabled and are not selectable; the seat numbers
- * are the mock data as-is, nothing beyond it is implied.
+ * come from the database as-is: capacity is the planned size and remaining
+ * seats are derived from real submitted requests. Nothing beyond that is implied.
  */
 export function CourseGroups({ basePath, groups, selectedGroupId }: CourseGroupsProps) {
   const router = useRouter();

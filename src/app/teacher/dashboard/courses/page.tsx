@@ -1,16 +1,34 @@
 import type { Metadata } from "next";
-import { teacherDirectory } from "@/data/teacher-dashboard";
-import { demoWorkspaceEnabled } from "@/server/env";
-import { TeacherCoursesPanel } from "@/components/teacher-dashboard/courses-panel";
+import { DbCoursesPanel } from "@/components/teacher-dashboard/db-courses-panel";
+import { LegacyLocalDrafts } from "@/components/teacher-dashboard/legacy-local-drafts";
 import { requireRolePage } from "@/server/auth/guards";
+import { getTeacherDashboardCourses, getTeacherProfile } from "@/server/repo";
 
 export const metadata: Metadata = { title: "Kurslarim" };
 
-/* /teacher/dashboard/courses — own courses via the canonical course→teacher link. */
+/* -------------------------------------------------------------------------- */
+/* /teacher/dashboard/courses — Phase 12.                                      */
+/*                                                                              */
+/* The PRIMARY list is server-rendered from the database for the SIGNED-IN      */
+/* teacher: ownership comes from the session, never from a workspace id held    */
+/* in the browser. localStorage is no longer part of this experience.           */
+/*                                                                              */
+/* Phase 10 local drafts are not deleted and not uploaded. They are listed      */
+/* separately and labelled as legacy browser-only records (see                  */
+/* LegacyLocalDrafts) so nothing the teacher typed silently disappears.         */
+/*                                                                              */
+/* RENDERING: dynamic — account data, never prerendered.                        */
+/* -------------------------------------------------------------------------- */
+
+export const dynamic = "force-dynamic";
+
 export default async function TeacherCoursesPage() {
-  await requireRolePage("teacher", "/teacher/dashboard/courses");
-  // Demo flag resolved on the SERVER; it grants no access of any kind.
-  const demoEnabled = demoWorkspaceEnabled();
+  const user = await requireRolePage("teacher", "/teacher/dashboard/courses");
+  const [{ published, drafts }, profile] = await Promise.all([
+    getTeacherDashboardCourses(user.id),
+    getTeacherProfile(user.id),
+  ]);
+
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
@@ -18,10 +36,15 @@ export default async function TeacherCoursesPage() {
           Kurslarim
         </h1>
         <p className="max-w-prose text-base text-ink-500">
-          Katalogda e’lon qilingan kurslaringiz, guruhlar va qolgan joylar.
+          Hisobingizga bog‘langan kurslar va server qoralamalari.
         </p>
       </header>
-      <TeacherCoursesPanel directory={teacherDirectory} demoEnabled={demoEnabled} />
+      <DbCoursesPanel
+        published={published}
+        drafts={drafts}
+        teacherSlug={profile?.slug ?? null}
+      />
+      <LegacyLocalDrafts />
     </div>
   );
 }

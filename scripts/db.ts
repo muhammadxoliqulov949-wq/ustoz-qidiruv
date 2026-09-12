@@ -65,14 +65,23 @@ async function migrate(): Promise<void> {
       .split("--> statement-breakpoint")
       .map((part) => part.trim())
       .filter((part) => part.length > 0);
-    await exec("BEGIN");
-    try {
+    const transactional = !/^\s*--\s*no-transaction\b/.test(sql);
+
+    if (transactional) {
+      await exec("BEGIN");
+      try {
+        for (const statement of statements) await exec(statement);
+        await exec(`INSERT INTO __migrations (name) VALUES ('${file}')`);
+        await exec("COMMIT");
+      } catch (error) {
+        await exec("ROLLBACK");
+        throw error;
+      }
+    } else {
+      // Applied outside a transaction (see the header note). The file is
+      // recorded only after every statement succeeded.
       for (const statement of statements) await exec(statement);
       await exec(`INSERT INTO __migrations (name) VALUES ('${file}')`);
-      await exec("COMMIT");
-    } catch (error) {
-      await exec("ROLLBACK");
-      throw error;
     }
     count += 1;
     console.log(`applied ${file}`);

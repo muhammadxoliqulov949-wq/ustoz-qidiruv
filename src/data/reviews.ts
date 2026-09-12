@@ -6,6 +6,14 @@ import type { CourseReview } from "./models";
  * `reviews` counts on a course are the marketplace aggregates; this file
  * holds only the written testimonials actually shown. A course without
  * entries renders the section’s honest empty state — never fabricated text.
+ *
+ * PHASE 12 BOUNDARY DECISION — reviews stay READ-ONLY FIXTURES.
+ * They are NOT migrated to the database and there is no review table, no
+ * review submission and no write path. They are joined to database courses by
+ * the STABLE course id, which the seed preserves, so the section keeps working
+ * unchanged. This is deliberate: a reviews table with no way to earn a review
+ * would be a pretend system. Writing reviews is explicitly deferred, and the
+ * UI never offers a control that implies otherwise.
  */
 export const courseReviews: CourseReview[] = [
   {

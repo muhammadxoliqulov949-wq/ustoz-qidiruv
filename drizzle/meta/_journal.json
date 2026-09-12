@@ -8,6 +8,20 @@
       "when": 1789223146164,
       "tag": "0000_phase11_core",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789231435716,
+      "tag": "0001_phase12_marketplace",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789232037869,
+      "tag": "0002_phase12_group_end_time",
+      "breakpoints": true
     }
   ]
 }

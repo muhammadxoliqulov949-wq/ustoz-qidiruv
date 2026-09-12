@@ -19,7 +19,8 @@ import {
 /* and every check is server-side:                                              */
 /*   • session must be a student (role from the cookie, never the form);        */
 /*   • course must exist;                                                       */
-/*   • group must exist AND belong to that course — verified in SQL and         */
+/*   • course must be PUBLISHED and the group must belong to it — both are      */
+/*     verified in the SQL predicate, so drafts are not enrollable;             */
 /*     additionally impossible to violate thanks to the composite FK;           */
 /*   • duplicate live requests are rejected by a UNIQUE constraint.             */
 /*                                                                              */
@@ -51,14 +52,18 @@ export async function submitEnrollmentRequestAction(
     const requestId = newId("enr");
 
     const result = await db.transaction(async (tx) => {
+      // Phase 12: the group must belong to this course AND the course must be
+      // PUBLISHED. Enrolling into a private draft is refused at the database
+      // predicate, so a guessed draft id cannot be turned into a request.
       const group = await tx
         .select({ id: schema.courseGroups.id })
         .from(schema.courseGroups)
+        .innerJoin(schema.courses, eq(schema.courses.id, schema.courseGroups.courseId))
         .where(
           and(
             eq(schema.courseGroups.id, parsed.data.groupId),
-            // Consistency check: the group must belong to THIS course.
             eq(schema.courseGroups.courseId, parsed.data.courseId),
+            eq(schema.courses.status, "published"),
           ),
         )
         .limit(1);

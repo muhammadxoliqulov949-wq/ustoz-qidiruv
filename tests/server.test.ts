@@ -59,7 +59,7 @@ async function main(): Promise<void> {
   const { registerSchema, loginSchema, studentProfileSchema, teacherProfileSchema, enrollmentRequestSchema, courseDraftCreateSchema } =
     await import("../src/server/validation");
   const { parseSafeNext } = await import("../src/lib/safe-next");
-  const { eq, and } = await import("drizzle-orm");
+  const { eq, and, asc } = await import("drizzle-orm");
   const db = getDb();
 
   /* ------------------------------ passwords ------------------------------- */
@@ -331,6 +331,208 @@ async function main(): Promise<void> {
   // Deleting a user must cascade its sessions (no orphaned credentials).
   await db.delete(schema.users).where(eq(schema.users.id, otherStudentId));
   check("user delete cascades cleanly", (await db.select().from(schema.users)).length === 3);
+
+
+  /* ====================================================================== */
+  /* PHASE 12 — public marketplace queries, ownership, ordering, lifecycle. */
+  /* ====================================================================== */
+
+  const {
+    listPublicCourses, getPublicCourseBySlug, listPublicTeachers,
+    getPublicTeacherBySlug, listPublicCourseSlugs,
+  } = await import("../src/server/public-repo");
+  const { getTeacherDashboardCourses, getOwnedCourseDetail } =
+    await import("../src/server/repo");
+  const { parseCourseBrowseParams } = await import("../src/lib/course-search");
+  const { courseGroupSchema, syllabusModuleSchema, courseDraftUpdateSchema } =
+    await import("../src/server/validation");
+
+  const browseAll = parseCourseBrowseParams({});
+
+  // The test course created above is still `draft` / teacher not public.
+  check("draft course is absent from the public listing",
+    (await listPublicCourses(browseAll)).every((c) => c.id !== courseId));
+  check("draft course slug lookup returns null (not merely hidden)",
+    (await getPublicCourseBySlug("test-ielts-kursi")) === null);
+  check("draft slug is absent from generateStaticParams input",
+    !(await listPublicCourseSlugs()).includes("test-ielts-kursi"));
+
+  // Publish it and make the owner public — then it must appear everywhere.
+  await db.update(schema.teacherProfiles)
+    .set({ isPublic: true }).where(eq(schema.teacherProfiles.userId, teacherId));
+  await db.update(schema.courses)
+    .set({ status: "published", publishedAt: "2026-03-01" })
+    .where(eq(schema.courses.id, courseId));
+
+  const publicList = await listPublicCourses(browseAll);
+  check("published course appears in the public listing",
+    publicList.some((c) => c.id === courseId));
+  const publicDetail = await getPublicCourseBySlug("test-ielts-kursi");
+  check("published course resolves by slug", publicDetail !== null);
+  check("projected course carries its teacher identity",
+    publicDetail?.teacher.id === teacherId);
+  check("projected course carries its groups",
+    (publicDetail?.detail.groups.length ?? 0) >= 1);
+
+  // Availability is DERIVED, never stored: one submitted request was inserted
+  // for this group earlier, so capacity 12 must read as 11 remaining.
+  const seatGroup = publicDetail?.detail.groups.find((g) => g.id === groupId);
+  check("seats are derived from real enrollment rows, not stored",
+    seatGroup?.capacity === 12 && seatGroup?.seatsRemaining === 11);
+
+  // SQL-level facet filtering.
+  check("price=free filter excludes a paid course",
+    (await listPublicCourses(parseCourseBrowseParams({ price: "free" })))
+      .every((c) => c.priceUzs === 0));
+  check("category filter restricts results",
+    (await listPublicCourses(browseAll, { categoryId: "nonexistent" })).length === 0);
+
+  // Teacher directory.
+  const teacherRows = await listPublicTeachers();
+  check("public teacher directory includes a teacher with a published course",
+    teacherRows.some((r) => r.teacher.id === teacherId));
+  check("teacher facets are derived from owned published courses",
+    (teacherRows.find((r) => r.teacher.id === teacherId)?.courseIds ?? []).includes(courseId));
+  check("seeded/registered teachers are not fabricated as verified",
+    teacherRows.every((r) => r.teacher.verified === false));
+
+  const teacherSlugRow = (await db.select({ slug: schema.teacherProfiles.slug })
+    .from(schema.teacherProfiles).where(eq(schema.teacherProfiles.userId, teacherId)))[0];
+  const profile = await getPublicTeacherBySlug(teacherSlugRow.slug);
+  check("teacher profile resolves by slug", profile !== null);
+  check("teacher profile lists only owned published courses",
+    profile?.courses.every((c) => c.teacher.id === teacherId) === true);
+  check("unknown teacher slug returns null",
+    (await getPublicTeacherBySlug("no-such-teacher")) === null);
+
+  // A private draft owned by the SAME teacher must not leak into the profile.
+  const hiddenId = newId("crs");
+  await db.insert(schema.courses).values({
+    id: hiddenId, slug: "maxfiy-qoralama", teacherUserId: teacherId,
+    title: "Maxfiy qoralama kursi", categoryId: "ielts", level: "orta",
+    format: "online", priceUzs: 0, summary: "x".repeat(50), status: "draft",
+  });
+  check("a teacher's own draft does not leak into their public profile",
+    (await getPublicTeacherBySlug(teacherSlugRow.slug))?.courses
+      .every((c) => c.id !== hiddenId) === true);
+  check("a teacher's own draft does not leak into the public listing",
+    (await listPublicCourses(browseAll)).every((c) => c.id !== hiddenId));
+
+  // Dashboard split: the owner DOES see both, partitioned by status.
+  const dash = await getTeacherDashboardCourses(teacherId);
+  check("dashboard shows the owner's published course",
+    dash.published.some((c) => c.id === courseId));
+  check("dashboard shows the owner's draft separately",
+    dash.drafts.some((c) => c.id === hiddenId));
+  check("dashboard of another teacher is empty (no cross-teacher read)",
+    (await getTeacherDashboardCourses(otherTeacherId)).published.length === 0);
+  check("owned course detail is readable by the owner",
+    (await getOwnedCourseDetail(hiddenId, teacherId)) !== null);
+  check("owned course detail is null for a different teacher (IDOR blocked)",
+    (await getOwnedCourseDetail(hiddenId, otherTeacherId)) === null);
+
+  // Syllabus ordering: positions are unique per course and swap correctly.
+  const m1 = newId("mod"), m2 = newId("mod"), m3 = newId("mod");
+  await db.insert(schema.syllabusModules).values([
+    { id: m1, courseId: hiddenId, position: 1, title: "Birinchi", lessons: 3 },
+    { id: m2, courseId: hiddenId, position: 2, title: "Ikkinchi", lessons: 4 },
+    { id: m3, courseId: hiddenId, position: 3, title: "Uchinchi", lessons: 5 },
+  ]);
+  await rejects("duplicate syllabus position is rejected by the database", async () =>
+    db.insert(schema.syllabusModules).values({
+      id: newId("mod"), courseId: hiddenId, position: 1, title: "Takror", lessons: 1,
+    }));
+
+  // Swap 1 and 2 through the park-on-a-free-slot routine the action uses.
+  await db.transaction(async (tx) => {
+    // Park above the maximum: position is UNIQUE per course and CHECKed >= 1.
+    await tx.update(schema.syllabusModules).set({ position: 4 })
+      .where(eq(schema.syllabusModules.id, m1));
+    await tx.update(schema.syllabusModules).set({ position: 1 })
+      .where(eq(schema.syllabusModules.id, m2));
+    await tx.update(schema.syllabusModules).set({ position: 2 })
+      .where(eq(schema.syllabusModules.id, m1));
+  });
+  const ordered = await db.select({ id: schema.syllabusModules.id })
+    .from(schema.syllabusModules)
+    .where(eq(schema.syllabusModules.courseId, hiddenId))
+    .orderBy(asc(schema.syllabusModules.position));
+  check("syllabus reorder swaps exactly two positions",
+    ordered[0].id === m2 && ordered[1].id === m1 && ordered[2].id === m3);
+
+  // Transaction rollback: a failing multi-row write leaves NOTHING behind.
+  const rollbackId = newId("crs");
+  await rejects("a failing multi-row course write rolls back", async () =>
+    db.transaction(async (tx) => {
+      await tx.insert(schema.courses).values({
+        id: rollbackId, slug: "rollback-kursi", teacherUserId: teacherId,
+        title: "Rollback kursi", categoryId: "ielts", level: "orta",
+        format: "online", priceUzs: 0, summary: "y".repeat(50), status: "draft",
+      });
+      // Violates the FK on purpose.
+      await tx.insert(schema.courseGroups).values({
+        id: newId("grp"), courseId: "crs-does-not-exist", title: "X",
+        days: ["Du"], startTime: "10:00", capacity: 5, startDate: "2026-11-01",
+      });
+    }));
+  check("rolled-back course left no partial row",
+    (await db.select().from(schema.courses).where(eq(schema.courses.id, rollbackId))).length === 0);
+
+  // Slug uniqueness is enforced by the database, not by application hope.
+  await rejects("duplicate course slug is rejected", async () =>
+    db.insert(schema.courses).values({
+      id: newId("crs"), slug: "maxfiy-qoralama", teacherUserId: teacherId,
+      title: "Takroriy slug kursi", categoryId: "ielts", level: "orta",
+      format: "online", priceUzs: 0, summary: "z".repeat(50), status: "draft",
+    }));
+
+  // A published course must carry a publication date (lifecycle integrity).
+  await rejects("publishing without a date is rejected", async () =>
+    db.insert(schema.courses).values({
+      id: newId("crs"), slug: "sanasiz-kurs", teacherUserId: teacherId,
+      title: "Sanasiz kurs", categoryId: "ielts", level: "orta",
+      format: "online", priceUzs: 0, summary: "q".repeat(50), status: "published",
+    }));
+
+  // Validation: over-posting and occupancy injection are refused.
+  check("group schema rejects a posted seatsRemaining (over-posting)",
+    !courseGroupSchema.safeParse({
+      courseId, title: "A", days: ["Du"], startTime: "10:00", endTime: "12:00",
+      startDate: "2026-11-01", capacity: 10, seatsRemaining: 99,
+    }).success);
+  check("group schema rejects an end time before the start time",
+    !courseGroupSchema.safeParse({
+      courseId, title: "A", days: ["Du"], startTime: "12:00", endTime: "10:00",
+      startDate: "2026-11-01", capacity: 10,
+    }).success);
+  check("syllabus schema rejects a client-supplied position",
+    !syllabusModuleSchema.safeParse({
+      courseId, title: "Modul", description: "", lessons: 3, position: 1,
+    }).success);
+  check("course update schema rejects a client-supplied status",
+    !courseDraftUpdateSchema.safeParse({
+      title: "Yetarli uzunlikdagi nom", categoryId: "ielts", level: "orta",
+      format: "online", city: null, location: null, priceUzs: 0,
+      summary: "s".repeat(50), longDescription: "", status: "published",
+    }).success);
+  check("course update schema rejects a client-supplied teacher id",
+    !courseDraftUpdateSchema.safeParse({
+      title: "Yetarli uzunlikdagi nom", categoryId: "ielts", level: "orta",
+      format: "online", city: null, location: null, priceUzs: 0,
+      summary: "s".repeat(50), longDescription: "", teacherUserId: otherTeacherId,
+    }).success);
+
+  // Stored XSS stays inert: the value round-trips as DATA, never as markup.
+  const xssId = newId("crs");
+  const payload = "<script>alert('xss')</script>";
+  await db.insert(schema.courses).values({
+    id: xssId, slug: "xss-tekshiruvi", teacherUserId: teacherId,
+    title: `Zararli ${payload} kursi`, categoryId: "ielts", level: "orta",
+    format: "online", priceUzs: 0, summary: "w".repeat(50), status: "draft",
+  });
+  const xssRow = (await db.select().from(schema.courses).where(eq(schema.courses.id, xssId)))[0];
+  check("stored markup round-trips as literal text (escaped by React at render)",
+    xssRow.title.includes(payload));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail > 0) {
