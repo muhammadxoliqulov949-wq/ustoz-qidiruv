@@ -8,6 +8,7 @@ import { formatPrice } from "@/lib/format";
 import { formatDateUz } from "@/components/course-detail/date";
 import type { EnrollCourseLite } from "@/lib/enroll";
 import { EnrollFlow } from "@/components/enroll/enroll-flow";
+import { getCurrentUser } from "@/server/auth/session";
 
 /* -------------------------------------------------------------------------- */
 /* /enroll/[courseSlug]?group=<id> — the enrollment flow host (Phase 7).         */
@@ -15,7 +16,9 @@ import { EnrollFlow } from "@/components/enroll/enroll-flow";
 /* pages); the raw ?group= value is handed to the flow UNFILTERED because        */
 /* lib/enroll.resolveEnrollGroup applies the same pure rules server and client — */
 /* there is exactly one interpretation of "selected group" everywhere.           */
-/* No API route exists: submitting produces the honest prototype state only.     */
+/* Phase 11: the SESSION is resolved here, on the server. A signed-in student   */
+/* gets a real transactional enrollment write; everyone else keeps the honest   */
+/* local-only prototype result. The visitor never tells us who they are.        */
 /* -------------------------------------------------------------------------- */
 
 const courseBySlug = new Map(courses.map((course) => [course.slug, course]));
@@ -84,11 +87,18 @@ export default async function EnrollPage({
 
   const lite = toLite(course);
   const rawGroup = typeof query.group === "string" ? query.group : null;
+  // Identity strictly from the session cookie — never from the form or URL.
+  const user = await getCurrentUser();
 
   return (
     <div className="site-container py-10 sm:py-14 lg:py-16">
       <div className="mx-auto w-full max-w-[58rem]">
-        <EnrollFlow course={lite} requestedGroupId={rawGroup} />
+        <EnrollFlow
+          course={lite}
+          courseId={course.id}
+          canSubmitToServer={user?.role === "student"}
+          requestedGroupId={rawGroup}
+        />
       </div>
     </div>
   );

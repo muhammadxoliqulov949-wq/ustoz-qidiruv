@@ -40,9 +40,9 @@ import type { CourseLevel } from "@/data/models";
 
 const LEVELS: CourseLevel[] = ["boshlangich", "orta", "yuqori"];
 
-export function TeacherProfilePanel({ directory }: { directory: TeacherDirectory }) {
+export function TeacherProfilePanel({ directory, demoEnabled = false }: { directory: TeacherDirectory; demoEnabled?: boolean }) {
   return (
-    <WorkspaceGate directory={directory} heading="Profil" minHeight="min-h-[38rem]">
+    <WorkspaceGate directory={directory} demoEnabled={demoEnabled} heading="Profil" minHeight="min-h-[38rem]">
       {(workspace, state) => (
         <ProfileBody
           workspaceName={workspace.name}

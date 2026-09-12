@@ -16,9 +16,9 @@ import { teacherStats, type TeacherDirectory } from "@/lib/teacher-workspace";
 /* or teaching-hours figure, and no chart: none of those facts exist.             */
 /* -------------------------------------------------------------------------- */
 
-export function TeacherOverviewPanels({ directory }: { directory: TeacherDirectory }) {
+export function TeacherOverviewPanels({ directory, demoEnabled = false }: { directory: TeacherDirectory; demoEnabled?: boolean }) {
   return (
-    <WorkspaceGate directory={directory} heading="Umumiy holat" minHeight="min-h-[42rem]">
+    <WorkspaceGate directory={directory} demoEnabled={demoEnabled} heading="Umumiy holat" minHeight="min-h-[42rem]">
       {(workspace, state) => {
         const stats = teacherStats(workspace);
         const request = state.requests[0] ?? null;

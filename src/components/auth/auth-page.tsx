@@ -24,9 +24,10 @@ export function PrototypeNotice({ className }: { className?: string }) {
         className="mt-0.5 size-4 shrink-0 text-ink-400"
       />
       <span>
-        <span className="font-medium text-ink-700">Prototip interfeys.</span>{" "}
-        Autentifikatsiya va saqlash backendi hali ulangagan — bu sahifadagi
-        amallar brauzeringizdagi vaqtinchalik UI holatigina.
+        <span className="font-medium text-ink-700">Xavfsizlik.</span>{" "}
+        Parolingiz serverda argon2id bilan xeshlanadi va hech qachon ochiq
+        saqlanmaydi. Sessiya faqat HttpOnly cookie’da bo‘ladi — brauzer
+        xotirasida token saqlanmaydi. SMS tasdiqlash hali yo‘q.
       </span>
     </p>
   );

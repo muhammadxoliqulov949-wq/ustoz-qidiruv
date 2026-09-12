@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { ClipboardCheck, Pencil, Trash2 } from "lucide-react";
 import { Button, ButtonLink } from "@/components/ui";
 import { AuthNotice } from "@/components/auth/auth-notice";
@@ -11,11 +12,12 @@ import {
 } from "@/lib/enroll";
 
 /* -------------------------------------------------------------------------- */
-/* EnrollResult — the HONEST prototype submission state (Phase 7 §4). It says   */
-/* exactly what happened: request prepared, NOT sent, no enrollment occurred.  */
-/* Wording constraints: never "So‘rov yuborildi", never "Kursga yozildingiz",    */
-/* never "Ustoz qabul qildi". The snapshot below is the same pure projection    */
-/* used by review, so nothing can contradict the submitted-looking state.       */
+/* EnrollResult — says exactly what happened, in both Phase 11 outcomes:        */
+/*   • persisted=true  → the row really was written for the signed-in student,  */
+/*     so "So‘rov yuborildi" is now a true statement. It still never claims     */
+/*     enrolment, acceptance or a reserved seat — no teacher approval exists.   */
+/*   • persisted=false → the unchanged Phase 7 honesty: prepared, NOT sent.     */
+/* The snapshot below is the same pure projection used by review.               */
 /* -------------------------------------------------------------------------- */
 
 export interface EnrollResultProps {
@@ -24,9 +26,11 @@ export interface EnrollResultProps {
   draft: EnrollDraft;
   onEditAgain: () => void;
   onClear: () => void;
+  /** True when the request was actually written to the database. */
+  persisted?: boolean;
 }
 
-export function EnrollResult({ course, group, draft, onEditAgain, onClear }: EnrollResultProps) {
+export function EnrollResult({ course, group, draft, onEditAgain, onClear, persisted = false }: EnrollResultProps) {
   const { courseRows, scheduleRows, studentRows, priceRows } = enrollmentSummary(
     course,
     group,
@@ -50,24 +54,50 @@ export function EnrollResult({ course, group, draft, onEditAgain, onClear }: Enr
         </span>
         <div>
           <h3 className="text-2xl font-semibold tracking-tight text-ink-900">
-            So‘rov tayyor.
+            {persisted ? "So‘rov yuborildi." : "So‘rov tayyor."}
           </h3>
           <p className="mt-1 text-sm text-ink-700">
-            Backend hali ulanmaganligi sababli so‘rov ustozga yuborilmadi.
+            {persisted
+              ? "So‘rov hisobingizga saqlandi va kabinetingizda ko‘rinadi."
+              : "Hisobga kirmaganingiz sababli so‘rov serverga yuborilmadi."}
           </p>
         </div>
       </div>
 
-      <AuthNotice live title="Hech narsa serverga jo‘natilmadi">
-        <span className="block">
-          Backend ulangach, bu yerda so‘rov ustozga yuboriladi va holatini
-          profilingizdan kuzatishingiz mumkin bo‘ladi.
-        </span>
-        <span className="mt-2 block text-ink-500">
-          Hozircha so‘rov matni faqat shu brauzerdagi vaqtinchalik prototip
-          holatida (ustozlik yozuvi emas).
-        </span>
-      </AuthNotice>
+      {persisted ? (
+        <AuthNotice live title="So‘rov holati">
+          <span className="block">
+            Holat: <strong>yuborilgan</strong>. Uni{" "}
+            <Link
+              href="/dashboard/courses"
+              className="font-medium text-accent-700 underline underline-offset-2"
+            >
+              kabinetingizdan
+            </Link>{" "}
+            kuzatishingiz yoki bekor qilishingiz mumkin.
+          </span>
+          <span className="mt-2 block text-ink-500">
+            Ustoz tomonidan tasdiqlash va to‘lov hali mavjud emas — hech kim
+            joyni band qilgani yoki qabul qilinganingizni bildirmaydi.
+          </span>
+        </AuthNotice>
+      ) : (
+        <AuthNotice live title="Hech narsa serverga jo‘natilmadi">
+          <span className="block">
+            So‘rovni hisobingizga saqlash uchun avval{" "}
+            <Link
+              href="/login"
+              className="font-medium text-accent-700 underline underline-offset-2"
+            >
+              tizimga kiring
+            </Link>{" "}
+            — keyin shu shaklni qayta yuborasiz.
+          </span>
+          <span className="mt-2 block text-ink-500">
+            Hozircha so‘rov matni faqat shu brauzerdagi vaqtinchalik holatda.
+          </span>
+        </AuthNotice>
+      )}
 
       <div className="grid gap-3 rounded-xl border border-line bg-surface-muted p-4 text-sm sm:grid-cols-2">
         {sections.map((section) => (

@@ -6,8 +6,10 @@ implements the approved USTOZ Master Frontend Specification phase by phase:
 full homepage, **Phase 3** browse & search (`/courses` results engine +
 `/categories` routes), **Phase 4** course detail pages
 (`/courses/[slug]`), and **Phase 5** teacher discovery + profiles
-(`/teachers`, `/teachers/[slug]`). Auth and everything after land in
-later phases.
+(`/teachers`, `/teachers/[slug]`), Phases 6–10 the auth UI, enrollment flow
+and both dashboards, and **Phase 11** the real backend: PostgreSQL, migrations,
+phone+password authentication, server-side authorization and the enrollment
+foundation.
 
 ## Stack
 
@@ -20,10 +22,16 @@ later phases.
 ## Commands
 
 ```bash
-npm run dev      # dev server (0.0.0.0:3000)
-npm run build    # production build (offline-safe: fonts are self-hosted)
-npm run lint     # eslint
-npx tsc --noEmit # typecheck
+npm run dev         # dev server (0.0.0.0:3000)
+npm run build       # production build (offline-safe: fonts are self-hosted)
+npm run lint        # eslint
+npx tsc --noEmit    # typecheck
+
+npm run db:migrate  # apply committed SQL migrations
+npm run db:seed     # dev-only: project canonical data into the database
+npm run db:reset    # dev-only: drop + migrate + seed
+npm run db:generate # regenerate a migration after editing the schema
+npm run test:server # backend/auth/authorization/constraint test suite
 ```
 
 ## Design system (Phase 1)
@@ -343,3 +351,141 @@ prototype draft), cross-device saved state, enrollment request history
 it), pagination (catalogs fit one page), messaging, save persistence, real
 API, premium motion pass, dark mode evaluation, i18n (`/uz`, `/ru`…),
 mobile bottom navigation.
+
+
+---
+
+# Phase 11 — backend, auth and database
+
+## Stack and why
+
+| Concern | Choice | Rationale |
+|---|---|---|
+| Database | **PostgreSQL** | Real `CHECK` / composite `FOREIGN KEY` / partial `UNIQUE` constraints, transactions, enums. The data-integrity rules of this product belong in the database, not only in application code. |
+| ORM | **Drizzle ORM + drizzle-kit** | TypeScript schema that generates **plain committed SQL** migrations you can read and review. No hidden runtime migration engine, no proprietary platform lock-in, and the driver can be swapped without touching queries. |
+| Dev/CI driver | **PGlite** (`@electric-sql/pglite`) | Genuine PostgreSQL 18 compiled to WebAssembly — not a mock and not SQLite. Identical constraint semantics with zero install, which matters because the same migrations must be provable in CI. |
+| Prod driver | **`pg`** (node-postgres) | The standard pooled client for a real Postgres server. Selected with `DB_DRIVER=pg`. |
+| Password hashing | **argon2id** via `@node-rs/argon2` | Current password-hashing recommendation (memory-hard). `m=19456, t=2, p=1`. No custom crypto anywhere. |
+| Sessions | **Opaque DB-backed tokens in an HttpOnly cookie** | Revocable server-side on logout (a JWT is not). No token ever touches `localStorage`. |
+| Validation | **Zod** | One `.strict()` schema per mutation, so over-posting is a hard error. |
+
+Deliberately **not** adopted: a hosted auth platform (would own our user model
+for a phone-first product with no e-mail), and JWT sessions (cannot be revoked).
+
+## Local setup
+
+```bash
+npm install
+cp .env.example .env.local   # defaults work as-is for local development
+npm run db:migrate
+npm run db:seed              # prints a generated dev password unless DEV_SEED_PASSWORD is set
+npm run dev
+```
+
+No PostgreSQL installation is required: the default `DB_DRIVER=pglite` stores
+the database under `.data/pglite` (git-ignored).
+
+## Environment variables
+
+Everything is documented in **`.env.example`** — the only env file in git. Real
+values never are.
+
+- `NEXT_PUBLIC_*` — public by definition, inlined into the client bundle.
+- Everything else is **server-only**, parsed by `src/server/env.ts`, which
+  starts with `import "server-only"`. Importing it from a Client Component is a
+  **build error**, which is the mechanical guarantee that `DATABASE_URL` cannot
+  reach the browser. `describeEnv()` returns booleans and driver names only, so
+  no secret can be logged.
+
+## Database schema
+
+Eight tables (`drizzle/0000_phase11_core.sql`):
+
+`users` · `sessions` · `student_profiles` · `teacher_profiles` · `courses` ·
+`course_groups` · `syllabus_modules` · `enrollment_requests`
+
+Integrity is enforced **in the database**, not just in TypeScript:
+
+- `users(id, role)` is `UNIQUE` and is the target of composite foreign keys from
+  `student_profiles(user_id, role)` and `teacher_profiles(user_id, role)`, each
+  with a `role` CHECK. A student profile attached to a teacher account is
+  therefore *impossible to insert*.
+- `course_groups(id, course_id)` is `UNIQUE` and is the target of
+  `enrollment_requests(group_id, course_id)`: enrolling into a group that
+  belongs to a different course cannot be represented.
+- `courses_online_no_location` forbids a city/venue on online courses and
+  requires a city otherwise.
+- `users_password_hash_not_plain` requires the hash to start with `$argon2`.
+- Phone format, slug format, price bounds, capacity 1–500, time/date formats and
+  a partial `UNIQUE` on live enrollment requests are all CHECK/UNIQUE constraints.
+
+## Migrations vs seed
+
+They are separate on purpose.
+
+- **Migrations** — deterministic, committed, reviewable SQL in `drizzle/`,
+  applied by `scripts/db.ts` inside a transaction and recorded in a
+  `__migrations` table. Safe to run in production.
+- **Seed** — `src/server/db/seed.ts`, **development only** (it refuses to run
+  with `NODE_ENV=production`). It is a *one-way projection* of the canonical
+  `src/data/*` arrays into the database.
+
+## Which source is canonical (important)
+
+During Phase 11 **`src/data/*` remains the canonical source for the public
+marketplace.** `/courses`, `/courses/[slug]`, `/teachers` and `/teachers/[slug]`
+still read it and are byte-for-byte unchanged. The database copy is a
+development projection only. Switching public reads to the database is
+**Phase 12** — doing it now would risk the public catalogue for no user-facing
+gain.
+
+## Auth architecture
+
+Phone (`+998XXXXXXXXX`) + password. **No SMS/OTP exists**, so nothing in the UI
+claims a code was sent, and there is no hard-coded code and no bypass account.
+
+1. Register/login go through **Server Actions**, which give CSRF protection for
+   free (POST + Origin/Host check + unguessable action id) and expose no public
+   credential endpoint.
+2. Passwords are hashed with argon2id. Login failures return **one generic
+   message** for both "no such account" and "wrong password", so the form cannot
+   be used to enumerate registered numbers.
+3. A 32-byte random token is generated; the **raw token goes in the cookie**, and
+   only its **SHA-256 hash** is stored in `sessions`. A database leak does not
+   yield usable session tokens.
+4. Cookie: `HttpOnly`, `SameSite=Lax`, `Secure` (unless `AUTH_INSECURE_COOKIES=1`
+   for local http), `Path=/`, 30-day expiry. Logout **deletes the row**, so a
+   copied cookie stops working immediately.
+
+## Authorization model
+
+**The session cookie is the only source of identity.** `getCurrentUser()`,
+`requireUser()`, `requireRole()` and `requireRolePage()` never accept a user id,
+role or teacher id from the client. Ownership is expressed as part of the SQL
+predicate (`WHERE ... AND teacher_user_id = <session user>`) rather than as a
+separate check that could be forgotten, and mutation inputs do not even have a
+field for "who am I" — `.strict()` rejects the payload if one is supplied.
+
+The Phase 9 **teacher workspace picker no longer exists as an identity source.**
+It is off unless `DEMO_TEACHER_WORKSPACE=1`, and it is forced off in production.
+
+## Prototype storage transition
+
+Nothing was silently deleted; existing browser data still parses.
+
+| Key | Status | Notes |
+|---|---|---|
+| `ustoz.onboarding.draft.v1` | **B — retained, demoted** | Now unsaved-form recovery only. Answers persist to a real profile row on an explicit "save". Never identity. |
+| `ustoz.enroll.draft.v1` | **B — retained, demoted** | In-progress form recovery. A signed-in student's submission now writes a real `enrollment_requests` row. |
+| `ustoz.saved.v1` | **C — deferred** | Saved courses/teachers stay browser-local; documented as such in the UI. Phase 12. |
+| `ustoz.teacher.workspace.v1` | **A — replaced** | Superseded by the session. Read only behind the demo flag; the stored value grants nothing. |
+| `ustoz.course.drafts.v1` | **C — deferred** | NOT auto-migrated. Importing a local draft into a server row needs an explicit, user-initiated action; a silent upload would be a data-ownership surprise. |
+
+## What Phase 11 does NOT implement
+
+Payments · messaging · notifications · teacher approval/verification workflow
+(verification is always honest `unverified`) · live seat reservation or seat
+decrement · real publishing/moderation of courses · file uploads · analytics ·
+an admin dashboard · migrating the public marketplace to the database
+(Phase 12) · enrollment approve/reject (statuses are only `submitted` and
+`cancelled`).

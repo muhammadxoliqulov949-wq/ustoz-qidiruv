@@ -6,8 +6,10 @@ import { OverviewPanels } from "@/components/dashboard/overview-panels";
 /* the derived catalog projection to ONE client island that joins it with the   */
 /* prototype stores. No analytics, only counts of things that exist.            */
 /* -------------------------------------------------------------------------- */
+import { requireRolePage } from "@/server/auth/guards";
 
-export default function DashboardOverviewPage() {
+export default async function DashboardOverviewPage() {
+  await requireRolePage("student", "/dashboard");
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">

@@ -17,9 +17,9 @@ import type { TeacherDirectory } from "@/lib/teacher-workspace";
 /* and no approve/reject/payment/message control exists.                         */
 /* -------------------------------------------------------------------------- */
 
-export function TeacherRequestsPanel({ directory }: { directory: TeacherDirectory }) {
+export function TeacherRequestsPanel({ directory, demoEnabled = false }: { directory: TeacherDirectory; demoEnabled?: boolean }) {
   return (
-    <WorkspaceGate directory={directory} heading="So‘rovlar" minHeight="min-h-[34rem]">
+    <WorkspaceGate directory={directory} demoEnabled={demoEnabled} heading="So‘rovlar" minHeight="min-h-[34rem]">
       {(workspace, state) => (
         <div className="flex flex-col gap-6">
           <AuthNotice variant="warning" title="Bu server so‘rovlari emas">

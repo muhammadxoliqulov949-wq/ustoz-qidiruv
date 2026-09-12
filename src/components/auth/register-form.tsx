@@ -1,8 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { ArrowRight } from "lucide-react";
 import { Button, Card, Input } from "@/components/ui";
 import { PhoneField } from "./phone-input";
@@ -16,6 +15,7 @@ import {
   validatePhoneField,
 } from "@/lib/onboarding";
 import { withNext } from "@/lib/safe-next";
+import { registerAction } from "@/server/actions/auth";
 import {
   readPrototypeDraft,
   usePrototypeDraftHydrated,
@@ -23,12 +23,16 @@ import {
 } from "@/components/onboarding/draft-store";
 
 /* -------------------------------------------------------------------------- */
-/* RegisterForm — role-aware sign-up, intentionally minimal: role + name +      */
-/* phone + password. No teacher professional details here — those belong to    */
-/* teacher onboarding (Phase 6 spec). Submit does NOT create an account: it     */
-/* validates, writes the prototype onboarding draft (role/name/phone only —   */
-/* passwords are never persisted), and hands off to /onboarding where the      */
-/* flow completes as a UI state.                                               */
+/* RegisterForm — role-aware sign-up: role + name + phone + password. No       */
+/* teacher professional details here — those belong to teacher onboarding.     */
+/*                                                                              */
+/* Phase 11: submit now creates a REAL account through the `registerAction`    */
+/* server action (argon2id hash, role persisted server-side, session cookie    */
+/* issued, server-side redirect to /onboarding). The localStorage draft is     */
+/* still seeded with name/phone/role, but ONLY as unsaved-form recovery for    */
+/* the onboarding questionnaire — it is never an identity or an authorization  */
+/* source, and the password is never written to it. The role sent here is      */
+/* validated against a whitelist on the server; it cannot be escalated.        */
 /* -------------------------------------------------------------------------- */
 
 interface FieldErrors {
@@ -52,12 +56,13 @@ export function RegisterForm({
   initialPhone,
   initialNext = null,
 }: RegisterFormProps) {
-  const router = useRouter();
   const [role, setRole] = useState<"student" | "teacher" | null>(initialRole);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState(initialPhone ?? "+998");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<FieldErrors>({});
+  const [formError, setFormError] = useState<string | null>(null);
+  const [submitting, startTransition] = useTransition();
 
   // Hydration-safe peek (useSyncExternalStore in the draft store): this
   // browser already holds a (prototype) onboarding draft → offer to resume
@@ -83,6 +88,7 @@ export function RegisterForm({
     const passwordError = validatePasswordField(password);
     if (passwordError) nextErrors.password = passwordError;
     setErrors(nextErrors);
+    setFormError(null);
     if (Object.keys(nextErrors).length > 0) return;
 
     // Seed the onboarding draft (never the password). Existing answers in a
@@ -101,7 +107,26 @@ export function RegisterForm({
       teacher: { ...base.teacher, name: base.teacher.name || name.trim(), phone },
     };
     writePrototypeDraft(nextDraft);
-    router.push(withNext("/onboarding", initialNext));
+
+    // Create the account for real. On success the server action redirects.
+    startTransition(async () => {
+      const payload = new FormData();
+      payload.set("role", finalRole);
+      payload.set("name", name.trim());
+      payload.set("phone", phone);
+      payload.set("password", password);
+      payload.set("next", withNext("/onboarding", initialNext));
+      try {
+        const result = await registerAction(payload);
+        if (!result.ok) {
+          setErrors(result.fieldErrors ?? {});
+          setFormError(result.message);
+        }
+      } catch (error) {
+        if (error && typeof error === "object" && "digest" in error) throw error;
+        setFormError("Ulanishda xatolik. Internetni tekshirib, qayta urining.");
+      }
+    });
   };
 
   return (
@@ -159,18 +184,29 @@ export function RegisterForm({
               setErrors((prev) => (prev.password ? { ...prev, password: undefined } : prev));
             }}
             autoComplete="new-password"
-            hint="Parol hozircha faqat shu oynada tekshiriladi — u hech qayerda saqlanmaydi."
+            hint="Kamida 8 ta belgi. Parol serverda argon2id bilan xeshlanadi va hech qachon ochiq saqlanmaydi."
             error={errors.password}
           />
 
           <div className="flex flex-col gap-3">
-            <Button type="submit" size="lg" fullWidth trailingIcon={<ArrowRight />}>
-              Davom etish
+            <Button
+              type="submit"
+              size="lg"
+              fullWidth
+              loading={submitting}
+              trailingIcon={submitting ? undefined : <ArrowRight />}
+            >
+              {submitting ? "Yaratilmoqda…" : "Davom etish"}
             </Button>
+            {formError ? (
+              <AuthNotice live title="Hisob yaratilmadi">
+                <p>{formError}</p>
+              </AuthNotice>
+            ) : null}
             <p className="text-center text-xs leading-relaxed text-ink-400">
-              Hisob yaratish server tomonida hali ishga tushmagan. Davom etish
-              onboarding interfeysiga olib kiradi — ma’lumotlar faqat
-              brauzeringizdagi vaqtinchalik holatda saqlanadi.
+              Davom etish bilan hisobingiz yaratiladi va onboarding
+              savollariga o‘tasiz. Telefon raqamingiz profilingizda ochiq
+              ko‘rsatilmaydi.
             </p>
           </div>
         </form>

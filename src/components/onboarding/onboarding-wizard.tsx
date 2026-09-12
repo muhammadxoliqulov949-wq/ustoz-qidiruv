@@ -40,9 +40,11 @@ export interface OnboardingWizardProps {
   initialRole: UserRole | null;
   /** Validated internal ?next= — completion offers a route back (enrollment). */
   initialNext?: string | null;
+  /** Server-resolved session presence — never inferred on the client. */
+  signedIn?: boolean;
 }
 
-export function OnboardingWizard({ initialRole, initialNext = null }: OnboardingWizardProps) {
+export function OnboardingWizard({ initialRole, initialNext = null, signedIn = false }: OnboardingWizardProps) {
   const { ready } = useOnboardingDraft();
 
   if (!ready) {
@@ -62,10 +64,10 @@ export function OnboardingWizard({ initialRole, initialNext = null }: Onboarding
     );
   }
 
-  return <WizardBody initialRole={initialRole} initialNext={initialNext} />;
+  return <WizardBody initialRole={initialRole} initialNext={initialNext} signedIn={signedIn} />;
 }
 
-function WizardBody({ initialRole, initialNext }: OnboardingWizardProps) {
+function WizardBody({ initialRole, initialNext, signedIn = false }: OnboardingWizardProps) {
   const { draft, update, reset } = useOnboardingDraft();
   // A decided draft always wins over ?role= — switching role mid-flow would
   // silently orphan the other flow's answers.
@@ -266,6 +268,7 @@ function WizardBody({ initialRole, initialNext }: OnboardingWizardProps) {
             <OnboardingComplete
               role={role}
               onRestart={handleRestart}
+              signedIn={signedIn}
               resumeHref={initialNext}
             />
           </div>

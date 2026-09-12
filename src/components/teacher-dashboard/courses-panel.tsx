@@ -125,9 +125,9 @@ function CourseItem({ course }: { course: TeacherCourseLite }) {
   );
 }
 
-export function TeacherCoursesPanel({ directory }: { directory: TeacherDirectory }) {
+export function TeacherCoursesPanel({ directory, demoEnabled = false }: { directory: TeacherDirectory; demoEnabled?: boolean }) {
   return (
-    <WorkspaceGate directory={directory} heading="Kurslarim" minHeight="min-h-[40rem]">
+    <WorkspaceGate directory={directory} demoEnabled={demoEnabled} heading="Kurslarim" minHeight="min-h-[40rem]">
       {(workspace) => (
         <div className="flex flex-col gap-6">
           <AuthNotice title="Katalog kurslari o‘zgarmas">

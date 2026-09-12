@@ -1,53 +1,37 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { AuthNotice } from "@/components/auth/auth-notice";
-import { useOnboardingDraft } from "@/components/onboarding/draft-store";
-import { dashboardRoleState } from "@/lib/dashboard";
 
 /* -------------------------------------------------------------------------- */
-/* RoleNotice — Phase 8 ships the STUDENT dashboard only. A prototype draft      */
-/* whose role is "teacher" must not be silently shown student screens, and       */
-/* nothing may pretend a teacher panel exists (Phase 9). A draft with no role     */
-/* at all gets the honest "no session" line instead of a fake account.           */
+/* RoleNotice — Phase 11 rewrite.                                              */
+/*                                                                              */
+/* The dashboard layout now GUARDS the route server-side (`requireRolePage`),   */
+/* so this component no longer decides anything about access: an anonymous      */
+/* visitor never reaches it, and a teacher is redirected before render. Its     */
+/* only remaining job is to explain the redirect that already happened, which   */
+/* the guard signals with ?role=student-required.                              */
+/*                                                                              */
+/* It deliberately no longer reads the localStorage onboarding draft — client   */
+/* state must never describe, let alone determine, the visitor's role.          */
 /* -------------------------------------------------------------------------- */
 
 export function RoleNotice() {
-  const { ready, draft } = useOnboardingDraft();
-  if (!ready) return null;
-
-  const role = dashboardRoleState(draft.role);
-  if (role === "student") return null;
-
-  if (role === "teacher") {
-    return (
-      <AuthNotice variant="warning" title="Bu bo‘lim o‘quvchilar uchun">
-        Brauzeringizdagi prototip profili <strong>ustoz</strong> rolida. Ustozlar
-        paneli hali qurilmagan — u keyingi bosqichda qo‘shiladi. Shu sahifadagi
-        ma’lumotlar faqat o‘quvchi holatini ko‘rsatadi.{" "}
-        <Link
-          href="/onboarding?role=student"
-          className="font-medium text-accent-700 underline underline-offset-2"
-        >
-          O‘quvchi sifatida to‘ldirish
-        </Link>
-        .
-      </AuthNotice>
-    );
-  }
+  const params = useSearchParams();
+  if (params.get("role") !== "student-required") return null;
 
   return (
-    <AuthNotice title="Haqiqiy hisob hali yo‘q">
-      Autentifikatsiya backendi ulanmagan, shuning uchun bu kabinet sizni
-      tizimga kirgan deb hisoblamaydi. Quyidagi ma’lumotlar faqat shu
-      brauzerdagi prototip holatidan olingan.{" "}
+    <AuthNotice variant="warning" title="Bu amal o‘quvchi hisobini talab qiladi">
+      Siz ustoz hisobidasiz, shuning uchun o‘quvchi bo‘limiga o‘tkazildingiz.
+      Kurslarni boshqarish uchun{" "}
       <Link
-        href="/onboarding?role=student"
+        href="/teacher/dashboard"
         className="font-medium text-accent-700 underline underline-offset-2"
       >
-        O‘quvchi profilini to‘ldirish
-      </Link>
-      .
+        ustoz paneliga
+      </Link>{" "}
+      qayting.
     </AuthNotice>
   );
 }

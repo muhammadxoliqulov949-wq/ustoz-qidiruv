@@ -1,13 +1,15 @@
 import type { Metadata } from "next";
 import { dashboardCatalog } from "@/data/dashboard-catalog";
 import { SavedPanel } from "@/components/dashboard/saved-panel";
+import { requireRolePage } from "@/server/auth/guards";
 
 export const metadata: Metadata = {
   title: "Saqlanganlar",
 };
 
 /* /dashboard/saved — saved ids × canonical catalog projection. */
-export default function DashboardSavedPage() {
+export default async function DashboardSavedPage() {
+  await requireRolePage("student", "/dashboard/saved");
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
