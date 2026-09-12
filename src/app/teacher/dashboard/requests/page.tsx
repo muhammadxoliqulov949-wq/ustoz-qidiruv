@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { RequestsManager } from "@/components/teacher-dashboard/requests-manager";
 import { requireRolePage } from "@/server/auth/guards";
 import { getTeacherRequestCounts, listTeacherRequests } from "@/server/enrollment-service";
+import { getPaymentStatusByEnrollment } from "@/server/payments/payment-service";
 import type { EnrollmentStatus } from "@/lib/enrollment-status";
 
 export const metadata: Metadata = { title: "So‘rovlar" };
@@ -35,6 +36,16 @@ export default async function TeacherRequestsPage({
     getTeacherRequestCounts(user.id),
   ]);
 
+  // Minimal factual payment projection, batched. The teacher sees only whether
+  // an accepted place has been paid for — never an amount or provider detail.
+  const payments = await getPaymentStatusByEnrollment(
+    requests.filter((request) => request.status === "accepted").map((request) => request.id),
+  );
+  const rows = requests.map((request) => ({
+    ...request,
+    paymentStatus: payments.get(request.id)?.status ?? null,
+  }));
+
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
@@ -43,11 +54,11 @@ export default async function TeacherRequestsPage({
         </h1>
         <p className="max-w-prose text-base text-ink-500">
           Kurslaringizga kelgan yozilish so‘rovlarini shu yerda qabul qilasiz
-          yoki rad etasiz. To‘lov tizimi hali ulanmagan.
+          yoki rad etasiz. To‘lovni o‘quvchining o‘zi amalga oshiradi.
         </p>
       </header>
       <RequestsManager
-        requests={requests}
+        requests={rows}
         counts={counts}
         activeFilter={status ?? "all"}
       />

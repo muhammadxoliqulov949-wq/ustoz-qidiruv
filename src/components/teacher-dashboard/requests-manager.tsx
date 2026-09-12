@@ -8,6 +8,11 @@ import {
   isFinalStatus,
   type EnrollmentStatus,
 } from "@/lib/enrollment-status";
+import {
+  TEACHER_PAYMENT_LABEL,
+  teacherPaymentView,
+  type PaymentStatus,
+} from "@/lib/payment-status";
 import { cn, focusRing } from "@/lib/utils";
 
 /* -------------------------------------------------------------------------- */
@@ -34,6 +39,10 @@ export interface RequestRow {
   courseTitle: string;
   groupTitle: string;
   studentName: string;
+  /** Drives only whether payment applies — no amount is ever shown. */
+  coursePriceUzs: number;
+  /** Live payment status for this enrollment, if one exists. */
+  paymentStatus: PaymentStatus | null;
 }
 
 const FILTERS: { value: string; label: string }[] = [
@@ -135,10 +144,32 @@ export function RequestsManager({
                   ) : null}
                 </div>
 
-                {/* Status is text inside a badge — never colour alone. */}
-                <Badge variant={enrollmentStatusTone(request.status)}>
-                  {ENROLLMENT_STATUS_LABEL[request.status]}
-                </Badge>
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Status is text inside a badge — never colour alone. */}
+                  <Badge variant={enrollmentStatusTone(request.status)}>
+                    {ENROLLMENT_STATUS_LABEL[request.status]}
+                  </Badge>
+
+                  {/*
+                    PAYMENT PROJECTION FOR THE TEACHER — Phase 14.
+                    Three factual words and nothing else: no amount, no
+                    provider data, no transaction id, and no control. A teacher
+                    must never be able to mark a payment as paid, so this is
+                    read-only by construction: there is no action attached.
+                  */}
+                  {request.status === "accepted" ? (
+                    <Badge variant="neutral">
+                      {
+                        TEACHER_PAYMENT_LABEL[
+                          teacherPaymentView(
+                            request.coursePriceUzs === 0,
+                            request.paymentStatus,
+                          )
+                        ]
+                      }
+                    </Badge>
+                  ) : null}
+                </div>
               </div>
 
               {isFinalStatus(request.status) ? (

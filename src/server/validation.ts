@@ -157,6 +157,24 @@ export const rejectEnrollmentSchema = z
 
 export const notificationReadSchema = z.object({ notificationId: idSchema }).strict();
 
+/* --------------------------------- payments --------------------------------- */
+
+/*
+ * Phase 14. The ONLY thing a browser may send to start a payment is which
+ * enrollment it is for.
+ *
+ * There is deliberately no `amount`, `price`, `currency`, `studentId`,
+ * `status` or `returnUrl` field: the amount is derived server-side from the
+ * accepted enrollment's course price, and `.strict()` rejects the whole
+ * payload if a caller invents one of those.
+ */
+export const startPaymentSchema = z
+  .object({ enrollmentRequestId: idSchema })
+  .strict();
+
+/** Reading a payment's own detail page. */
+export const paymentIdSchema = z.object({ paymentId: idSchema }).strict();
+
 /* --------------------------------- courses --------------------------------- */
 
 export const courseDraftCreateSchema = z

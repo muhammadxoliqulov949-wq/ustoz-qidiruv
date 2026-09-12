@@ -711,14 +711,8 @@ questions.
 
 ## Payment boundary
 
-Accepting a request means a **place in a group**, nothing more. The product says
-so plainly:
-
-> So'rovingiz qabul qilindi. To'lov tizimi hali ulanmagan.
-
-There is no payment provider integration, no Payme/Click/Uzum branding, no card
-form, no payment status, no receipt, and no fake paid / active learner /
-completed / certificate state anywhere.
+Accepting a request means a **place in a group**, nothing more. Payment is a
+separate domain, added in Phase 14 — see the Phase 14 section below.
 
 ## Layering
 
@@ -758,7 +752,284 @@ including racing accepts on the last seat and the
 
 ## What Phase 13 does NOT implement
 
-Payments and refunds · chat or messaging · SMS, email or push delivery · an
+Chat or messaging · SMS, email or push delivery · an
 admin dashboard · waitlists · coupons · course review submission · a teacher
 verification workflow · realtime or websocket notifications · notification
 preferences.
+
+# Phase 14 — payment foundation and Payme integration
+
+Phase 14 adds the first real payment path: an accepted place on a **paid**
+course can be paid for through **Payme Business (Merchant API)**, and the
+student's dashboard reflects a payment status that only an authenticated
+provider callback can produce.
+
+The single rule everything else follows from:
+
+> **Only an authenticated Payme callback can mark a payment `succeeded`.**
+> No browser action, no redirect, no query parameter, and no teacher control
+> can produce that state.
+
+## Payment is a separate domain from enrollment
+
+`EnrollmentStatus` did **not** gain a `paid` value. Enrollment answers *"does
+this student have a place?"*; payment answers *"has that place been paid for?"*.
+They are rendered as two separate facts, so `Qabul qilindi` + `To'lov kutilmoqda`
+is a normal, representable state rather than a contradiction.
+
+Consequences that fall out of the separation:
+
+* **Seats are unaffected by payment.** Occupancy is still
+  `count(status = 'accepted')`. Paying consumes no extra seat, and a failed or
+  cancelled payment does **not** free the seat.
+* **Free courses never enter payment infrastructure.** No `payments` row is ever
+  created for a course whose `priceUzs` is `0`; the UI simply says
+  `Kurs bepul. To'lov talab qilinmaydi.`
+* Paying is **not** completing. No label anywhere calls a paying student
+  "completed", "graduated" or "certified".
+
+## Money is integer tiyin, never floating point
+
+`src/lib/money.ts` is the only place money is converted. It works in `bigint`
+tiyin (1 so'm = 100 tiyin) and refuses anything unsafe — negatives, fractions,
+`NaN`, `Infinity`, and values above `MAX_PRICE_SOM` (100 000 000 so'm) which
+would risk overflow. `amount_tiyin` is a **bigint** column, because 32-bit
+integers overflow at 10^10 tiyin.
+
+`UZS 150 000 → 15 000 000 tiyin`, exactly, with no float ever involved.
+
+## The price snapshot is immutable
+
+The amount is copied into the `payments` row **once**, when the obligation is
+created, and nothing ever recomputes it. Editing the course price later cannot
+change an existing payment — a property the test suite asserts directly by
+raising the price and re-reading the payment.
+
+The amount is always derived **server-side** from the accepted enrollment's
+course. The browser sends exactly one value — which enrollment to pay for — and
+the Zod schema is `.strict()`, so an invented `amount`, `price`, `currency` or
+`returnUrl` field rejects the whole request rather than being ignored.
+
+## Schema
+
+| table | purpose |
+| --- | --- |
+| `payments` | the obligation: enrollment, student, provider, amount snapshot, currency, status, timestamps |
+| `payment_transactions` | one row per **provider** transaction: provider id, Payme state, reason code, timestamps |
+| `payment_events` | append-only history with safe metadata only |
+
+Lifecycle: `pending → succeeded | cancelled | failed`. There is deliberately
+**no refund status** (see the refund boundary below).
+
+Constraints doing real work (`drizzle/0004_phase14_payments.sql`):
+
+* `payments_one_live_per_enrollment` — partial UNIQUE on `enrollment_request_id`
+  `WHERE status IN ('pending','succeeded')`. **This is the concurrency
+  guarantee**: two simultaneous "pay" clicks race on this index, the loser
+  catches the violation and re-reads the winner's row, so one obligation exists.
+* `payment_transactions_provider_tx_unique` — UNIQUE `(provider,
+  provider_transaction_id)`. **This is the idempotency key** for callback
+  retries.
+* `payments_amount_positive`, `payments_currency_supported` (`UZS` only),
+  `payments_paid_at_consistent` (`succeeded` ⇔ `paid_at IS NOT NULL`),
+  `payment_transactions_state_valid` (`1, 2, -1, -2`).
+
+## Provider abstraction
+
+```
+payment-service.ts        provider-agnostic domain (obligations, transitions)
+        ↓
+provider.ts               the PaymentProvider contract
+        ↓
+payme-adapter.ts          Payme-specific: auth, six RPC methods, checkout URL
+payme-protocol.ts         pure protocol constants (methods, states, error codes)
+```
+
+No Payme state value, method name or error code leaks into the enrollment
+services or the UI; the dashboard only ever sees our own four statuses. All
+Payme specifics are confined to the `payme-*` modules.
+
+## The Payme flow
+
+1. Student clicks `To'lov qilish` on an **accepted, paid** enrollment.
+2. The server authenticates the session, verifies ownership and `accepted`
+   status, derives the price, creates-or-reuses one obligation, and builds the
+   checkout URL — `<checkout_url>/base64("m=…;ac.payment_id=…;a=<tiyin>;l=uz;c=<return>")`.
+3. The student pays on Payme's own page. We never see a card.
+4. Payme calls our callback, which runs the Merchant API methods.
+5. `PerformTransaction` marks the payment `succeeded` and notifies the student.
+6. The student returns to `/dashboard/payments/<id>`, which reads the
+   **database**.
+
+## Callback route
+
+`POST /api/payments/payme` — `runtime = "nodejs"`, `force-dynamic`, `no-store`,
+`X-Robots-Tag: noindex`.
+
+* **POST only.** `GET`/`PUT`/`PATCH`/`DELETE` answer `-32300`.
+* **No session cookie required or consulted** — this is a server-to-server
+  endpoint.
+* Authentication happens **before parsing or any mutation**.
+* Request bodies are capped at 16 KB.
+* Methods are **whitelisted**; anything else is `-32601`.
+* Every response is HTTP 200 with a typed JSON-RPC body, as the protocol
+  requires.
+* Internal errors never leak detail: they map to `-32400` and we log a code,
+  never a secret.
+
+Implemented methods, exactly as specified — `CheckPerformTransaction`,
+`CreateTransaction`, `PerformTransaction`, `CancelTransaction`,
+`CheckTransaction`, `GetStatement` — with the official states (`1` created, `2`
+performed, `-1` cancelled, `-2` cancelled after completion) and the official
+error codes (`-31001` wrong amount, `-31003` transaction not found, `-31008`
+impossible for current state, `-31050…-31099` account errors with the offending
+field named in `data` and a localized `message`).
+
+## Authentication and secrets
+
+Payme authenticates with **HTTP Basic**: `Authorization: Basic
+base64(login:password)`, where the password is the cashbox key. We compare both
+halves with `timingSafeEqual`, split on the **first** colon only (the key may
+contain one), evaluate both comparisons before returning so timing reveals
+nothing, and answer every failure mode identically with `-32504`.
+
+Credentials live only in server-side env vars. None of them is prefixed
+`NEXT_PUBLIC_`, so Next.js cannot place them in the client bundle — verified by
+grepping the built `.next/static` output for the key, which returns nothing. We
+never log Authorization headers, the merchant key, session cookies, or full
+header dumps, and we never store card numbers, CVV, expiry or Payme user
+credentials.
+
+## Idempotency
+
+Payme repeats `CreateTransaction`, `PerformTransaction` and `CancelTransaction`
+after a lost response and **requires the repeat to return the same result**. The
+sandbox grades this directly.
+
+Each handler reads existing state first and returns the stored answer instead of
+re-applying an effect:
+
+* **Create** — an existing provider transaction id is echoed back unchanged; the
+  unique index makes a concurrent duplicate impossible.
+* **Perform** — runs in ONE transaction: `SELECT … FOR UPDATE` on the payment
+  row (the serialisation point) → re-read → if already performed, return the
+  same result and write nothing → otherwise mark performed, set `succeeded`,
+  stamp `paid_at`, append the event and insert the notification → commit. A
+  repeat therefore cannot double-pay or double-notify.
+* **Cancel** — an already-cancelled transaction returns its stored result.
+
+Tested: repeated Perform produces byte-identical JSON, exactly one notification
+and exactly one success event — over both the service API and real HTTP.
+
+## Cancellation, and the refund boundary
+
+`CancelTransaction` is **Merchant API protocol only**, not a user-facing refund:
+
+* not yet performed → state `-1`, and the obligation becomes `cancelled`;
+* already performed → state `-2`, and the payment **stays `succeeded`**, because
+  the money really moved and we do not fake a refund.
+
+Per Payme's documentation, customer refunds are performed by the merchant in the
+cabinet at `merchant.paycom.uz`, and are only possible *because* we implement
+`CancelTransaction`. This product implements no refund UI.
+
+Consequently **an accepted enrollment with a succeeded payment cannot be
+self-cancelled.** The refusal is honest rather than silently cancelling while
+keeping the money:
+
+> To'langan yozilishni bekor qilish va pulni qaytarish jarayoni hali
+> qo'llab-quvvatlanmaydi.
+
+An accepted but **unpaid** enrollment is still freely cancellable. The check
+runs inside the cancelling transaction, so a payment confirmed concurrently
+cannot slip past it.
+
+## What each role sees
+
+**Student** — `To'lov kutilmoqda` (accepted, nothing started), `To'lov
+jarayonda`, `To'lov qilindi`, or factual cancelled/failed wording with a safe
+retry. A free accepted place reads `Bepul — to'lov talab qilinmaydi`. A verified
+success also produces the notification `To'lov muvaffaqiyatli tasdiqlandi`.
+
+**Teacher** — a minimal factual indicator only: *not required* / *awaiting* /
+*paid*. No amount, no provider id, no transaction detail, no payouts, and **no
+control to mark anything paid** — there is simply no such action in the
+codebase.
+
+The return page `/dashboard/payments/[paymentId]` is also the provider return
+URL, which makes one thing critical: **a redirect back is not proof of
+payment.** The page reads status from the database, has no `?success=` handling,
+and contains no code path that can change a payment's status. Ownership is in
+the SQL predicate, so another student's payment id 404s and leaks nothing.
+
+Pages are server-first: no polling loop, no realtime layer, no fake progress
+animation, and measured CLS of 0.0002.
+
+## Sandbox vs production
+
+`PAYMENT_MODE` governs the whole subsystem:
+
+| mode | behaviour |
+| --- | --- |
+| `disabled` | **default.** No payment can be initiated; the UI says so plainly instead of offering a dead button. |
+| `test` | Payme sandbox cabinet, using the **test** cashbox key. |
+| `production` | Real money. Refused unless `NODE_ENV=production`. |
+
+If `PAYMENT_MODE` is not `disabled` and the merchant id or key is missing,
+**startup fails**. Failing to boot is the correct outcome for a half-configured
+payment system.
+
+There is no self-made "fake success" endpoint anywhere. The test harness invokes
+the adapter and service directly; it cannot bypass authentication over HTTP.
+
+## Environment variables
+
+| variable | meaning |
+| --- | --- |
+| `PAYMENT_MODE` | `disabled` (default) / `test` / `production` |
+| `PAYME_MERCHANT_ID` | cashbox identifier from the merchant cabinet |
+| `PAYME_MERCHANT_KEY` | cashbox key — the Basic-auth password Payme calls us with. The most sensitive value in the app. |
+| `PAYME_MERCHANT_LOGIN` | Basic-auth login Payme uses (`Paycom` for standard integrations) |
+| `PAYME_CHECKOUT_URL` | `https://checkout.paycom.uz` (production) or `https://test.paycom.uz` (sandbox) |
+| `APP_BASE_URL` | absolute origin of this app, used to build the return URL **server-side** |
+
+Placeholders are in `.env.example`. No real secret is committed anywhere.
+
+## Fiscalization boundary
+
+`CheckPerformTransaction` may return a `detail` object for fiscalization, whose
+`items[]` require a real **ИКПУ** (`code`), `package_code` and `vat_percent`.
+Those are merchant-registration data this project does not have, and inventing
+them would produce invalid fiscal receipts. The seam is therefore modelled and
+documented, `detail` is omitted until the values are configured, and production
+stays disabled while unconfigured. **No ИКПУ code is fabricated.**
+
+## CLICK boundary (not implemented)
+
+There is **no CLICK adapter** — a fake one would be a false claim of
+multi-provider support. The seam is documented instead: CLICK uses a two-step
+`Prepare` / `Complete` callback with a signature (MD5 of a field set) rather
+than Basic auth, and its own error codes. Adding it means one new module
+implementing the same `PaymentProvider` contract plus a code mapping; the
+`provider` enum, the obligation model, the money helpers, the idempotency keys
+and the status projection are all already provider-agnostic and would not
+change.
+
+## Commands
+
+```bash
+npm run test:payments    # Phase 14 payment suite (137 checks)
+```
+
+`npm run test:payments` runs against real PGlite migrations and covers MONEY,
+DOMAIN, IDEMPOTENCY, PAYME (all six methods plus auth), SECURITY, CANCEL and
+STATUS — including cross-student payment attempts, browser amount tampering, the
+price snapshot after a price change, callback auth failures, unknown
+transactions and accounts, duplicate Create/Perform, concurrent initiation and
+concurrent Perform, and IDOR on the payment page.
+
+## What Phase 14 does NOT implement
+
+Refunds · payouts, commissions or split settlement · recurring payments ·
+stored cards or any card form · a CLICK, Uzum or other provider adapter · SMS or
+email receipts · an admin financial dashboard · fiscal receipt submission.

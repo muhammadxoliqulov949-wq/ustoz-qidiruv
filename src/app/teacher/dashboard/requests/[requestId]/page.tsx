@@ -165,7 +165,7 @@ export default async function RequestDetailPage({
             ) : null}
             {request.status === "accepted" ? (
               <p className="mt-1 text-sm text-ink-500">
-                O‘quvchi guruhga kiritildi. To‘lov tizimi hali ulanmagan.
+                O‘quvchi guruhga kiritildi. Pullik kursda to‘lovni o‘quvchi amalga oshiradi.
               </p>
             ) : null}
           </div>

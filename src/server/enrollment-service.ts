@@ -3,6 +3,8 @@ import { and, count, desc, eq, inArray, sql, sum } from "drizzle-orm";
 import { getDb, schema } from "./db/client";
 import { newId } from "./auth/ids";
 import { canTransition, type EnrollmentStatus } from "@/lib/enrollment-status";
+import { PAID_CANCELLATION_BLOCKED } from "@/lib/payment-status";
+import { hasSucceededPayment } from "./payments/payment-service";
 
 /* -------------------------------------------------------------------------- */
 /* Enrollment service — Phase 13.                                              */
@@ -40,6 +42,8 @@ export type ServiceErrorCode =
   | "capacity_full"
   | "duplicate_request"
   | "invalid_group"
+  /** Phase 14: the place has been paid for and refunds are not implemented. */
+  | "payment_settled"
   | "server_error";
 
 type Tx = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
@@ -171,6 +175,9 @@ export async function listTeacherRequests(
       groupTitle: schema.courseGroups.title,
       groupCapacity: schema.courseGroups.capacity,
       studentName: schema.studentProfiles.name,
+      // Phase 14: price drives only whether payment APPLIES. The teacher is
+      // never shown an amount, a provider id or any transaction detail.
+      coursePriceUzs: schema.courses.priceUzs,
     })
     .from(schema.enrollmentRequests)
     .innerJoin(schema.courses, eq(schema.courses.id, schema.enrollmentRequests.courseId))
@@ -432,7 +439,7 @@ export async function acceptRequest(
       userId: request.studentUserId,
       type: "enrollment_accepted",
       title: "So‘rovingiz qabul qilindi",
-      body: `${request.courseTitle} — ${request.groupTitle}. To‘lov tizimi hali ulanmagan.`,
+      body: `${request.courseTitle} — ${request.groupTitle}. Guruhga qabul qilindingiz.`,
       href: "/dashboard/courses",
     });
 
@@ -555,6 +562,24 @@ export async function cancelRequest(
         ok: false as const,
         code: "invalid_transition" as const,
         message: "Bu so‘rovni bekor qilib bo‘lmaydi.",
+      };
+    }
+
+    /*
+     * PHASE 14 SAFETY RULE. A place that has actually been PAID FOR cannot be
+     * cancelled through the ordinary self-service button, because refunds do
+     * not exist yet. Silently cancelling while keeping the student's money
+     * would be the worst possible outcome, and faking a refund would be a lie,
+     * so the honest answer is that this needs a process we have not built.
+     *
+     * Checked inside the same transaction that will perform the cancellation,
+     * so a payment confirmed concurrently cannot slip past it.
+     */
+    if (await hasSucceededPayment(requestId, tx)) {
+      return {
+        ok: false as const,
+        code: "payment_settled" as const,
+        message: PAID_CANCELLATION_BLOCKED,
       };
     }
 

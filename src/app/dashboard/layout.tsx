@@ -58,7 +58,8 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             <DashboardSidebarNav />
             <p className="text-sm leading-relaxed text-ink-500 max-lg:hidden">
               Kabinet hisobingizga bog‘langan. Saqlangan kurslar hozircha shu
-              brauzerda saqlanadi; to‘lov tizimi hali ulanmagan.
+              brauzerda saqlanadi. Pullik kurslarga to‘lov so‘rovingiz qabul
+              qilingandan so‘ng amalga oshiriladi.
             </p>
             <Link
               href="/courses"

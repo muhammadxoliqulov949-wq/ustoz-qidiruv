@@ -64,7 +64,8 @@ export default async function TeacherDashboardLayout({
             <TeacherSidebarNav />
             <p className="text-sm leading-relaxed text-ink-500 max-lg:hidden">
               Panel hisobingizga bog‘langan. Yozilish so‘rovlarini shu yerda
-              qabul qilasiz yoki rad etasiz; to‘lov tizimi hali ulanmagan.
+              qabul qilasiz yoki rad etasiz. To‘lovlar o‘quvchi tomonidan
+              amalga oshiriladi.
             </p>
             <Link
               href="/teachers"

@@ -1,4 +1,5 @@
 import {
+  bigint,
   boolean,
   check,
   foreignKey,
@@ -79,6 +80,9 @@ export const notificationType = pgEnum("notification_type", [
   "enrollment_accepted",
   "enrollment_rejected",
   "enrollment_cancelled",
+  // Phase 14. Created ONLY from a verified provider callback, never from a
+  // browser redirect or a query parameter.
+  "payment_succeeded",
 ]);
 
 /* ---------------------------------- users ---------------------------------- */
@@ -486,6 +490,171 @@ export const notifications = pgTable(
   ],
 );
 
+/* --------------------------------- payments -------------------------------- */
+
+/*
+ * PAYMENT IS A SEPARATE DOMAIN FROM ENROLLMENT (Phase 14).
+ *
+ * `enrollment_status` is deliberately NOT extended with `paid`. A student may
+ * hold an ACCEPTED place whose payment is still PENDING, and seat capacity is
+ * owned by the enrollment status alone. Merging the two would make both
+ * ambiguous.
+ */
+
+/** Which provider a payment is routed through. Payme is the only one built. */
+export const paymentProvider = pgEnum("payment_provider", ["payme"]);
+
+/**
+ * Our own, provider-agnostic payment lifecycle. Payme's transaction states
+ * (1, 2, -1, -2) live on `payment_transactions`, not here.
+ *
+ * There is no `refunded` status because refunds are not implemented.
+ */
+export const paymentStatus = pgEnum("payment_status", [
+  "pending",
+  "succeeded",
+  "cancelled",
+  "failed",
+]);
+
+/** Types of immutable payment history entries. */
+export const paymentEventType = pgEnum("payment_event_type", [
+  "payment_created",
+  "provider_transaction_created",
+  "payment_succeeded",
+  "provider_cancelled",
+  "payment_failed",
+]);
+
+/**
+ * A payment OBLIGATION for one accepted enrollment.
+ *
+ * `amount_tiyin` is an immutable PRICE SNAPSHOT taken when the payment is
+ * created. A later edit to the course price must never change what an existing
+ * payment is for, so nothing recomputes this column.
+ *
+ * It is `bigint` on purpose: course prices are int32 so'm capped at 100_000_000,
+ * which is 10^10 tiyin — well beyond int32.
+ */
+export const payments = pgTable(
+  "payments",
+  {
+    id: text("id").primaryKey(),
+    /** The accepted enrollment this obligation belongs to. */
+    enrollmentRequestId: text("enrollment_request_id")
+      .notNull()
+      .references(() => enrollmentRequests.id, { onDelete: "cascade" }),
+    /** Denormalised payer, so payment queries never need a join to authorize. */
+    studentUserId: text("student_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: paymentProvider("provider").notNull().default("payme"),
+    /** Immutable snapshot, in tiyin. Never derived from client input. */
+    amountTiyin: bigint("amount_tiyin", { mode: "bigint" }).notNull(),
+    currency: text("currency").notNull().default("UZS"),
+    status: paymentStatus("status").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+  },
+  (table) => [
+    /*
+     * At most ONE LIVE payment obligation per enrollment. Partial, so a
+     * cancelled or failed attempt does not prevent trying again. This is what
+     * makes two simultaneous "pay" clicks produce one obligation rather than
+     * two charges -- enforced by the database, not by browser timing.
+     */
+    uniqueIndex("payments_one_live_per_enrollment")
+      .on(table.enrollmentRequestId)
+      .where(sql`status IN ('pending', 'succeeded')`),
+    index("payments_student_idx").on(table.studentUserId),
+    index("payments_enrollment_idx").on(table.enrollmentRequestId),
+    // A payment for nothing is meaningless; free courses must not create rows.
+    check("payments_amount_positive", sql`${table.amountTiyin} > 0`),
+    check("payments_currency_supported", sql`${table.currency} = 'UZS'`),
+    // Timestamps must agree with the status they describe.
+    check(
+      "payments_paid_at_consistent",
+      sql`(${table.status} = 'succeeded') = (${table.paidAt} IS NOT NULL)`,
+    ),
+  ],
+);
+
+/**
+ * One row per PROVIDER transaction (Payme calls it a "financial transaction").
+ *
+ * Kept separate from `payments` so Payme's state machine does not leak into
+ * the payment domain. Payme may create several transactions against the same
+ * obligation over time (e.g. one cancelled by timeout, then another).
+ */
+export const paymentTransactions = pgTable(
+  "payment_transactions",
+  {
+    id: text("id").primaryKey(),
+    paymentId: text("payment_id")
+      .notNull()
+      .references(() => payments.id, { onDelete: "cascade" }),
+    provider: paymentProvider("provider").notNull().default("payme"),
+    /** The provider's own transaction id. UNIQUE — this is the idempotency key. */
+    providerTransactionId: text("provider_transaction_id").notNull(),
+    /** Provider-side creation time, in provider units (Payme: unix ms). */
+    providerCreatedAt: bigint("provider_created_at", { mode: "bigint" }).notNull(),
+    /**
+     * The provider's transaction state, stored verbatim.
+     * Payme: 1 created, 2 performed, -1 cancelled, -2 cancelled after perform.
+     */
+    state: integer("state").notNull(),
+    /** Provider cancellation reason code, when one was supplied. */
+    reasonCode: integer("reason_code"),
+    /** When we performed it, in provider units. */
+    performedAt: bigint("performed_at", { mode: "bigint" }),
+    /** When we cancelled it, in provider units. */
+    cancelledAt: bigint("cancelled_at", { mode: "bigint" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    /*
+     * THE IDEMPOTENCY GUARANTEE. Payme retries CreateTransaction with the same
+     * id after a lost response; this index makes a duplicate physically
+     * impossible rather than merely unlikely.
+     */
+    unique("payment_transactions_provider_tx_unique").on(
+      table.provider,
+      table.providerTransactionId,
+    ),
+    index("payment_transactions_payment_idx").on(table.paymentId),
+    // Only the four states the protocol defines.
+    check("payment_transactions_state_valid", sql`${table.state} IN (1, 2, -1, -2)`),
+  ],
+);
+
+/**
+ * Immutable payment history. Not an accounting ledger and never public.
+ *
+ * `metadata` holds only safe, non-sensitive values (never credentials, never
+ * card data -- this product never sees a card at all).
+ */
+export const paymentEvents = pgTable(
+  "payment_events",
+  {
+    id: text("id").primaryKey(),
+    paymentId: text("payment_id")
+      .notNull()
+      .references(() => payments.id, { onDelete: "cascade" }),
+    type: paymentEventType("type").notNull(),
+    provider: paymentProvider("provider").notNull().default("payme"),
+    providerTransactionId: text("provider_transaction_id"),
+    metadata: text("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("payment_events_payment_idx").on(table.paymentId, table.createdAt),
+    check("payment_events_metadata_len", sql`${table.metadata} IS NULL OR length(${table.metadata}) <= 500`),
+  ],
+);
+
 /* -------------------------------- relations -------------------------------- */
 
 export const usersRelations = relations(users, ({ one, many }) => ({
@@ -537,3 +706,6 @@ export type TeacherProfileRow = typeof teacherProfiles.$inferSelect;
 export type CourseRow = typeof courses.$inferSelect;
 export type CourseGroupRow = typeof courseGroups.$inferSelect;
 export type EnrollmentRequestRow = typeof enrollmentRequests.$inferSelect;
+export type PaymentRow = typeof payments.$inferSelect;
+export type PaymentTransactionRow = typeof paymentTransactions.$inferSelect;
+export type PaymentEventRow = typeof paymentEvents.$inferSelect;

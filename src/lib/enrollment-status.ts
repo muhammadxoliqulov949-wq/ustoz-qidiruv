@@ -95,7 +95,7 @@ export const ENROLLMENT_STATUS_LABEL: Record<EnrollmentStatus, string> = {
  */
 export const ENROLLMENT_STATUS_NOTE: Record<EnrollmentStatus, string> = {
   submitted: "Ustoz hali ko‘rib chiqmagan.",
-  accepted: "Guruhga qabul qilindingiz. To‘lov tizimi hali ulanmagan.",
+  accepted: "Guruhga qabul qilindingiz.",
   rejected: "Ustoz bu so‘rovni rad etdi.",
   cancelled: "So‘rov bekor qilingan.",
 };
