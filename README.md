@@ -23,7 +23,7 @@ foundation.
 
 ```bash
 npm run dev         # dev server (0.0.0.0:3000)
-npm run build       # production build (offline-safe: fonts are self-hosted)
+npm run build       # production build (offline-safe, no database required)
 npm run lint        # eslint
 npx tsc --noEmit    # typecheck
 
@@ -383,7 +383,9 @@ npm run dev
 ```
 
 No PostgreSQL installation is required: the default `DB_DRIVER=pglite` stores
-the database under `.data/pglite` (git-ignored).
+the database under `.data/pglite` (git-ignored). The database is needed at
+runtime (dev server and the pages that read it); `npm run build` does not
+touch it — CI/production builds succeed with no database at all.
 
 ## Environment variables
 
@@ -469,7 +471,7 @@ are inserted as `published`; everything a teacher creates starts as `draft`.
 
 **Visibility is enforced in SQL, not in the UI.** Every public query filters
 `status = 'published'`, so a draft is never selected — it does not appear in
-listings, search, teacher profiles or `generateStaticParams`, its slug 404s, and
+listings, search or teacher profiles, its slug 404s at request time, and
 `enrollment` refuses to target it.
 
 Teacher profiles are public only when `is_public` is set *and* they own at least
@@ -490,13 +492,20 @@ teacher records.
 | Route | Mode | Why |
 |---|---|---|
 | `/courses`, `/categories/[slug]` | Dynamic SSR | Results depend on the URL *and* live DB state; a build-time snapshot would go stale the moment a course changes. |
-| `/courses/[slug]` | Dynamic SSR | Seat availability is derived from live enrollment rows. `generateStaticParams` still enumerates published slugs; unknown slugs 404 at request time. |
-| `/teachers`, `/teachers/[slug]` | Dynamic SSR | The roster and each profile's course set change at runtime. |
+| `/courses/[slug]` | Dynamic SSR | Seat availability is derived from live enrollment rows. No build-time slug enumeration — unknown, unpublished or draft slugs 404 at request time. |
+| `/teachers`, `/teachers/[slug]` | Dynamic SSR | The roster and each profile's course set change at runtime. No build-time slug enumeration either. |
 | All `/dashboard` and `/teacher/dashboard` routes | Dynamic | Account-sensitive; never prerendered. |
 
 Writes call `revalidatePath()` for the affected surfaces (`/courses`,
 `/teachers`, the course's public page and the teacher dashboard), so data is not
 served stale after an edit.
+
+**No route reads the database at build time.** The marketplace detail routes
+deliberately have no `generateStaticParams`: the database is runtime state, so
+`npm run build` succeeds with no database and no credentials present (CI /
+Vercel build sandbox). Slug validity is decided per request by the
+published-only repository layer — a published slug renders, anything else
+404s.
 
 ## Seat availability is derived, never stored
 

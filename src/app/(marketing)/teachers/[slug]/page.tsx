@@ -11,7 +11,7 @@ import { Rating, VerifiedMark } from "@/components/ui/rating";
 import { SectionHeader } from "@/components/ui/section-header";
 import { TeacherReviews } from "@/components/teachers/teacher-reviews";
 import { cityLabel, courseFormatLabels } from "@/data/courses";
-import { getPublicTeacherBySlug, listPublicTeacherSlugs } from "@/server/public-repo";
+import { getPublicTeacherBySlug } from "@/server/public-repo";
 import { buildTeacherFaq } from "@/data/teacher-faq";
 import { formatCount, formatPrice } from "@/lib/format";
 import { cn, focusRing } from "@/lib/utils";
@@ -25,14 +25,12 @@ import { cn, focusRing } from "@/lib/utils";
 /* one place and cannot be duplicated or contradicted.                              */
 /*                                                                                  */
 /* RENDERING: dynamic SSR — a teacher's published course set changes at runtime.    */
+/* No build-time slug enumeration (no generateStaticParams): `npm run build`      */
+/* must not depend on the database. Unknown or non-public slugs 404 at request    */
+/* time via the published-only repository layer.                                  */
 /* -------------------------------------------------------------------------- */
 
 export const dynamic = "force-dynamic";
-
-export async function generateStaticParams() {
-  const slugs = await listPublicTeacherSlugs();
-  return slugs.map((slug) => ({ slug }));
-}
 
 export async function generateMetadata({
   params,

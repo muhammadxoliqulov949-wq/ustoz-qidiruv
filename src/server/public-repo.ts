@@ -279,16 +279,6 @@ export async function getPublicCourseBySlug(slug: string): Promise<Course | null
   );
 }
 
-/** Slugs of every public course — used by generateStaticParams. */
-export async function listPublicCourseSlugs(): Promise<string[]> {
-  const db = getDb();
-  const rows = await db
-    .select({ slug: schema.courses.slug })
-    .from(schema.courses)
-    .where(eq(schema.courses.status, PUBLIC_STATUS));
-  return rows.map((row) => row.slug);
-}
-
 /* ------------------------------ teacher reads ----------------------------- */
 
 /**
@@ -438,15 +428,6 @@ export async function getPublicTeacherBySlug(
     },
     courses,
   };
-}
-
-export async function listPublicTeacherSlugs(): Promise<string[]> {
-  const db = getDb();
-  const rows = await db
-    .select({ slug: schema.teacherProfiles.slug })
-    .from(schema.teacherProfiles)
-    .where(eq(schema.teacherProfiles.isPublic, true));
-  return rows.map((row) => row.slug);
 }
 
 /* ------------------------------ facet options ----------------------------- */

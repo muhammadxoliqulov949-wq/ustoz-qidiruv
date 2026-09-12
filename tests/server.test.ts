@@ -345,7 +345,7 @@ async function main(): Promise<void> {
 
   const {
     listPublicCourses, getPublicCourseBySlug, listPublicTeachers,
-    getPublicTeacherBySlug, listPublicCourseSlugs,
+    getPublicTeacherBySlug,
   } = await import("../src/server/public-repo");
   const { getTeacherDashboardCourses, getOwnedCourseDetail } =
     await import("../src/server/repo");
@@ -360,8 +360,12 @@ async function main(): Promise<void> {
     (await listPublicCourses(browseAll)).every((c) => c.id !== courseId));
   check("draft course slug lookup returns null (not merely hidden)",
     (await getPublicCourseBySlug("test-ielts-kursi")) === null);
-  check("draft slug is absent from generateStaticParams input",
-    !(await listPublicCourseSlugs()).includes("test-ielts-kursi"));
+  // The old "draft slug is absent from generateStaticParams input" check is
+  // obsolete by design: build-time slug enumeration no longer exists (no
+  // generateStaticParams on the detail routes), so there is no build-time
+  // param set a draft could leak into. The invariant it protected — a draft
+  // slug never resolves to a public page — is now held entirely at request
+  // time and asserted above (null lookup → 404).
 
   // Publish it and make the owner public — then it must appear everywhere.
   await db.update(schema.teacherProfiles)
