@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState, useTransition } from "react";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Button, Card } from "@/components/ui";
@@ -15,13 +15,18 @@ import {
   validatePhoneField,
 } from "@/lib/onboarding";
 import { withNext } from "@/lib/safe-next";
+import { loginAction } from "@/server/actions/auth";
 
 /* -------------------------------------------------------------------------- */
-/* LoginForm — phone + password front-end contract. NEVER authenticates:        */
-/* submit validates locally, shows a short busy state, then the honest          */
-/* "auth service not connected" notice. No session, no cookie, no redirect     */
-/* masquerading as a sign-in, and no fake OTP. Password recovery is a          */
-/* clearly-labeled deferred state (inline panel, no fake submit).              */
+/* LoginForm — phone + password. Phase 11 connects this to REAL authentication: */
+/* submit calls the `loginAction` server action, which verifies the argon2id    */
+/* hash and, on success, sets an HttpOnly session cookie and redirects server-  */
+/* side. Local validation is kept purely for fast feedback — it is re-run on    */
+/* the server and never trusted. Nothing is stored in localStorage, the         */
+/* password never leaves the form, and failures return one generic message so   */
+/* the form cannot be used to discover which phone numbers are registered.      */
+/* Password recovery stays an honest deferred state (needs SMS/e-mail, which    */
+/* this phase does not implement).                                              */
 /* -------------------------------------------------------------------------- */
 
 interface FieldErrors {
@@ -38,21 +43,13 @@ export function LoginForm({ initialNext = null }: LoginFormProps) {
   const [phone, setPhone] = useState("+998");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<FieldErrors>({});
-  const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [forgotOpen, setForgotOpen] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(
-    () => () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    },
-    [],
-  );
+  const [submitting, startTransition] = useTransition();
 
   const handlePhoneChange = useCallback((next: string) => {
     setPhone(next);
-    setSubmitted(false);
+    setFormError(null);
     setErrors((prev) => (prev.phone ? { ...prev, phone: undefined } : prev));
   }, []);
 
@@ -64,18 +61,28 @@ export function LoginForm({ initialNext = null }: LoginFormProps) {
     const passwordError = validatePasswordField(password);
     if (passwordError) nextErrors.password = passwordError;
     setErrors(nextErrors);
-    if (Object.keys(nextErrors).length > 0) {
-      setSubmitted(false);
-      return;
-    }
-    // Frontend contract ends here: there is no auth backend in this phase,
-    // so we never fake a request. A brief busy state demonstrates the submit
-    // UX, then the honest not-connected notice replaces any action result.
-    setSubmitting(true);
-    timerRef.current = setTimeout(() => {
-      setSubmitting(false);
-      setSubmitted(true);
-    }, 600);
+    setFormError(null);
+    if (Object.keys(nextErrors).length > 0) return;
+
+    // Real authentication. On success the server action redirects (it throws
+    // Next.js's redirect signal), so no success branch runs here.
+    startTransition(async () => {
+      const payload = new FormData();
+      payload.set("phone", phone);
+      payload.set("password", password);
+      if (initialNext) payload.set("next", initialNext);
+      try {
+        const result = await loginAction(payload);
+        if (!result.ok) {
+          setErrors(result.fieldErrors ?? {});
+          setFormError(result.message);
+        }
+      } catch (error) {
+        // Re-throw framework navigation signals; only report real failures.
+        if (error && typeof error === "object" && "digest" in error) throw error;
+        setFormError("Ulanishda xatolik. Internetni tekshirib, qayta urining.");
+      }
+    });
   };
 
   const phoneDigits = extractUzPhoneDigits(phone);
@@ -101,7 +108,7 @@ export function LoginForm({ initialNext = null }: LoginFormProps) {
             value={password}
             onChange={(next) => {
               setPassword(next);
-              setSubmitted(false);
+              setFormError(null);
               setErrors((prev) => (prev.password ? { ...prev, password: undefined } : prev));
             }}
             error={errors.password}
@@ -142,27 +149,10 @@ export function LoginForm({ initialNext = null }: LoginFormProps) {
         </Button>
       </form>
 
-      {submitted ? (
+      {formError ? (
         <div className="mt-4">
-          <AuthNotice live title="Autentifikatsiya xizmati hali ulangagan">
-            <p>
-              Kirish so‘rovi faqat shu brauzerda tekshirildi. Hech qanday
-              so‘rov yuborilmadi, sessiya yaratilmadi va parolingiz hech
-              qayoqqa yozilmadi. Tizimga kirish imkoniyati backend ulanganda
-              ishga tushadi.
-            </p>
-            {initialNext ? (
-              <p className="mt-2">
-                Yozilish jarayonida sahifaga qaytish — kirish talab qilinmaydi
-                (prototip oqim):{" "}
-                <Link
-                  href={initialNext}
-                  className="rounded-md font-medium text-accent-700 underline underline-offset-2 focus-visible:outline-none focus-visible:ring-[length:var(--size-focus-ring)] focus-visible:ring-accent-600/35"
-                >
-                  Davom etish
-                </Link>
-              </p>
-            ) : null}
+          <AuthNotice live title="Kirish amalga oshmadi">
+            <p>{formError}</p>
           </AuthNotice>
         </div>
       ) : null}

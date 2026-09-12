@@ -249,10 +249,11 @@ export function StepReview({ course, group, draft, onEdit }: EnrollStepProps) {
       />
 
       <p className="mt-1 text-sm text-ink-500">
-        Quyidagi tugma so‘rovni{" "}
-        <span className="font-medium text-ink-700">haqiqiy tizimga yubormaydi</span> —
-        backend hali ulangagan. U faqat shu brauzerda so‘rovning tayyor
-        ko‘rinishini ko‘rsatadi.
+        Hisobingizga kirgan bo‘lsangiz, so‘rov haqiqiy saqlanadi va kabinetingizda
+        ko‘rinadi. So‘rov{" "}
+        <span className="font-medium text-ink-700">joyni band qilmaydi</span> va
+        ustoz tomonidan tasdiqlanganini bildirmaydi — tasdiqlash va to‘lov keyingi
+        bosqichda qo‘shiladi.
       </p>
     </div>
   );

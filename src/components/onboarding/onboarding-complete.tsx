@@ -13,6 +13,7 @@ import { Avatar, Badge, Button, ButtonLink } from "@/components/ui";
 import { AuthNotice } from "@/components/auth/auth-notice";
 import { ROLE_LABELS } from "@/components/auth/role-choice";
 import { useOnboardingDraft } from "./draft-store";
+import { ProfileSave } from "./profile-save";
 import {
   onboardingCategories,
   onboardingCityLabel,
@@ -25,9 +26,14 @@ import {
 } from "@/lib/onboarding";
 
 /* -------------------------------------------------------------------------- */
-/* OnboardingComplete — the flow's end screen. This is a UI completion           */
-/* PREVIEW, and it says so out loud (Phase 6 honesty rule): no "account         */
-/* created" wording, no fake verification, no invented profile URL.             */
+/* OnboardingComplete — the flow's end screen.                                  */
+/*                                                                              */
+/* Phase 11 makes this screen honest in BOTH directions, driven by the real     */
+/* session resolved on the server (`signedIn`):                                 */
+/*   • signed in  → an explicit "save profile" action writes the answers to the */
+/*     authenticated user's Student/TeacherProfile row. Verification still      */
+/*     stays "pending" — nothing self-verifies.                                 */
+/*   • anonymous  → unchanged Phase 6 preview wording: nothing was saved.       */
 /*   • student → answer summary + real pre-filtered browse CTAs (?city=&format=  */
 /*     per the Phase 3 URL contract). Skipped runs show an explicit skipped      */
 /*     state instead of a summary.                                               */
@@ -39,6 +45,8 @@ import {
 export interface OnboardingCompleteProps {
   role: UserRole;
   onRestart: () => void;
+  /** True only when the SERVER resolved a session cookie for this request. */
+  signedIn?: boolean;
   /** Safe internal ?next= from the wizard — e.g. back to an enrollment flow. */
   resumeHref?: string | null;
 }
@@ -46,6 +54,7 @@ export interface OnboardingCompleteProps {
 export function OnboardingComplete({
   role,
   onRestart,
+  signedIn = false,
   resumeHref = null,
 }: OnboardingCompleteProps) {
   const { draft } = useOnboardingDraft();
@@ -104,12 +113,21 @@ export function OnboardingComplete({
           </div>
         )}
 
-        <AuthNotice live title="Bu — onboarding interfeysining yakuni">
-          Hisob yaratilmadi va hech qanday ma’lumot serverga yuborilmadi.
-          Tanlovlaringiz faqat shu brauzerdagi vaqtinchalik prototip holatida
-          saqlanadi; haqiqiy profil va tavsiyalar backend ulanganda shu
-          ma’lumotlar asosida quriladi.
-        </AuthNotice>
+        {signedIn ? (
+          <>
+            <p className="text-sm leading-relaxed text-ink-700">
+              Tanlovlaringizni profilingizga saqlashingiz mumkin — keyin ularni
+              kabinetdan istalgan payt o‘zgartirasiz.
+            </p>
+            <ProfileSave role="student" />
+          </>
+        ) : (
+          <AuthNotice live title="Bu — onboarding interfeysining yakuni">
+            Hisob topilmadi, shuning uchun tanlovlaringiz faqat shu brauzerdagi
+            vaqtinchalik holatda turibdi. Ularni profilga saqlash uchun avval
+            ro‘yxatdan o‘ting yoki tizimga kiring.
+          </AuthNotice>
+        )}
 
         {resumeHref ? (
           <ButtonLink href={resumeHref} size="lg" fullWidth>
@@ -221,17 +239,29 @@ export function OnboardingComplete({
         </p>
       </div>
 
-      <AuthNotice variant="warning" title="Profil saqlanmadi — bu UI holati">
-        Haqiqiy ustoz profilingiz hali yaratilmagan: uni ko‘rish uchun
-        <Link
-          href="/teachers"
-          className="mx-1 font-medium text-accent-700 underline underline-offset-2"
-        >
-          /teachers
-        </Link>
-        katalogidagi mavjud profillar ochiladi. Ma’lumotlar tasdiqlash
-        (tekshiruv) va hisob backend ulangandagina asosiy tizimga yoziladi.
-      </AuthNotice>
+      {signedIn ? (
+        <>
+          <AuthNotice title="Tekshiruv holati o‘zgarmaydi">
+            Profilni saqlash ustoz sifatida tasdiqlanganingizni bildirmaydi.
+            Tasdiqlash holati “tasdiqlanmagan” bo‘lib qoladi va uni faqat
+            moderatsiya jarayoni o‘zgartiradi — bu bosqichda u mavjud emas.
+            Profilingiz hozircha ommaviy katalogda chiqmaydi.
+          </AuthNotice>
+          <ProfileSave role="teacher" />
+        </>
+      ) : (
+        <AuthNotice variant="warning" title="Profil saqlanmadi — bu UI holati">
+          Hisob topilmadi, shuning uchun ustoz profili yaratilmadi: uni saqlash
+          uchun avval ro‘yxatdan o‘ting yoki tizimga kiring. Mavjud profillarni
+          <Link
+            href="/teachers"
+            className="mx-1 font-medium text-accent-700 underline underline-offset-2"
+          >
+            /teachers
+          </Link>
+          katalogida ko‘rasiz.
+        </AuthNotice>
+      )}
 
       <div className="flex flex-col gap-2.5 sm:flex-row">
         <ButtonLink href="/teachers" size="lg" fullWidth leadingIcon={<Users />}>

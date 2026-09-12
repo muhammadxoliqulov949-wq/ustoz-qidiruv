@@ -25,7 +25,7 @@ export function TeacherBrowseCard({
   className?: string;
 }) {
   const { teacher, cities, formats, minPriceUzs, courseIds } = row;
-  const { slug, name, photo, verified, specialization } = teacher;
+  const { id, slug, name, photo, verified, specialization } = teacher;
 
   const priceLabel =
     minPriceUzs === null
@@ -50,7 +50,12 @@ export function TeacherBrowseCard({
             className="object-cover object-[center_18%] transition-transform duration-base motion-reduce:transition-none group-hover:scale-[1.015]"
           />
         ) : null}
-        <SaveButton title={name} className="absolute top-3 right-3" />
+        <SaveButton
+          title={name}
+          kind="teacher"
+          entityId={id}
+          className="absolute top-3 right-3"
+        />
       </div>
 
       <div className="flex flex-1 flex-col gap-1.5 p-6">

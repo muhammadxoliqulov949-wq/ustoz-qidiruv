@@ -15,23 +15,33 @@ import { CourseTeacher } from "@/components/course-detail/course-teacher";
 import { EnrollmentCard } from "@/components/course-detail/enrollment-card";
 import { SectionNav, type CourseSection } from "@/components/course-detail/section-nav";
 import { categories } from "@/data/categories";
-import {
-  courseFormatLabels,
-  courseLevelLabels,
-  courses,
-} from "@/data/courses";
-import type { Course } from "@/data/models";
-import { teacherById } from "@/data/teachers";
+import { courseFormatLabels, courseLevelLabels } from "@/data/courses";
 import { formatCount } from "@/lib/format";
+import {
+  getPublicCourseBySlug,
+  getPublicTeacherById,
+  listPublicCourseSlugs,
+} from "@/server/public-repo";
 import { cn, focusRing } from "@/lib/utils";
 
 /* -------------------------------------------------------------------------- */
-/* /courses/[slug] — the evaluation page (Phase 4). Server-rendered; the only  */
-/* client islands are the section nav, the group picker and the enroll dialog. */
-/* Group selection is URL state (`?group=`), so the enrollment summary and the */
-/* schedule section are two projections of one server value. Enrollment stops  */
-/* at the auth handoff — no fake success anywhere.                             */
+/* /courses/[slug] — the evaluation page (Phase 4 UX, Phase 12 data source).   */
+/*                                                                              */
+/* The course, its groups and its ordered syllabus are loaded from PostgreSQL  */
+/* by getPublicCourseBySlug(), which only ever returns PUBLISHED courses, so a */
+/* draft URL 404s exactly like an unknown slug — drafts are not merely hidden. */
+/*                                                                              */
+/* RENDERING: dynamic SSR. Group availability is derived from live enrollment  */
+/* rows, and a course can be edited or unpublished at any time, so caching a   */
+/* build-time snapshot would show stale schedules and seat counts.             */
+/* generateStaticParams still enumerates published slugs so the router knows   */
+/* the valid set; unknown slugs 404 at request time.                           */
+/*                                                                              */
+/* Client islands are unchanged: section nav, group picker, enroll dialog.     */
+/* Group selection remains URL state (`?group=`).                              */
 /* -------------------------------------------------------------------------- */
+
+export const dynamic = "force-dynamic";
 
 const SECTIONS: CourseSection[] = [
   { id: "about", label: "Kurs haqida" },
@@ -45,16 +55,12 @@ const SECTIONS: CourseSection[] = [
 /** Anchor targets clear the sticky header + section-nav strip (72 + ~52px). */
 const ANCHOR = "scroll-mt-[9.5rem] lg:scroll-mt-[8.5rem]";
 
-const courseBySlug = new Map(courses.map((course) => [course.slug, course]));
 const categoryById = new Map(categories.map((category) => [category.id, category]));
 
-function findCourse(slug: string): Course | undefined {
-  return courseBySlug.get(slug);
-}
-
-/** Static shells for the known catalog; unknown slugs 404 at request time. */
-export function generateStaticParams() {
-  return courses.map((course) => ({ slug: course.slug }));
+/** Known published slugs; anything else 404s at request time. */
+export async function generateStaticParams() {
+  const slugs = await listPublicCourseSlugs();
+  return slugs.map((slug) => ({ slug }));
 }
 
 export async function generateMetadata({
@@ -63,7 +69,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const course = findCourse(slug);
+  const course = await getPublicCourseBySlug(slug);
   if (!course) return { title: "Kurs topilmadi" };
   const category = categoryById.get(course.categoryId);
   return {
@@ -82,7 +88,7 @@ export default async function CourseDetailPage({
 }) {
   const { slug } = await params;
   const query = await searchParams;
-  const course = findCourse(slug);
+  const course = await getPublicCourseBySlug(slug);
   if (!course) notFound();
 
   const { detail } = course;
@@ -99,7 +105,7 @@ export default async function CourseDetailPage({
   if (!group) notFound(); // defensive — every course has ≥1 group
 
   const category = categoryById.get(course.categoryId);
-  const teacher = teacherById.get(course.teacher.id);
+  const teacher = await getPublicTeacherById(course.teacher.id);
 
   return (
     <>
@@ -303,14 +309,14 @@ export default async function CourseDetailPage({
                   selectedGroupId={group.id}
                 />
                 <p className="mt-3 text-sm text-ink-500">
-                  Joylar soni — ustoz ma’lumotnomasidagi mock ko‘rsatkichlar;
-                  aniq bandlik yozilishda tekshiriladi.
+                  Bo‘sh joylar soni guruh sig‘imidan yuborilgan so‘rovlar ayirilib
+                  hisoblanadi; yakuniy bandlikni ustoz tasdiqlaydi.
                 </p>
               </section>
 
               <section id="teacher" className={ANCHOR}>
                 <SectionHeader title="Ustoz" as="h2" />
-                <CourseTeacher course={course} />
+                <CourseTeacher course={course} teacher={teacher} />
               </section>
 
               <section id="reviews" className={ANCHOR}>

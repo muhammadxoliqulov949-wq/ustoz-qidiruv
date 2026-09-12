@@ -1,0 +1,2 @@
+ALTER TABLE "course_groups" ADD COLUMN "end_time" text;--> statement-breakpoint
+ALTER TABLE "course_groups" ADD CONSTRAINT "course_groups_end_time_format" CHECK ("course_groups"."end_time" IS NULL OR ("course_groups"."end_time" ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' AND "course_groups"."end_time" > "course_groups"."start_time"));

@@ -1,0 +1,113 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { Badge } from "@/components/ui";
+import { EmptyState } from "@/components/dashboard/empty-state";
+import {
+  MarkAllReadButton,
+  MarkOneReadButton,
+} from "@/components/notifications/mark-read-buttons";
+import { requireUserPage } from "@/server/auth/guards";
+import { countUnreadNotifications, listNotifications } from "@/server/notification-service";
+import { cn, focusRing } from "@/lib/utils";
+
+export const metadata: Metadata = {
+  title: "Bildirishnomalar",
+  robots: { index: false, follow: false },
+};
+
+/* -------------------------------------------------------------------------- */
+/* /notifications — Phase 13, in-app notifications for BOTH roles.             */
+/*                                                                              */
+/* A quiet, server-rendered page rather than a header dropdown or a social      */
+/* feed: notifications here exist to tell you that a real enrollment decision   */
+/* happened, and each one links straight to the thing it is about.              */
+/*                                                                              */
+/* NO POLLING, no websockets, no realtime layer. The list is fetched once per   */
+/* navigation, which matches how often these events actually occur.             */
+/*                                                                              */
+/* AUTHORIZATION: the list is read with the session user's id in the WHERE      */
+/* clause. There is no route parameter and no query string that could point at  */
+/* another user's notifications.                                                */
+/* -------------------------------------------------------------------------- */
+
+export const dynamic = "force-dynamic";
+
+function formatDate(value: Date): string {
+  return value.toISOString().slice(0, 16).replace("T", " ");
+}
+
+export default async function NotificationsPage() {
+  const user = await requireUserPage("/notifications");
+  const [notifications, unread] = await Promise.all([
+    listNotifications(user.id),
+    countUnreadNotifications(user.id),
+  ]);
+
+  return (
+    <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-10 sm:px-6">
+      <header className="flex flex-col gap-2">
+        <h1 className="text-3xl font-semibold tracking-[-0.015em] text-ink-900">
+          Bildirishnomalar
+        </h1>
+        <p className="text-base text-ink-500">
+          {unread > 0
+            ? `${unread} ta o‘qilmagan bildirishnoma.`
+            : "O‘qilmagan bildirishnoma yo‘q."}
+        </p>
+      </header>
+
+      {notifications.length === 0 ? (
+        <EmptyState title="Hozircha bildirishnoma yo‘q" as="h2">
+          Yozilish so‘rovingiz bo‘yicha qaror qabul qilinganda yoki kursingizga
+          yangi so‘rov kelganda, shu yerda xabar ko‘rinadi. Bildirishnomalar
+          faqat shu ilova ichida — SMS yoki e-pochta yuborilmaydi.
+        </EmptyState>
+      ) : (
+        <>
+          <MarkAllReadButton disabled={unread === 0} />
+          <ul className="flex flex-col gap-2.5">
+            {notifications.map((notification) => (
+              <li
+                key={notification.id}
+                className={cn(
+                  "flex flex-col gap-2 rounded-xl border p-4 shadow-xs",
+                  notification.read
+                    ? "border-line bg-surface"
+                    : "border-accent-200 bg-accent-50",
+                )}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <h2 className="text-base font-semibold text-ink-900">
+                    {notification.title}
+                  </h2>
+                  {/* Unread state is a text badge, not just a colour. */}
+                  {notification.read ? null : <Badge variant="accent">Yangi</Badge>}
+                </div>
+
+                <p className="text-sm text-ink-700">{notification.body}</p>
+                <p className="text-sm text-ink-400">{formatDate(notification.createdAt)}</p>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  {notification.href ? (
+                    <Link
+                      href={notification.href}
+                      className={cn(
+                        "text-sm font-medium text-accent-700 underline underline-offset-2",
+                        focusRing,
+                      )}
+                    >
+                      Ko‘rish
+                    </Link>
+                  ) : null}
+                  {notification.read ? null : (
+                    <MarkOneReadButton notificationId={notification.id} />
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </main>
+  );
+}

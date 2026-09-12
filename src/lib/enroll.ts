@@ -79,7 +79,7 @@ export const ENROLL_STEPS: readonly EnrollStepDef[] = [
   {
     id: "group",
     title: "Kurs va guruh",
-    hint: "Guruhni tanlang — joylar soni mock ma‘lumotdagi qiymatdir.",
+    hint: "Guruhni tanlang — bo‘sh joylar soni yuborilgan so‘rovlar asosida hisoblanadi.",
   },
   {
     id: "student",

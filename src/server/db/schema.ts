@@ -1,0 +1,711 @@
+import {
+  bigint,
+  boolean,
+  check,
+  foreignKey,
+  index,
+  integer,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
+
+/* -------------------------------------------------------------------------- */
+/* USTOZ core schema — Phase 11.                                               */
+/*                                                                              */
+/* Integrity is enforced by the DATABASE, not by TypeScript:                   */
+/*   • foreign keys with explicit ON DELETE behaviour;                          */
+/*   • CHECK constraints for enum-like ranges, price/capacity bounds and the    */
+/*     format ⇄ location rule (online courses cannot carry an address);         */
+/*   • UNIQUE constraints for phone, slug, session token and the "one profile   */
+/*     per user" rule;                                                           */
+/*   • the role-integrity rule (a teacher_profile may only point at a           */
+/*     role='teacher' user) is enforced with a composite FK onto (id, role),    */
+/*     so the database itself makes a mismatched profile impossible.            */
+/*                                                                              */
+/* Nothing here stores a plaintext password or a raw session token: the user    */
+/* table holds an argon2id hash, the session table holds a SHA-256 hash of the  */
+/* opaque cookie value.                                                          */
+/* -------------------------------------------------------------------------- */
+
+export const userRole = pgEnum("user_role", ["student", "teacher"]);
+
+/** Honest states only — a teacher is NEVER auto-verified. */
+export const verificationStatus = pgEnum("verification_status", [
+  "unverified",
+  "pending",
+  "verified",
+]);
+
+export const courseFormat = pgEnum("course_format", ["online", "offline", "hybrid"]);
+export const courseLevel = pgEnum("course_level", ["boshlangich", "orta", "yuqori"]);
+
+/** Phase 11 keeps the honest two-state lifecycle from Phase 10. */
+/**
+ * Phase 12 lifecycle. `published` is added because the runtime genuinely uses
+ * it: public marketplace queries select ONLY this value. A finished draft does
+ * NOT become public on its own — promotion is an explicit, validated action.
+ * Nothing beyond these three exists, because no moderation workflow exists.
+ */
+export const courseStatus = pgEnum("course_status", ["draft", "ready", "published"]);
+
+/** Representative lesson time-of-day — drives the Phase 3 schedule facet. */
+export const courseSchedule = pgEnum("course_schedule", ["morning", "day", "evening"]);
+
+/**
+ * Enrollment states — Phase 13 implements the real decision workflow, so
+ * `accepted` and `rejected` now exist and are genuinely reachable.
+ *
+ * Still deliberately ABSENT: paid / completed / refunded / expired /
+ * waitlisted. Those workflows do not exist, so the database cannot express
+ * them and no UI can imply them.
+ */
+export const enrollmentStatus = pgEnum("enrollment_status", [
+  "submitted",
+  "accepted",
+  "rejected",
+  "cancelled",
+]);
+
+/**
+ * In-app notification kinds. One value per event that is actually emitted by
+ * a server action — no marketing or speculative types.
+ */
+export const notificationType = pgEnum("notification_type", [
+  "enrollment_submitted",
+  "enrollment_accepted",
+  "enrollment_rejected",
+  "enrollment_cancelled",
+  // Phase 14. Created ONLY from a verified provider callback, never from a
+  // browser redirect or a query parameter.
+  "payment_succeeded",
+]);
+
+/* ---------------------------------- users ---------------------------------- */
+
+export const users = pgTable(
+  "users",
+  {
+    id: text("id").primaryKey(),
+    role: userRole("role").notNull(),
+    /** Canonical E.164-ish "+998XXXXXXXXX" — the account identifier. */
+    phone: text("phone").notNull(),
+    /** argon2id hash. Never a plaintext password, never reversible. */
+    passwordHash: text("password_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("users_phone_key").on(table.phone),
+    // Target for the composite role FKs used by the profile tables.
+    unique("users_id_role_key").on(table.id, table.role),
+    check("users_phone_format", sql`${table.phone} ~ '^\\+998[0-9]{9}$'`),
+    check("users_password_hash_not_plain", sql`${table.passwordHash} LIKE '$argon2%'`),
+  ],
+);
+
+/* -------------------------------- sessions --------------------------------- */
+
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: text("id").primaryKey(),
+    /** SHA-256 of the opaque cookie value — the raw token is never stored. */
+    tokenHash: text("token_hash").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("sessions_token_hash_key").on(table.tokenHash),
+    index("sessions_user_id_idx").on(table.userId),
+  ],
+);
+
+/* ----------------------------- student profiles ---------------------------- */
+
+export const studentProfiles = pgTable(
+  "student_profiles",
+  {
+    userId: text("user_id").primaryKey(),
+    /** Duplicated for the composite role FK below; kept in sync by that FK. */
+    role: userRole("role").notNull().default("student"),
+    name: text("name").notNull(),
+    city: text("city"),
+    /** "online" | "offline" | "both" */
+    preferredFormat: text("preferred_format"),
+    /** ISO-639-1 upper tags, e.g. {UZ,EN}. */
+    languages: text("languages").array().notNull().default(sql`'{}'::text[]`),
+    /** Category slugs the learner follows. */
+    interests: text("interests").array().notNull().default(sql`'{}'::text[]`),
+    onboardingCompleted: boolean("onboarding_completed").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // Composite FK onto users(id, role): the DB itself refuses a student
+    // profile attached to a teacher-role user.
+    foreignKey({
+      name: "student_profiles_user_role_fk",
+      columns: [table.userId, table.role],
+      foreignColumns: [users.id, users.role],
+    }).onDelete("cascade"),
+    check("student_profiles_role_check", sql`${table.role} = 'student'`),
+    check(
+      "student_profiles_format_check",
+      sql`${table.preferredFormat} IS NULL OR ${table.preferredFormat} IN ('online','offline','both')`,
+    ),
+    check("student_profiles_name_check", sql`length(btrim(${table.name})) BETWEEN 2 AND 70`),
+  ],
+);
+
+/* ----------------------------- teacher profiles ---------------------------- */
+
+export const teacherProfiles = pgTable(
+  "teacher_profiles",
+  {
+    userId: text("user_id").primaryKey(),
+    role: userRole("role").notNull().default("teacher"),
+    /** Public profile slug (/teachers/[slug]) — unique across the platform. */
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    city: text("city"),
+    district: text("district"),
+    categories: text("categories").array().notNull().default(sql`'{}'::text[]`),
+    levels: text("levels").array().notNull().default(sql`'{}'::text[]`),
+    formats: text("formats").array().notNull().default(sql`'{}'::text[]`),
+    languages: text("languages").array().notNull().default(sql`'{}'::text[]`),
+    experienceYears: integer("experience_years"),
+    bio: text("bio"),
+    approach: text("approach"),
+    /** Defaults to UNVERIFIED. No product path sets 'verified'. */
+    verification: verificationStatus("verification").notNull().default("unverified"),
+    /* ------------- Phase 12 public-profile parity columns ------------- */
+    photo: text("photo"),
+    /** Short public label, e.g. "IELTS va umumiy ingliz tili". */
+    specialization: text("specialization"),
+    ratingX10: integer("rating_x10").notNull().default(0),
+    reviewsCount: integer("reviews_count").notNull().default(0),
+    studentsCount: integer("students_count").notNull().default(0),
+    /** Only a profile that is public appears in /teachers. Teacher accounts
+     *  created through registration are NOT public until they have a
+     *  published course — see repo.listPublicTeachers(). */
+    isPublic: boolean("is_public").notNull().default(false),
+    onboardingCompleted: boolean("onboarding_completed").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      name: "teacher_profiles_user_role_fk",
+      columns: [table.userId, table.role],
+      foreignColumns: [users.id, users.role],
+    }).onDelete("cascade"),
+    unique("teacher_profiles_slug_key").on(table.slug),
+    check("teacher_profiles_role_check", sql`${table.role} = 'teacher'`),
+    check("teacher_profiles_slug_format", sql`${table.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`),
+    check("teacher_profiles_name_check", sql`length(btrim(${table.name})) BETWEEN 2 AND 70`),
+    check(
+      "teacher_profiles_experience_check",
+      sql`${table.experienceYears} IS NULL OR (${table.experienceYears} >= 0 AND ${table.experienceYears} <= 60)`,
+    ),
+    check("teacher_profiles_rating_check", sql`${table.ratingX10} BETWEEN 0 AND 50`),
+    check("teacher_profiles_reviews_check", sql`${table.reviewsCount} >= 0`),
+    check("teacher_profiles_students_check", sql`${table.studentsCount} >= 0`),
+    index("teacher_profiles_public_idx").on(table.isPublic),
+  ],
+);
+
+/* --------------------------------- courses --------------------------------- */
+
+export const courses = pgTable(
+  "courses",
+  {
+    id: text("id").primaryKey(),
+    /** Public slug (/courses/[slug]); unique. */
+    slug: text("slug").notNull(),
+    teacherUserId: text("teacher_user_id")
+      .notNull()
+      .references(() => teacherProfiles.userId, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    categoryId: text("category_id").notNull(),
+    level: courseLevel("level").notNull(),
+    format: courseFormat("format").notNull(),
+    city: text("city"),
+    location: text("location"),
+    /** 0 = free. Monthly price in UZS (the only unit the product supports). */
+    priceUzs: integer("price_uzs").notNull().default(0),
+    summary: text("summary").notNull(),
+    longDescription: text("long_description").notNull().default(""),
+    audience: text("audience").array().notNull().default(sql`'{}'::text[]`),
+    learningOutcomes: text("learning_outcomes").array().notNull().default(sql`'{}'::text[]`),
+    teachingLanguages: text("teaching_languages").array().notNull().default(sql`'{}'::text[]`),
+    status: courseStatus("status").notNull().default("draft"),
+    /* ---------------------------------------------------------------------
+     * Phase 12 marketplace parity columns. Each one exists because the
+     * APPROVED public UI already renders it; none is speculative.
+     * ------------------------------------------------------------------ */
+    schedule: courseSchedule("schedule").notNull().default("evening"),
+    /** Marketplace aggregate, 0..5 stored x10 as an integer to avoid float
+     *  drift in sorting (45 = 4.5). Displayed as one decimal. */
+    ratingX10: integer("rating_x10").notNull().default(0),
+    reviewsCount: integer("reviews_count").notNull().default(0),
+    studentsCount: integer("students_count").notNull().default(0),
+    /** ISO "YYYY-MM-DD" — the deterministic "Eng yangi" sort key. Set when a
+     *  course is first published; null while it is only a draft. */
+    publishedAt: text("published_at"),
+    /** Lowercase search synonyms; part of the SQL search haystack. */
+    keywords: text("keywords").array().notNull().default(sql`'{}'::text[]`),
+    image: text("image"),
+    pricePeriod: text("price_period").notNull().default("month"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("courses_slug_key").on(table.slug),
+    index("courses_teacher_idx").on(table.teacherUserId),
+    // Public listing reads always filter on status; the partial index keeps
+    // that path cheap without indexing the (larger) draft space.
+    index("courses_public_idx").on(table.status, table.categoryId),
+    index("courses_published_at_idx").on(table.publishedAt),
+    check("courses_rating_check", sql`${table.ratingX10} BETWEEN 0 AND 50`),
+    check("courses_reviews_check", sql`${table.reviewsCount} >= 0`),
+    check("courses_students_check", sql`${table.studentsCount} >= 0`),
+    check(
+      "courses_published_at_format",
+      sql`${table.publishedAt} IS NULL OR ${table.publishedAt} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'`,
+    ),
+    // A published course must carry the date the listing went public.
+    check(
+      "courses_published_requires_date",
+      sql`${table.status} <> 'published' OR ${table.publishedAt} IS NOT NULL`,
+    ),
+    check("courses_slug_format", sql`${table.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`),
+    check("courses_price_check", sql`${table.priceUzs} >= 0 AND ${table.priceUzs} <= 100000000`),
+    check("courses_title_check", sql`length(btrim(${table.title})) BETWEEN 8 AND 120`),
+    // Online courses are structurally incapable of holding a physical address.
+    check(
+      "courses_online_no_location",
+      sql`(${table.format} = 'online' AND ${table.city} IS NULL AND ${table.location} IS NULL)
+          OR (${table.format} <> 'online' AND ${table.city} IS NOT NULL)`,
+    ),
+  ],
+);
+
+/* ------------------------------ course groups ------------------------------ */
+
+export const courseGroups = pgTable(
+  "course_groups",
+  {
+    id: text("id").primaryKey(),
+    courseId: text("course_id")
+      .notNull()
+      .references(() => courses.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    /** Uzbek day abbreviations, e.g. {Du,Chor,Jum}. */
+    days: text("days").array().notNull().default(sql`'{}'::text[]`),
+    /** "HH:MM". */
+    startTime: text("start_time").notNull(),
+    /** Optional: the canonical dataset only records a start time, so this is
+     *  nullable rather than back-filled with an invented duration. Teacher
+     *  authoring collects it, so new groups have it. */
+    endTime: text("end_time"),
+    /** A group may run in a different mode than its course (hybrid courses
+     *  have both online and offline groups) — the detail page shows this. */
+    format: courseFormat("format").notNull().default("online"),
+    location: text("location"),
+    /** Planned seats. NOTE: there is deliberately no occupied-seat column. */
+    capacity: integer("capacity").notNull(),
+    startDate: text("start_date").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // Composite target so an enrollment can prove (course, group) consistency.
+    unique("course_groups_id_course_key").on(table.id, table.courseId),
+    index("course_groups_course_idx").on(table.courseId),
+    check("course_groups_capacity_check", sql`${table.capacity} BETWEEN 1 AND 500`),
+    check("course_groups_time_format", sql`${table.startTime} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'`),
+    check(
+      "course_groups_end_time_format",
+      sql`${table.endTime} IS NULL OR (${table.endTime} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' AND ${table.endTime} > ${table.startTime})`,
+    ),
+    check("course_groups_date_format", sql`${table.startDate} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'`),
+    check("course_groups_days_check", sql`coalesce(array_length(${table.days}, 1), 0) >= 1`),
+  ],
+);
+
+/* ---------------------------- syllabus modules ----------------------------- */
+
+export const syllabusModules = pgTable(
+  "syllabus_modules",
+  {
+    id: text("id").primaryKey(),
+    courseId: text("course_id")
+      .notNull()
+      .references(() => courses.id, { onDelete: "cascade" }),
+    /** 0-based explicit ordering — module order is data, not insertion luck. */
+    position: integer("position").notNull(),
+    title: text("title").notNull(),
+    description: text("description").notNull().default(""),
+    lessons: integer("lessons").notNull().default(0),
+  },
+  (table) => [
+    unique("syllabus_modules_course_position_key").on(table.courseId, table.position),
+    index("syllabus_modules_course_idx").on(table.courseId),
+    check("syllabus_modules_position_check", sql`${table.position} >= 0`),
+    check("syllabus_modules_lessons_check", sql`${table.lessons} BETWEEN 0 AND 500`),
+  ],
+);
+
+/* --------------------------- enrollment requests --------------------------- */
+
+export const enrollmentRequests = pgTable(
+  "enrollment_requests",
+  {
+    id: text("id").primaryKey(),
+    studentUserId: text("student_user_id")
+      .notNull()
+      .references(() => studentProfiles.userId, { onDelete: "cascade" }),
+    courseId: text("course_id")
+      .notNull()
+      .references(() => courses.id, { onDelete: "cascade" }),
+    groupId: text("group_id").notNull(),
+    /** Free-text note from the student (plain text; escaped at render). */
+    note: text("note").notNull().default(""),
+    status: enrollmentStatus("status").notNull().default("submitted"),
+    /** Optional short teacher message attached to a rejection. Plain text,
+     *  length-bounded, escaped at render. Never required. */
+    decisionReason: text("decision_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // The composite FK makes "group belongs to a different course" IMPOSSIBLE
+    // at the database level, not merely unlikely in application code.
+    foreignKey({
+      name: "enrollment_requests_group_course_fk",
+      columns: [table.groupId, table.courseId],
+      foreignColumns: [courseGroups.id, courseGroups.courseId],
+    }).onDelete("cascade"),
+    index("enrollment_requests_student_idx").on(table.studentUserId),
+    index("enrollment_requests_course_idx").on(table.courseId),
+    // Capacity is derived by counting ACCEPTED rows per group, so that query
+    // gets its own index.
+    index("enrollment_requests_group_status_idx").on(table.groupId, table.status),
+    // ONE LIVE REQUEST PER STUDENT PER GROUP.
+    //
+    // Phase 11 keyed this on (student, group, status), which was fine with two
+    // statuses but breaks with four: a student could hold `submitted` AND
+    // `accepted` rows for the same group at once. A PARTIAL unique index over
+    // the live statuses expresses the real rule, and because it is an index it
+    // also holds against two concurrent submissions.
+    uniqueIndex("enrollment_requests_one_live_per_group")
+      .on(table.studentUserId, table.groupId)
+      .where(sql`status IN ('submitted', 'accepted')`),
+    check("enrollment_requests_note_len", sql`length(${table.note}) <= 500`),
+    check(
+      "enrollment_requests_decision_reason_len",
+      sql`${table.decisionReason} IS NULL OR length(${table.decisionReason}) <= 300`,
+    ),
+  ],
+);
+
+/* ---------------------------- enrollment events ---------------------------- */
+
+/**
+ * Append-only history of enrollment status transitions — Phase 13.
+ *
+ * This is NOT an admin audit system and is never exposed publicly. It exists
+ * so an enrollment's path (who moved it, from what, to what, when) survives,
+ * which keeps the status columns honest and makes future debugging possible
+ * without inventing extra timestamp columns on the request row itself.
+ */
+export const enrollmentEvents = pgTable(
+  "enrollment_events",
+  {
+    id: text("id").primaryKey(),
+    enrollmentRequestId: text("enrollment_request_id")
+      .notNull()
+      .references(() => enrollmentRequests.id, { onDelete: "cascade" }),
+    /** Who performed the transition. Always a real session user. */
+    actorUserId: text("actor_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** NULL for the creation event — there is no previous status. */
+    fromStatus: enrollmentStatus("from_status"),
+    toStatus: enrollmentStatus("to_status").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("enrollment_events_request_idx").on(table.enrollmentRequestId, table.createdAt),
+    // A transition must actually change something.
+    check(
+      "enrollment_events_from_differs",
+      sql`${table.fromStatus} IS NULL OR ${table.fromStatus} <> ${table.toStatus}`,
+    ),
+  ],
+);
+
+/* ------------------------------- notifications ----------------------------- */
+
+/**
+ * In-app notifications — Phase 13. No email, SMS or push exists, so nothing
+ * here implies external delivery.
+ *
+ * Every row belongs to exactly one recipient and every query is scoped to the
+ * session user; `user_id` is never accepted from a client.
+ */
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: text("id").primaryKey(),
+    /** Recipient. */
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: notificationType("type").notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull().default(""),
+    /** In-app destination for this notification, e.g. a request detail route. */
+    href: text("href"),
+    /** NULL until the recipient reads it. */
+    readAt: timestamp("read_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // The list query is "my notifications, newest first".
+    index("notifications_user_created_idx").on(table.userId, table.createdAt),
+    // The unread badge counts unread rows for one user.
+    index("notifications_user_unread_idx")
+      .on(table.userId)
+      .where(sql`read_at IS NULL`),
+    check("notifications_title_len", sql`length(${table.title}) BETWEEN 1 AND 160`),
+    check("notifications_body_len", sql`length(${table.body}) <= 500`),
+  ],
+);
+
+/* --------------------------------- payments -------------------------------- */
+
+/*
+ * PAYMENT IS A SEPARATE DOMAIN FROM ENROLLMENT (Phase 14).
+ *
+ * `enrollment_status` is deliberately NOT extended with `paid`. A student may
+ * hold an ACCEPTED place whose payment is still PENDING, and seat capacity is
+ * owned by the enrollment status alone. Merging the two would make both
+ * ambiguous.
+ */
+
+/** Which provider a payment is routed through. Payme is the only one built. */
+export const paymentProvider = pgEnum("payment_provider", ["payme"]);
+
+/**
+ * Our own, provider-agnostic payment lifecycle. Payme's transaction states
+ * (1, 2, -1, -2) live on `payment_transactions`, not here.
+ *
+ * There is no `refunded` status because refunds are not implemented.
+ */
+export const paymentStatus = pgEnum("payment_status", [
+  "pending",
+  "succeeded",
+  "cancelled",
+  "failed",
+]);
+
+/** Types of immutable payment history entries. */
+export const paymentEventType = pgEnum("payment_event_type", [
+  "payment_created",
+  "provider_transaction_created",
+  "payment_succeeded",
+  "provider_cancelled",
+  "payment_failed",
+]);
+
+/**
+ * A payment OBLIGATION for one accepted enrollment.
+ *
+ * `amount_tiyin` is an immutable PRICE SNAPSHOT taken when the payment is
+ * created. A later edit to the course price must never change what an existing
+ * payment is for, so nothing recomputes this column.
+ *
+ * It is `bigint` on purpose: course prices are int32 so'm capped at 100_000_000,
+ * which is 10^10 tiyin — well beyond int32.
+ */
+export const payments = pgTable(
+  "payments",
+  {
+    id: text("id").primaryKey(),
+    /** The accepted enrollment this obligation belongs to. */
+    enrollmentRequestId: text("enrollment_request_id")
+      .notNull()
+      .references(() => enrollmentRequests.id, { onDelete: "cascade" }),
+    /** Denormalised payer, so payment queries never need a join to authorize. */
+    studentUserId: text("student_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: paymentProvider("provider").notNull().default("payme"),
+    /** Immutable snapshot, in tiyin. Never derived from client input. */
+    amountTiyin: bigint("amount_tiyin", { mode: "bigint" }).notNull(),
+    currency: text("currency").notNull().default("UZS"),
+    status: paymentStatus("status").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+  },
+  (table) => [
+    /*
+     * At most ONE LIVE payment obligation per enrollment. Partial, so a
+     * cancelled or failed attempt does not prevent trying again. This is what
+     * makes two simultaneous "pay" clicks produce one obligation rather than
+     * two charges -- enforced by the database, not by browser timing.
+     */
+    uniqueIndex("payments_one_live_per_enrollment")
+      .on(table.enrollmentRequestId)
+      .where(sql`status IN ('pending', 'succeeded')`),
+    index("payments_student_idx").on(table.studentUserId),
+    index("payments_enrollment_idx").on(table.enrollmentRequestId),
+    // A payment for nothing is meaningless; free courses must not create rows.
+    check("payments_amount_positive", sql`${table.amountTiyin} > 0`),
+    check("payments_currency_supported", sql`${table.currency} = 'UZS'`),
+    // Timestamps must agree with the status they describe.
+    check(
+      "payments_paid_at_consistent",
+      sql`(${table.status} = 'succeeded') = (${table.paidAt} IS NOT NULL)`,
+    ),
+  ],
+);
+
+/**
+ * One row per PROVIDER transaction (Payme calls it a "financial transaction").
+ *
+ * Kept separate from `payments` so Payme's state machine does not leak into
+ * the payment domain. Payme may create several transactions against the same
+ * obligation over time (e.g. one cancelled by timeout, then another).
+ */
+export const paymentTransactions = pgTable(
+  "payment_transactions",
+  {
+    id: text("id").primaryKey(),
+    paymentId: text("payment_id")
+      .notNull()
+      .references(() => payments.id, { onDelete: "cascade" }),
+    provider: paymentProvider("provider").notNull().default("payme"),
+    /** The provider's own transaction id. UNIQUE — this is the idempotency key. */
+    providerTransactionId: text("provider_transaction_id").notNull(),
+    /** Provider-side creation time, in provider units (Payme: unix ms). */
+    providerCreatedAt: bigint("provider_created_at", { mode: "bigint" }).notNull(),
+    /**
+     * The provider's transaction state, stored verbatim.
+     * Payme: 1 created, 2 performed, -1 cancelled, -2 cancelled after perform.
+     */
+    state: integer("state").notNull(),
+    /** Provider cancellation reason code, when one was supplied. */
+    reasonCode: integer("reason_code"),
+    /** When we performed it, in provider units. */
+    performedAt: bigint("performed_at", { mode: "bigint" }),
+    /** When we cancelled it, in provider units. */
+    cancelledAt: bigint("cancelled_at", { mode: "bigint" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    /*
+     * THE IDEMPOTENCY GUARANTEE. Payme retries CreateTransaction with the same
+     * id after a lost response; this index makes a duplicate physically
+     * impossible rather than merely unlikely.
+     */
+    unique("payment_transactions_provider_tx_unique").on(
+      table.provider,
+      table.providerTransactionId,
+    ),
+    index("payment_transactions_payment_idx").on(table.paymentId),
+    // Only the four states the protocol defines.
+    check("payment_transactions_state_valid", sql`${table.state} IN (1, 2, -1, -2)`),
+  ],
+);
+
+/**
+ * Immutable payment history. Not an accounting ledger and never public.
+ *
+ * `metadata` holds only safe, non-sensitive values (never credentials, never
+ * card data -- this product never sees a card at all).
+ */
+export const paymentEvents = pgTable(
+  "payment_events",
+  {
+    id: text("id").primaryKey(),
+    paymentId: text("payment_id")
+      .notNull()
+      .references(() => payments.id, { onDelete: "cascade" }),
+    type: paymentEventType("type").notNull(),
+    provider: paymentProvider("provider").notNull().default("payme"),
+    providerTransactionId: text("provider_transaction_id"),
+    metadata: text("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("payment_events_payment_idx").on(table.paymentId, table.createdAt),
+    check("payment_events_metadata_len", sql`${table.metadata} IS NULL OR length(${table.metadata}) <= 500`),
+  ],
+);
+
+/* -------------------------------- relations -------------------------------- */
+
+export const usersRelations = relations(users, ({ one, many }) => ({
+  studentProfile: one(studentProfiles, {
+    fields: [users.id],
+    references: [studentProfiles.userId],
+  }),
+  teacherProfile: one(teacherProfiles, {
+    fields: [users.id],
+    references: [teacherProfiles.userId],
+  }),
+  sessions: many(sessions),
+}));
+
+export const teacherProfilesRelations = relations(teacherProfiles, ({ one, many }) => ({
+  user: one(users, { fields: [teacherProfiles.userId], references: [users.id] }),
+  courses: many(courses),
+}));
+
+export const studentProfilesRelations = relations(studentProfiles, ({ one, many }) => ({
+  user: one(users, { fields: [studentProfiles.userId], references: [users.id] }),
+  enrollmentRequests: many(enrollmentRequests),
+}));
+
+export const coursesRelations = relations(courses, ({ one, many }) => ({
+  teacher: one(teacherProfiles, {
+    fields: [courses.teacherUserId],
+    references: [teacherProfiles.userId],
+  }),
+  groups: many(courseGroups),
+  syllabus: many(syllabusModules),
+}));
+
+export const courseGroupsRelations = relations(courseGroups, ({ one }) => ({
+  course: one(courses, { fields: [courseGroups.courseId], references: [courses.id] }),
+}));
+
+export const enrollmentRequestsRelations = relations(enrollmentRequests, ({ one }) => ({
+  student: one(studentProfiles, {
+    fields: [enrollmentRequests.studentUserId],
+    references: [studentProfiles.userId],
+  }),
+  course: one(courses, { fields: [enrollmentRequests.courseId], references: [courses.id] }),
+}));
+
+export type UserRow = typeof users.$inferSelect;
+export type StudentProfileRow = typeof studentProfiles.$inferSelect;
+export type TeacherProfileRow = typeof teacherProfiles.$inferSelect;
+export type CourseRow = typeof courses.$inferSelect;
+export type CourseGroupRow = typeof courseGroups.$inferSelect;
+export type EnrollmentRequestRow = typeof enrollmentRequests.$inferSelect;
+export type PaymentRow = typeof payments.$inferSelect;
+export type PaymentTransactionRow = typeof paymentTransactions.$inferSelect;
+export type PaymentEventRow = typeof paymentEvents.$inferSelect;

@@ -20,6 +20,7 @@ import {
 import { useEnrollStore } from "./enroll-store";
 import { EnrollSummary } from "./enroll-summary";
 import { GroupNotice, StepGroup, StepReview, StepSchedule, StepStudent } from "./enroll-steps";
+import { submitEnrollmentRequestAction } from "@/server/actions/enrollment";
 import { EnrollResult } from "./enroll-result";
 
 /* -------------------------------------------------------------------------- */
@@ -31,6 +32,10 @@ import { EnrollResult } from "./enroll-result";
 /*     rule as the detail page) so back/forward only moves between pages;        */
 /*   • progress, Back / Continue, Enter-submit, focus the new step heading;     */
 /*   • review edits jump back WITHOUT losing data (draft owns the values);      */
+/*   • Phase 11: when a STUDENT session exists (resolved on the server and       */
+/*     passed in as `canSubmitToServer`), submitting performs a REAL            */
+/*     transactional write of an EnrollmentRequest row. Otherwise the flow      */
+/*     keeps its honest Phase 7 local-only behaviour instead of pretending.     */
 /*   • submitting on review flips a UI-state flag only — the result screen       */
 /*     states plainly that nothing was sent.                                     */
 /* The body mounts after hydration (like Phase 6), so initial state derives      */
@@ -39,6 +44,10 @@ import { EnrollResult } from "./enroll-result";
 
 export interface EnrollFlowProps {
   course: EnrollCourseLite;
+  /** Canonical course id — needed for the real server write. */
+  courseId: string;
+  /** True only when the SERVER resolved a signed-in STUDENT session. */
+  canSubmitToServer?: boolean;
   /** Raw ?group= search param (string) or null — resolveEnrollGroup applies
    *  the SAME pure rules on server and client, so no pre-filtering is needed. */
   requestedGroupId: string | null;
@@ -62,7 +71,12 @@ export function EnrollFlow(props: EnrollFlowProps) {
   return <EnrollFlowBody {...props} />;
 }
 
-function EnrollFlowBody({ course, requestedGroupId }: EnrollFlowProps) {
+function EnrollFlowBody({
+  course,
+  courseId,
+  canSubmitToServer = false,
+  requestedGroupId,
+}: EnrollFlowProps) {
   const { draft, update, reset, prefillFromOnboarding } = useEnrollStore(course.slug);
   const router = useRouter();
   const live = draft ?? emptyEnrollDraft(course.slug);
@@ -81,6 +95,7 @@ function EnrollFlowBody({ course, requestedGroupId }: EnrollFlowProps) {
   const [errors, setErrors] = useState<EnrollFieldErrors>({});
   const [liveMessage, setLiveMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -151,11 +166,38 @@ function EnrollFlowBody({ course, requestedGroupId }: EnrollFlowProps) {
       return;
     }
     setSubmitting(true);
-    timerRef.current = setTimeout(() => {
-      setSubmitting(false);
-      update((d) => ({ ...d, submitted: true, furthest: ENROLL_DONE_INDEX }));
-      goTo(ENROLL_DONE_INDEX);
-    }, 700);
+    setServerError(null);
+
+    if (!canSubmitToServer) {
+      // No student session → no server write, and the result screen says so.
+      timerRef.current = setTimeout(() => {
+        setSubmitting(false);
+        update((d) => ({ ...d, submitted: true, furthest: ENROLL_DONE_INDEX }));
+        goTo(ENROLL_DONE_INDEX);
+      }, 700);
+      return;
+    }
+
+    void (async () => {
+      const payload = new FormData();
+      payload.set("courseId", courseId);
+      payload.set("groupId", resolution.selectedGroupId as string);
+      payload.set("note", live.note);
+      try {
+        const result = await submitEnrollmentRequestAction(payload);
+        setSubmitting(false);
+        if (result.ok || result.code === "duplicate_request") {
+          update((d) => ({ ...d, submitted: true, furthest: ENROLL_DONE_INDEX }));
+          goTo(ENROLL_DONE_INDEX);
+          router.refresh();
+        } else {
+          setServerError(result.message);
+        }
+      } catch {
+        setSubmitting(false);
+        setServerError("So‘rov yuborilmadi. Internetni tekshirib, qayta urining.");
+      }
+    })();
   };
 
   const handleContinue = (event: React.FormEvent) => {
@@ -204,9 +246,11 @@ function EnrollFlowBody({ course, requestedGroupId }: EnrollFlowProps) {
           <ArrowLeft aria-hidden="true" className="size-4" />
           Kurs sahifasiga qaytish
         </Link>
+        {/* Honest, session-derived label — no blanket "prototype" claim now
+            that a signed-in student's request is really persisted. */}
         <Badge variant="neutral">
           <span aria-hidden="true" className="size-1.5 rounded-pill bg-warning" />
-          Prototip oqim
+          {canSubmitToServer ? "To‘lovsiz so‘rov" : "Kirish talab qilinadi"}
         </Badge>
       </div>
 
@@ -248,6 +292,7 @@ function EnrollFlowBody({ course, requestedGroupId }: EnrollFlowProps) {
                 course={course}
                 group={selectedGroup}
                 draft={live}
+                persisted={canSubmitToServer}
                 onEditAgain={editAgain}
                 onClear={clearAll}
               />
@@ -255,6 +300,11 @@ function EnrollFlowBody({ course, requestedGroupId }: EnrollFlowProps) {
           ) : (
             <form onSubmit={handleContinue} noValidate>
               <div className="mt-6 flex flex-col gap-4">
+                {serverError ? (
+                  <p role="alert" className="rounded-lg border border-line bg-surface-muted px-3.5 py-2.5 text-sm text-danger">
+                    {serverError}
+                  </p>
+                ) : null}
                 {step === 0 && resolution.requestedUnknown ? (
                   <GroupNotice kind="unknown" />
                 ) : null}

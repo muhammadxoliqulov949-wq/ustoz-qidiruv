@@ -5,20 +5,26 @@ import { Avatar } from "@/components/ui/avatar";
 import { ButtonLink } from "@/components/ui/button";
 import { VerifiedMark } from "@/components/ui/rating";
 import { formatCount } from "@/lib/format";
-import { teacherById } from "@/data/teachers";
 
 /**
  * Teacher block on the detail page — richer than the marketplace card:
  * portrait, identity + verification, one-paragraph bio, and only the
  * numbers the platform actually stores (rating, students, experience,
- * languages). The profile route (/teachers/[slug]) is a clearly deferred
- * later phase: the link is kept (with an honest title) so the seam is
- * visible, not faked.
+ * languages).
+ *
+ * Phase 12: the full teacher record is PASSED IN by the page, which loads it
+ * from the database alongside the course. The component no longer reaches into
+ * a module-level canonical array, so it has no hidden data dependency.
  */
-export function CourseTeacher({ course }: { course: Course }) {
-  const teacher: Teacher | undefined = teacherById.get(course.teacher.id);
+export function CourseTeacher({
+  course,
+  teacher,
+}: {
+  course: Course;
+  teacher: Teacher | null;
+}) {
 
-  if (!teacher) {
+  if (teacher === null) {
     // Defensive fallback — the listing-level identity we always have.
     return (
       <div className="flex items-center gap-3">

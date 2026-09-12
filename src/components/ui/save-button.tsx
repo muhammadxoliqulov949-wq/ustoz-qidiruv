@@ -1,23 +1,32 @@
 "use client";
 
-import { useState } from "react";
 import { Heart } from "lucide-react";
 import { cn, focusRing } from "@/lib/utils";
+import { useSavedStore } from "@/components/saved/saved-store";
+import type { SavedKind } from "@/lib/saved";
 
 export interface SaveButtonProps {
   /** Entity title, used to build the full accessible label. */
   title: string;
+  /** What is being saved — courses and teachers live in separate id lists. */
+  kind: SavedKind;
+  /** CANONICAL dataset id (course.id / teacher.id). Never a slug copy. */
+  entityId: string;
   className?: string;
 }
 
 /**
- * Independent toggle inside clickable surfaces (course cards…).
+ * Independent toggle inside clickable surfaces (course/teacher cards…).
  * Lives above the stretched card link (z-index), stops propagation so
- * saving never triggers navigation. aria-pressed announces state;
- * persistence arrives with the auth/API phase.
+ * saving never triggers navigation. aria-pressed announces state.
+ *
+ * State comes from the ONE saved store (components/saved/saved-store.ts) —
+ * prototype localStorage holding canonical ids only. Until hydration the
+ * button renders the unsaved state, matching SSR exactly.
  */
-export function SaveButton({ title, className }: SaveButtonProps) {
-  const [saved, setSaved] = useState(false);
+export function SaveButton({ title, kind, entityId, className }: SaveButtonProps) {
+  const { ready, has, toggle } = useSavedStore();
+  const saved = ready && has(kind, entityId);
 
   return (
     <button
@@ -27,7 +36,7 @@ export function SaveButton({ title, className }: SaveButtonProps) {
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
-        setSaved((value) => !value);
+        toggle(kind, entityId);
       }}
       className={cn(
         // Position (absolute over the media band) is set by the consumer —
