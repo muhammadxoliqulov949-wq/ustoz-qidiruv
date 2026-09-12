@@ -199,6 +199,46 @@ FAQ generated only from supported facts. The profile’s CTA scrolls to the
 course list — there is deliberately no messaging/booking affordance until
 those phases ship. Unknown slugs 404.
 
+## Auth + onboarding UI (Phase 6)
+
+`/login`, `/register` and `/onboarding` are a **frontend foundation only**:
+there is no auth backend, so no state in this phase ever pretends to be an
+authenticated account. `src/lib/onboarding.ts` is the single pure contract —
+Uzbek +998 phone normalize/format/validate, the versioned `OnboardingDraft`
+codec (defensively re-parsed on every read: whitelist enums, drop unknown
+keys, keep only fixed-point phone strings), per-step validators and the
+completion CTAs, which reuse the existing browse URL contracts
+(`/courses?city=&format=`, `/teachers?city=&format=&lang=`,
+`/categories/[slug]`) instead of inventing fake “recommended for you”
+results. City/language/category/level option lists are all derived from the
+existing catalog data — no second taxonomy.
+
+The only persistence is one namespaced localStorage key
+(`ustoz.onboarding.draft.v1`) behind
+`useSyncExternalStore` (`components/onboarding/draft-store.tsx`) — a
+prototype UI state, not a session: passwords are excluded from the draft
+type, a real backend replaces the whole module wholesale, and every auth
+screen carries the “Prototip interfeys” notice. Login validates locally,
+shows a busy submit state, then the honest “auth service not connected”
+notice (no cookies, no redirect pretending to sign in); password recovery
+is a clearly-labeled deferred panel.
+
+Registration is role-first (two radio cards, never a dropdown) + name +
+phone + password only — teacher professional detail lives in
+`/onboarding` exclusively. The wizard (student: 3 steps + skippable;
+teacher: 5 required steps incl. a “verification arrives later” honesty
+screen + honesty declaration) keeps visible progress, Back/Continue,
+Enter-submit, focus-on-step announcements and refresh-resume via the
+draft’s furthest step. Completion screens are labeled UI previews; the
+teacher one previews the profile from what was typed, with a pending
+“Tekshiruv kutilmoqda” badge — never a fake verified state.
+
+All previously dead entry points now resolve to these routes (header,
+mobile menu, footer, home CTA → `/login` / `/register?role=teacher`; the
+Phase 4 enrollment dialog keeps its architecture and only drops the
+`prefetch={false}` seams + updates the stale footnote). Auth pages are
+`robots: noindex, follow`.
+
 ## Conventions
 
 - Server components by default; `"use client"` only where state/events live
@@ -211,12 +251,15 @@ those phases ship. Unknown slugs 404.
   `src/data/site.ts`.
 - Icons: lucide only, never inline SVG.
 - Per-link prefetch is declared in nav data (`site.ts`): unbuilt routes set
-  `prefetch: false`; built routes omit the flag (/courses,
-  /courses/[slug] and the /teachers routes since Phase 3–5).
+  `prefetch: false`; built routes omit the flag (/courses, /courses/[slug]
+  and /teachers routes since Phase 3–5; /login, /register and
+  /onboarding since Phase 6).
 
 ## Deliberately deferred
 
-Auth (Kirish flow), teacher
-dashboards, pagination (catalogs fit one page), payment, messaging,
-save persistence, real API, dark mode evaluation, i18n (`/uz`, `/ru`…),
-mobile bottom navigation.
+Auth backend wiring (accounts, sessions, OTP, password recovery — the
+Phase 6 screens are UI-only),
+student/teacher dashboards, real onboarding persistence, course creation
+(teacher flow deliberately does not collect it), pagination (catalogs fit
+one page), payment, messaging, save persistence, real API, premium motion
+pass, dark mode evaluation, i18n (`/uz`, `/ru`…), mobile bottom navigation.

@@ -16,14 +16,15 @@ export const primaryNav: NavItem[] = [
 
 export const loginNav: NavItem = {
   label: "Kirish",
-  href: "/login",
-  prefetch: false, // auth phase
+  href: "/login", // Phase 6: auth UI exists (backend handoff pending)
 };
 
 export const becomeTeacherNav: NavItem = {
   label: "Ustoz bo‘lish",
-  href: "/become-teacher",
-  prefetch: false, // teacher onboarding phase
+  // Phase 6: teacher sign-up — role pre-selected; onboarding follows.
+  // There is no separate /become-teacher marketing page (spec lists only
+  // /login, /register, /onboarding), so the CTA lands on the real flow.
+  href: "/register?role=teacher",
 };
 
 /** Quick filter pills under the hero search — real navigational links into
@@ -163,8 +164,8 @@ export const footerGroups: { title: string; links: NavItem[] }[] = [
   {
     title: "Ustozlar uchun",
     links: [
-      { label: "Kurs yaratish", href: "/become-teacher", prefetch: false },
-      { label: "Ustoz bo‘lish", href: "/become-teacher", prefetch: false },
+      { label: "Kurs yaratish", href: "/register?role=teacher" },
+      { label: "Ustoz bo‘lish", href: "/register?role=teacher" },
     ],
   },
   {
@@ -263,5 +264,5 @@ export const formatEditorial = {
 export const teacherCta = {
   title: "Bilimingizni ulashing.",
   text: "Kurs yarating, o‘quvchilaringizni toping va darslaringizni USTOZ orqali boshqaring.",
-  action: { label: "Ustoz bo‘lish", href: "/become-teacher" },
+  action: { label: "Ustoz bo‘lish", href: "/register?role=teacher" },
 } as const;

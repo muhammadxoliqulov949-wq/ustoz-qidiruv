@@ -27,7 +27,6 @@ export function TeacherCta() {
 
         <ButtonLink
           href={teacherCta.action.href}
-          prefetch={false} // Phase 4: teacher onboarding
           variant="invert"
           size="lg"
           className="shrink-0"

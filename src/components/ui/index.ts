@@ -8,8 +8,17 @@ export type { ButtonProps, ButtonLinkProps } from "./button";
 export { IconButton } from "./icon-button";
 export type { IconButtonProps } from "./icon-button";
 
-export { Input, fieldBaseClasses } from "./input";
+export { Input, fieldBaseClasses, fieldSizeClasses } from "./input";
 export type { InputProps } from "./input";
+
+export { SelectField } from "./select";
+export type { SelectFieldProps } from "./select";
+
+export { TextareaField } from "./textarea";
+export type { TextareaFieldProps } from "./textarea";
+
+export { RadioCardGroup } from "./radio-card";
+export type { RadioCardGroupProps, RadioCardOption } from "./radio-card";
 
 export { SearchInput } from "./search-input";
 export type { SearchInputProps } from "./search-input";

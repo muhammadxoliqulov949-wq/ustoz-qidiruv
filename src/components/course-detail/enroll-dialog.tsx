@@ -23,10 +23,11 @@ export interface EnrollDialogProps {
 /**
  * Enrollment entry point (Phase 4). Clicking never fakes enrollment: the
  * dialog shows the selected course/group summary and hands off to auth —
- * Kirish / Ro‘yxatdan o‘tish routes arrive in Phase 7. Self-contained
- * (trigger + dialog) so the enrollment card and the mobile bar can each
- * host one without shared client state; a future checkout flow mounts over
- * the same trigger slot.
+ * /login and /register are real routes since Phase 6; completing an
+ * enrollment additionally needs the auth backend, so the copy below stays
+ * honest. Self-contained (trigger + dialog) so the enrollment card and the
+ * mobile bar can each host one without shared client state; a future
+ * checkout flow mounts over the same trigger slot.
  *
  * Dialog semantics match the Phase 3 filter sheet (same platform recipe):
  * role=dialog + aria-modal, labelled, Escape/backdrop close, body scroll
@@ -151,30 +152,24 @@ export function EnrollDialog({
                 </div>
               </dl>
 
-              {/* Step 2 — auth handoff (routes arrive in Phase 7) */}
+              {/* Step 2 — auth handoff (real routes since Phase 6) */}
               <p className="mt-4 text-sm text-ink-700">
                 Yozilish shaklini to‘ldirish va ustozga so‘rov yuborish uchun
                 hisob kerak bo‘ladi: telefon raqami va izoh so‘raladi. To‘lov
                 shartlarini ustoz bilan bevosita kelishasiz.
               </p>
               <div className="mt-4 flex flex-col gap-2.5 pb-1">
-                <ButtonLink href="/login" size="lg" fullWidth prefetch={false}>
+                <ButtonLink href="/login" size="lg" fullWidth>
                   Kirish
                 </ButtonLink>
-                <ButtonLink
-                  href="/register"
-                  size="lg"
-                  variant="outline"
-                  fullWidth
-                  prefetch={false}
-                >
+                <ButtonLink href="/register" size="lg" variant="outline" fullWidth>
                   Ro‘yxatdan o‘tish
                 </ButtonLink>
               </div>
               <p className="pb-4 text-center text-xs text-ink-400">
-                Kirish va ro‘yxatdan o‘tish sahifalari keyingi bosqichda
-                ishga tushadi — hozircha yozilishni ustoz bilan bevosita ham
-                kelishish mumkin.
+                Kirish va ro‘yxatdan o‘tish sahifalari ishlaydi; yozilishni
+                yakunlash uchun autentifikatsiya serveri ulangishi kerak —
+                hozircha yozilishni ustoz bilan bevosita ham kelishish mumkin.
               </p>
             </div>
           </div>

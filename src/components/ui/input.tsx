@@ -22,7 +22,9 @@ export const fieldBaseClasses = cn(
 
 type Size = "md" | "lg";
 
-const fieldSizeClasses: Record<Size, string> = {
+/** Shared field sizing — Input, SelectField and TextareaField all use it so
+ *  every labelled control has one skin (Phase 6). */
+export const fieldSizeClasses: Record<Size, string> = {
   md: "h-[var(--size-control-md)] rounded-lg px-3.5 text-base",
   lg: "h-[var(--size-control-lg)] rounded-lg px-4 text-lg",
 };
