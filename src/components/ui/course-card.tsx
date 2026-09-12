@@ -1,0 +1,110 @@
+import Image from "next/image";
+import Link from "next/link";
+import { MapPin, Users } from "lucide-react";
+import { Avatar, Badge, Card } from "@/components/ui";
+import { cn, stretchedLink } from "@/lib/utils";
+import { formatCount, formatPrice } from "@/lib/format";
+import { courseFormatLabels } from "@/data/courses";
+import type { Course } from "@/data/models";
+import { Rating, VerifiedMark } from "./rating";
+import { SaveButton } from "./save-button";
+
+export interface CourseCardProps {
+  course: Course;
+  className?: string;
+}
+
+/**
+ * Marketplace course card.
+ *
+ * Structure: the title carries a stretched <Link> (after:absolute inset-0)
+ * making the whole card clickable, while the Save control sits above it
+ * (z-10) and stops propagation — a single tab stop for the card, keyboard
+ * focus is painted by Card's focus-within ring. Image scale is the only
+ * hover flourish; no permanent CTA inside the card.
+ */
+export function CourseCard({ course, className }: CourseCardProps) {
+  const {
+    slug,
+    title,
+    teacher,
+    format,
+    location,
+    priceUzs,
+    image,
+    rating,
+    reviews,
+    students,
+  } = course;
+
+  return (
+    <Card
+      variant="interactive"
+      padded={false}
+      className={cn("group flex h-full flex-col", className)}
+    >
+      {/* Media band — 16:10, full bleed */}
+      <div className="relative aspect-[16/10] w-full overflow-hidden bg-surface-muted">
+        {image ? (
+          <Image
+            src={image}
+            alt=""
+            fill
+            sizes="(min-width: 80rem) 280px, (min-width: 64rem) 376px, (min-width: 48rem) 340px, calc(100vw - 40px)"
+            className="object-cover transition-transform duration-base motion-reduce:transition-none group-hover:scale-[1.02]"
+          />
+        ) : null}
+        <SaveButton
+          title={title}
+          className="absolute top-3 right-3"
+        />
+      </div>
+
+      <div className="flex flex-1 flex-col gap-3 p-6">
+        <div className="flex items-center gap-2">
+          <Badge variant="neutral">{courseFormatLabels[format]}</Badge>
+          {location && format !== "online" ? (
+            <span className="inline-flex min-w-0 items-center gap-1 text-sm text-ink-500">
+              <MapPin aria-hidden="true" className="size-3.5 shrink-0" />
+              <span className="truncate">{location}</span>
+            </span>
+          ) : null}
+        </div>
+
+        <h3 className="text-lg leading-snug font-semibold text-balance text-ink-900">
+          <Link href={`/courses/${slug}`} className={stretchedLink}>
+            <span className="line-clamp-2">{title}</span>
+          </Link>
+        </h3>
+
+        <div className="flex items-center gap-2 text-sm text-ink-700">
+          <Avatar name={teacher.name} size="sm" />
+          <span className="font-medium">{teacher.name}</span>
+          {teacher.verified ? <VerifiedMark /> : null}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Rating value={rating} reviews={reviews} />
+          <span className="inline-flex items-center gap-1 text-sm text-ink-500">
+            <Users aria-hidden="true" className="size-4" />
+            {formatCount(students)}
+          </span>
+        </div>
+
+        <div className="mt-auto flex items-baseline justify-between border-t border-line pt-3.5">
+          <p
+            className={cn(
+              "text-lg font-semibold",
+              priceUzs > 0 ? "text-ink-900" : "text-accent-700",
+            )}
+          >
+            {formatPrice(priceUzs)}
+            {priceUzs > 0 ? (
+              <span className="text-sm font-normal text-ink-500"> / oyiga</span>
+            ) : null}
+          </p>
+        </div>
+      </div>
+    </Card>
+  );
+}
