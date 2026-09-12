@@ -136,6 +136,27 @@ export const enrollmentRequestSchema = z
 
 export const cancelEnrollmentSchema = z.object({ requestId: idSchema }).strict();
 
+/* --------------------------- enrollment decisions --------------------------- */
+
+/*
+ * Phase 13 decision inputs. These express INTENT, not state: the action is
+ * "accept this request", never "set status = accepted". There is deliberately
+ * no `status`, `teacherId` or `studentId` field, and `.strict()` rejects the
+ * payload outright if a caller invents one.
+ */
+
+export const acceptEnrollmentSchema = z.object({ requestId: idSchema }).strict();
+
+export const rejectEnrollmentSchema = z
+  .object({
+    requestId: idSchema,
+    /** Optional short note shown to the student. Bounded and plain text. */
+    reason: z.string().trim().max(300).nullable(),
+  })
+  .strict();
+
+export const notificationReadSchema = z.object({ notificationId: idSchema }).strict();
+
 /* --------------------------------- courses --------------------------------- */
 
 export const courseDraftCreateSchema = z

@@ -56,11 +56,30 @@ export const courseStatus = pgEnum("course_status", ["draft", "ready", "publishe
 export const courseSchedule = pgEnum("course_schedule", ["morning", "day", "evening"]);
 
 /**
- * Conservative enrollment states. approved/rejected/paid/confirmed are
- * deliberately ABSENT — those workflows do not exist yet, so the database
- * cannot express them.
+ * Enrollment states — Phase 13 implements the real decision workflow, so
+ * `accepted` and `rejected` now exist and are genuinely reachable.
+ *
+ * Still deliberately ABSENT: paid / completed / refunded / expired /
+ * waitlisted. Those workflows do not exist, so the database cannot express
+ * them and no UI can imply them.
  */
-export const enrollmentStatus = pgEnum("enrollment_status", ["submitted", "cancelled"]);
+export const enrollmentStatus = pgEnum("enrollment_status", [
+  "submitted",
+  "accepted",
+  "rejected",
+  "cancelled",
+]);
+
+/**
+ * In-app notification kinds. One value per event that is actually emitted by
+ * a server action — no marketing or speculative types.
+ */
+export const notificationType = pgEnum("notification_type", [
+  "enrollment_submitted",
+  "enrollment_accepted",
+  "enrollment_rejected",
+  "enrollment_cancelled",
+]);
 
 /* ---------------------------------- users ---------------------------------- */
 
@@ -356,6 +375,9 @@ export const enrollmentRequests = pgTable(
     /** Free-text note from the student (plain text; escaped at render). */
     note: text("note").notNull().default(""),
     status: enrollmentStatus("status").notNull().default("submitted"),
+    /** Optional short teacher message attached to a rejection. Plain text,
+     *  length-bounded, escaped at render. Never required. */
+    decisionReason: text("decision_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -369,14 +391,98 @@ export const enrollmentRequests = pgTable(
     }).onDelete("cascade"),
     index("enrollment_requests_student_idx").on(table.studentUserId),
     index("enrollment_requests_course_idx").on(table.courseId),
-    // One live request per student per group; cancelling frees it up logically
-    // (status is part of the key so a cancelled row does not block a resubmit).
-    unique("enrollment_requests_unique_live").on(
-      table.studentUserId,
-      table.groupId,
-      table.status,
-    ),
+    // Capacity is derived by counting ACCEPTED rows per group, so that query
+    // gets its own index.
+    index("enrollment_requests_group_status_idx").on(table.groupId, table.status),
+    // ONE LIVE REQUEST PER STUDENT PER GROUP.
+    //
+    // Phase 11 keyed this on (student, group, status), which was fine with two
+    // statuses but breaks with four: a student could hold `submitted` AND
+    // `accepted` rows for the same group at once. A PARTIAL unique index over
+    // the live statuses expresses the real rule, and because it is an index it
+    // also holds against two concurrent submissions.
+    uniqueIndex("enrollment_requests_one_live_per_group")
+      .on(table.studentUserId, table.groupId)
+      .where(sql`status IN ('submitted', 'accepted')`),
     check("enrollment_requests_note_len", sql`length(${table.note}) <= 500`),
+    check(
+      "enrollment_requests_decision_reason_len",
+      sql`${table.decisionReason} IS NULL OR length(${table.decisionReason}) <= 300`,
+    ),
+  ],
+);
+
+/* ---------------------------- enrollment events ---------------------------- */
+
+/**
+ * Append-only history of enrollment status transitions — Phase 13.
+ *
+ * This is NOT an admin audit system and is never exposed publicly. It exists
+ * so an enrollment's path (who moved it, from what, to what, when) survives,
+ * which keeps the status columns honest and makes future debugging possible
+ * without inventing extra timestamp columns on the request row itself.
+ */
+export const enrollmentEvents = pgTable(
+  "enrollment_events",
+  {
+    id: text("id").primaryKey(),
+    enrollmentRequestId: text("enrollment_request_id")
+      .notNull()
+      .references(() => enrollmentRequests.id, { onDelete: "cascade" }),
+    /** Who performed the transition. Always a real session user. */
+    actorUserId: text("actor_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** NULL for the creation event — there is no previous status. */
+    fromStatus: enrollmentStatus("from_status"),
+    toStatus: enrollmentStatus("to_status").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("enrollment_events_request_idx").on(table.enrollmentRequestId, table.createdAt),
+    // A transition must actually change something.
+    check(
+      "enrollment_events_from_differs",
+      sql`${table.fromStatus} IS NULL OR ${table.fromStatus} <> ${table.toStatus}`,
+    ),
+  ],
+);
+
+/* ------------------------------- notifications ----------------------------- */
+
+/**
+ * In-app notifications — Phase 13. No email, SMS or push exists, so nothing
+ * here implies external delivery.
+ *
+ * Every row belongs to exactly one recipient and every query is scoped to the
+ * session user; `user_id` is never accepted from a client.
+ */
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: text("id").primaryKey(),
+    /** Recipient. */
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: notificationType("type").notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull().default(""),
+    /** In-app destination for this notification, e.g. a request detail route. */
+    href: text("href"),
+    /** NULL until the recipient reads it. */
+    readAt: timestamp("read_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // The list query is "my notifications, newest first".
+    index("notifications_user_created_idx").on(table.userId, table.createdAt),
+    // The unread badge counts unread rows for one user.
+    index("notifications_user_unread_idx")
+      .on(table.userId)
+      .where(sql`read_at IS NULL`),
+    check("notifications_title_len", sql`length(${table.title}) BETWEEN 1 AND 160`),
+    check("notifications_body_len", sql`length(${table.body}) <= 500`),
   ],
 );
 

@@ -1,9 +1,12 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
 import { getDb, schema } from "../db/client";
 import { AuthError, requireRole } from "../auth/guards";
 import { newId } from "../auth/ids";
+import { cancelRequest, recordSubmission } from "../enrollment-service";
+import { LIVE_REQUEST_STATUSES } from "@/lib/enrollment-status";
 import {
   cancelEnrollmentSchema,
   enrollmentRequestSchema,
@@ -12,21 +15,24 @@ import {
 } from "../validation";
 
 /* -------------------------------------------------------------------------- */
-/* Enrollment foundation — Phase 11.                                           */
+/* Enrollment submission and student withdrawal — Phase 11, extended in 13.    */
 /*                                                                              */
-/* IMPLEMENTED: a genuine, authenticated student may submit ONE real            */
-/* EnrollmentRequest row, and cancel their own. Everything is transactional     */
-/* and every check is server-side:                                              */
+/* Every check is server-side and inside one transaction:                       */
 /*   • session must be a student (role from the cookie, never the form);        */
-/*   • course must exist;                                                       */
-/*   • course must be PUBLISHED and the group must belong to it — both are      */
-/*     verified in the SQL predicate, so drafts are not enrollable;             */
-/*     additionally impossible to violate thanks to the composite FK;           */
-/*   • duplicate live requests are rejected by a UNIQUE constraint.             */
+/*   • course must be PUBLISHED and the group must belong to it — verified in   */
+/*     the SQL predicate, and additionally impossible to violate thanks to the  */
+/*     composite FK;                                                            */
+/*   • the group must still have a free seat (capacity minus ACCEPTED rows);    */
+/*   • a student may hold only ONE LIVE request per group, enforced by a        */
+/*     partial unique index so it holds even against a concurrent double        */
+/*     submit.                                                                  */
 /*                                                                              */
-/* DELIBERATELY NOT IMPLEMENTED: teacher approve/reject, payment, and seat      */
-/* decrement/reservation. Seat inventory would need a transactional counter the */
-/* product has not specified yet, so no seat count is written or faked.         */
+/* Phase 13 additions: submission records an enrollment event and notifies the  */
+/* owning teacher, and withdrawal goes through the shared transition contract   */
+/* (so cancelling twice, or cancelling a rejected request, is refused).         */
+/*                                                                              */
+/* STILL NOT IMPLEMENTED: payment of any kind. Acceptance is a place in a       */
+/* group, never a paid enrolment, and no copy implies otherwise.                */
 /* -------------------------------------------------------------------------- */
 
 export async function submitEnrollmentRequestAction(
@@ -56,7 +62,13 @@ export async function submitEnrollmentRequestAction(
       // PUBLISHED. Enrolling into a private draft is refused at the database
       // predicate, so a guessed draft id cannot be turned into a request.
       const group = await tx
-        .select({ id: schema.courseGroups.id })
+        .select({
+          id: schema.courseGroups.id,
+          title: schema.courseGroups.title,
+          capacity: schema.courseGroups.capacity,
+          courseTitle: schema.courses.title,
+          teacherUserId: schema.courses.teacherUserId,
+        })
         .from(schema.courseGroups)
         .innerJoin(schema.courses, eq(schema.courses.id, schema.courseGroups.courseId))
         .where(
@@ -67,10 +79,14 @@ export async function submitEnrollmentRequestAction(
           ),
         )
         .limit(1);
-      if (group.length === 0) {
+      const target = group[0];
+      if (!target) {
         return { ok: false as const, code: "invalid_group", message: "Guruh bu kursga tegishli emas." };
       }
 
+      // A LIVE request is submitted or accepted. Rejected and cancelled rows
+      // do not block re-applying. The partial unique index enforces this too;
+      // probing first lets us return an honest message instead of a crash.
       const existing = await tx
         .select({ id: schema.enrollmentRequests.id })
         .from(schema.enrollmentRequests)
@@ -78,7 +94,7 @@ export async function submitEnrollmentRequestAction(
           and(
             eq(schema.enrollmentRequests.studentUserId, user.id),
             eq(schema.enrollmentRequests.groupId, parsed.data.groupId),
-            eq(schema.enrollmentRequests.status, "submitted"),
+            inArray(schema.enrollmentRequests.status, [...LIVE_REQUEST_STATUSES]),
           ),
         )
         .limit(1);
@@ -90,6 +106,31 @@ export async function submitEnrollmentRequestAction(
         };
       }
 
+      // A full group cannot take new requests. Occupancy is ACCEPTED rows only
+      // — pending requests never block another student.
+      const acceptedRows = await tx
+        .select({ taken: count(schema.enrollmentRequests.id) })
+        .from(schema.enrollmentRequests)
+        .where(
+          and(
+            eq(schema.enrollmentRequests.groupId, parsed.data.groupId),
+            eq(schema.enrollmentRequests.status, "accepted"),
+          ),
+        );
+      if (Number(acceptedRows[0]?.taken ?? 0) >= target.capacity) {
+        return {
+          ok: false as const,
+          code: "capacity_full",
+          message: "Bu guruhda bo‘sh joy qolmagan.",
+        };
+      }
+
+      const profile = await tx
+        .select({ name: schema.studentProfiles.name })
+        .from(schema.studentProfiles)
+        .where(eq(schema.studentProfiles.userId, user.id))
+        .limit(1);
+
       await tx.insert(schema.enrollmentRequests).values({
         id: requestId,
         studentUserId: user.id,
@@ -98,10 +139,25 @@ export async function submitEnrollmentRequestAction(
         note: parsed.data.note,
         status: "submitted",
       });
+
+      // History + teacher notification, in the SAME transaction as the insert.
+      await recordSubmission(tx, {
+        requestId,
+        studentUserId: user.id,
+        studentName: profile[0]?.name ?? "O‘quvchi",
+        teacherUserId: target.teacherUserId,
+        courseTitle: target.courseTitle,
+        groupTitle: target.title,
+      });
+
       return { ok: true as const };
     });
 
     if (!result.ok) return result;
+    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/courses");
+    revalidatePath("/teacher/dashboard/requests");
+    revalidatePath("/notifications");
     return { ok: true, data: { requestId } };
   } catch (error) {
     if (error instanceof AuthError) {
@@ -124,31 +180,17 @@ export async function cancelEnrollmentRequestAction(form: FormData): Promise<Act
       return { ok: false, code: "invalid_input", message: "Noto‘g‘ri so‘rov identifikatori." };
     }
 
-    const db = getDb();
-    // Ownership is part of the WHERE clause: another student's request simply
-    // does not match, so there is nothing to forget to check.
-    const owned = await db
-      .select({ id: schema.enrollmentRequests.id })
-      .from(schema.enrollmentRequests)
-      .where(
-        and(
-          eq(schema.enrollmentRequests.id, parsed.data.requestId),
-          eq(schema.enrollmentRequests.studentUserId, user.id),
-        ),
-      )
-      .limit(1);
-    if (owned.length === 0) {
-      return { ok: false, code: "not_found", message: "So‘rov topilmadi." };
-    }
-    await db
-      .update(schema.enrollmentRequests)
-      .set({ status: "cancelled", updatedAt: new Date() })
-      .where(
-        and(
-          eq(schema.enrollmentRequests.id, parsed.data.requestId),
-          eq(schema.enrollmentRequests.studentUserId, user.id),
-        ),
-      );
+    // Phase 13: the service owns ownership, the transition contract, the event
+    // record and the teacher notification when an ACCEPTED place is released.
+    // Cancelling twice is now refused instead of silently "succeeding".
+    const result = await cancelRequest(parsed.data.requestId, user.id);
+    if (!result.ok) return { ok: false, code: result.code, message: result.message };
+
+    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/courses");
+    revalidatePath("/teacher/dashboard/requests");
+    revalidatePath("/notifications");
+    revalidatePath("/courses");
     return { ok: true };
   } catch (error) {
     if (error instanceof AuthError) {

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, Inbox, LayoutGrid, UserRound } from "lucide-react";
+import { BookOpen, Inbox, LayoutGrid, UserRound, Bell } from "lucide-react";
 import type { ComponentType } from "react";
 import { cn, focusRing } from "@/lib/utils";
 import {
@@ -25,6 +25,7 @@ const icons: Record<TeacherNavItem["icon"], ComponentType<{ className?: string }
   courses: BookOpen,
   requests: Inbox,
   profile: UserRound,
+  notifications: Bell,
 };
 
 export function TeacherSidebarNav() {

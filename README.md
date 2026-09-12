@@ -500,10 +500,10 @@ served stale after an edit.
 
 ## Seat availability is derived, never stored
 
-There is no `seats_remaining` column and no occupancy counter. Remaining seats =
-`capacity − submitted enrollment requests`, computed at read time from real
-rows. Nothing is optimistically decremented and no availability number is
-invented.
+There is no `seats_remaining` column and no occupancy counter. Remaining seats
+are computed at read time from real rows. Nothing is optimistically decremented
+and no availability number is invented. **Phase 13 corrected the definition:
+occupancy counts `accepted` requests only** — see "Capacity model" below.
 
 ## Server-side course management
 
@@ -578,3 +578,187 @@ honest `unverified`) · seat reservation or seat decrement · a reviews table or
 review submission · a teacher-facing publish/moderation workflow · advanced
 analytics · enrollment approve/reject (statuses are only `submitted` and
 `cancelled`).
+
+---
+
+# Phase 13 — enrollment request management and in-app notifications
+
+Phase 13 closes the loop opened in Phase 11: a student submits a request, the
+owning teacher accepts or rejects it, the student sees the real outcome, and
+capacity is enforced safely on the server. Decisions produce in-app
+notifications. **No payment of any kind is implemented.**
+
+## Enrollment lifecycle
+
+```
+              teacher accepts
+  submitted ──────────────────▶ accepted
+      │                            │
+      │ teacher rejects            │ student cancels
+      ▼                            ▼
+   rejected                    cancelled
+      ▲                            ▲
+      └──── student cancels ───────┘
+            (from submitted)
+```
+
+## Allowed transitions (the single contract)
+
+`src/lib/enrollment-status.ts` is the **only** place transition rules exist. It
+is pure and dependency-free, so the database tests, the service layer and the UI
+all consult the same table. No component decides for itself what a status means.
+
+| Actor   | From        | To          |
+| ------- | ----------- | ----------- |
+| student | `submitted` | `cancelled` |
+| student | `accepted`  | `cancelled` |
+| teacher | `submitted` | `accepted`  |
+| teacher | `submitted` | `rejected`  |
+
+Everything else is refused, including `rejected → accepted`,
+`cancelled → accepted`, `cancelled → rejected` and `accepted → rejected`. A
+teacher cannot cancel on a student's behalf, and a student cannot accept or
+reject their own request.
+
+`accepted`, `rejected` and `cancelled` are **final**: the UI shows factual
+final-state copy instead of disabled buttons, and the server refuses a replayed
+decision from a stale page with a typed `invalid_transition` error.
+
+## Capacity model
+
+```
+available = capacity − count(requests WHERE status = 'accepted')
+```
+
+* A `submitted` request occupies **nothing**. Pending interest never blocks
+  another student.
+* Cancelling an accepted place restores the seat for free, because availability
+  is a `COUNT`, not a stored number that something must remember to decrement.
+* Availability is clamped at zero and is never presented as negative.
+* The same function (`getAcceptedCounts`) backs the public marketplace, the
+  teacher dashboard and the detail page, so the three can never disagree.
+
+### How overbooking is prevented
+
+`acceptRequest` runs entirely inside one transaction, in this order:
+
+1. re-read the request **with ownership in the SQL predicate**;
+2. validate the transition against the contract;
+3. `SELECT id FROM course_groups WHERE id = ? FOR UPDATE` — the serialisation
+   point;
+4. read capacity, then count accepted rows;
+5. refuse with `capacity_full` if the group is already full;
+6. update the row, write an enrollment event, insert the notification.
+
+The row lock is what makes step 4 trustworthy: under `READ COMMITTED` a bare
+`COUNT` can go stale between two concurrent accepts. Any failure rolls the whole
+thing back, so a notification can never exist for a decision that did not
+commit. Capacity safety comes from the database, never from browser timing or a
+client-side seat count.
+
+## Duplicate submission rules
+
+A student may hold at most **one live request per group**, where live means
+`submitted` or `accepted`. This is enforced by a partial unique index rather
+than by application code alone:
+
+```sql
+CREATE UNIQUE INDEX enrollment_requests_one_live_per_group
+  ON enrollment_requests (student_user_id, group_id)
+  WHERE status IN ('submitted', 'accepted');
+```
+
+Because it is partial, re-applying after cancelling or being rejected is
+allowed. Submission is additionally blocked when the course is not published,
+the group does not belong to the course (composite FK), or the group is full.
+
+## Notification architecture
+
+`notifications` is a plain table (`id`, `user_id`, `type`, `title`, `body`,
+`href`, `read_at`, `created_at`) with four conservative types that map to real
+events: `enrollment_submitted`, `enrollment_accepted`, `enrollment_rejected`,
+`enrollment_cancelled`.
+
+* **In-app only.** No email, SMS or push transport exists, and no copy implies
+  one.
+* Rows are inserted **inside the same transaction** as the status change.
+* The UI is a quiet `/notifications` route — not a header dropdown, not a social
+  feed. There is **no polling and no websocket layer**; the list is read once per
+  navigation, which matches how often these events occur.
+* Mark-one-read and mark-all-read are server actions, both idempotent.
+
+## Event history
+
+`enrollment_events` (`enrollment_request_id`, `actor_user_id`, `from_status`,
+`to_status`, `created_at`) records every transition. It exists so the teacher
+detail page can show an honest history, and it is **never exposed publicly**.
+This is deliberately not an admin audit system. No `accepted_at` / `rejected_at`
+/ `cancelled_at` columns were added — the event rows already answer those
+questions.
+
+## Privacy boundary
+
+* The student's **phone number is never selected** into any teacher-facing
+  query, let alone rendered. Contact exchange is not part of this workflow.
+* Public course and teacher pages expose only **aggregate availability**. No
+  student names, phones, notes or request counts appear on any public surface.
+* Notifications are always scoped to the session user. The list query takes the
+  id from the session, and mark-as-read matches on `(id AND user_id)` so another
+  user's id updates zero rows rather than depending on a check somebody could
+  forget.
+* Ownership is resolved **in the SQL WHERE clause**, so "does not exist" and
+  "not yours" are indistinguishable and request ids leak nothing.
+
+## Payment boundary
+
+Accepting a request means a **place in a group**, nothing more. The product says
+so plainly:
+
+> So'rovingiz qabul qilindi. To'lov tizimi hali ulanmagan.
+
+There is no payment provider integration, no Payme/Click/Uzum branding, no card
+form, no payment status, no receipt, and no fake paid / active learner /
+completed / certificate state anywhere.
+
+## Layering
+
+```
+database  →  enrollment-service.ts  →  server actions  →  UI projection
+```
+
+No raw Drizzle queries appear in JSX. Server actions are thin and
+**intent-shaped** — `acceptEnrollment(requestId)`, never
+`setStatus(requestId, status)`. Mutation inputs are validated with Zod
+`.strict()`, and `teacherId`, `studentId`, ownership and target status are never
+accepted from the client; identity comes from the session cookie only.
+
+## Commands
+
+```bash
+npm run db:migrate       # apply migrations (runs clean from scratch)
+npm run db:seed          # non-production demo data
+npm run db:reset         # drop, migrate, seed
+npm run test:server      # Phase 11/12 DB + security suite   (107 checks)
+npm run test:enrollment  # Phase 13 enrollment suite         (67 checks)
+npm run build            # production build
+```
+
+`npm run test:enrollment` covers five groups — STATUS, CAPACITY, CONCURRENCY,
+AUTHORIZATION, NOTIFICATIONS, INTEGRITY — against real PGlite migrations,
+including racing accepts on the last seat and the
+`capacity 1 → A accepted → B refused → A cancels → B acceptable` scenario.
+
+> Note on the concurrency tests: PGlite executes statements on a single
+> connection, so racing accepts interleave cooperatively rather than truly in
+> parallel. Those tests prove the invariant `accepted ≤ capacity` holds and that
+> the transition re-check is never skipped; the suite additionally asserts that
+> `acceptRequest` really does take `FOR UPDATE` on the group row *before*
+> counting, which is what keeps the same code correct on a multi-connection
+> Postgres.
+
+## What Phase 13 does NOT implement
+
+Payments and refunds · chat or messaging · SMS, email or push delivery · an
+admin dashboard · waitlists · coupons · course review submission · a teacher
+verification workflow · realtime or websocket notifications · notification
+preferences.

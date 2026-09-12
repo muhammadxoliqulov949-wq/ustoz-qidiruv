@@ -243,7 +243,7 @@ export interface DashNavItem {
   href: string;
   label: string;
   /** Icon key resolved at the presentation layer (plain-serializable model). */
-  icon: "overview" | "requests" | "saved" | "profile";
+  icon: "overview" | "requests" | "saved" | "profile" | "notifications";
   /** Short description used by the mobile/overview surfaces. */
   description: string;
 }
@@ -261,6 +261,12 @@ export const STUDENT_NAV: readonly DashNavItem[] = [
     label: "So‘rovlarim",
     icon: "requests",
     description: "Yozilish qoralamalari va tayyor so‘rovlar.",
+  },
+  {
+    href: "/notifications",
+    label: "Bildirishnomalar",
+    icon: "notifications",
+    description: "So‘rovlaringiz bo‘yicha ilova ichidagi xabarlar.",
   },
   {
     href: "/dashboard/saved",

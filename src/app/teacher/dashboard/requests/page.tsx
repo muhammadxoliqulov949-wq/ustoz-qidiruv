@@ -1,17 +1,40 @@
 import type { Metadata } from "next";
-import { teacherDirectory } from "@/data/teacher-dashboard";
-import { demoWorkspaceEnabled } from "@/server/env";
-import { TeacherRequestsPanel } from "@/components/teacher-dashboard/requests-panel";
-import { TeacherAccountRequests } from "@/components/teacher-dashboard/account-requests";
+import { RequestsManager } from "@/components/teacher-dashboard/requests-manager";
 import { requireRolePage } from "@/server/auth/guards";
+import { getTeacherRequestCounts, listTeacherRequests } from "@/server/enrollment-service";
+import type { EnrollmentStatus } from "@/lib/enrollment-status";
 
 export const metadata: Metadata = { title: "So‘rovlar" };
 
-/* /teacher/dashboard/requests — local Phase 7 state, ownership-guarded. */
-export default async function TeacherRequestsPage() {
-  // Demo flag resolved on the SERVER; it grants no access of any kind.
+/* -------------------------------------------------------------------------- */
+/* /teacher/dashboard/requests — Phase 13 request management.                  */
+/*                                                                              */
+/* Rows are read through the enrollment service, scoped in SQL to courses owned */
+/* by the signed-in teacher. Dynamic: account data that changes whenever a      */
+/* student submits or withdraws, so it is never prerendered.                    */
+/* -------------------------------------------------------------------------- */
+
+export const dynamic = "force-dynamic";
+
+const VALID: EnrollmentStatus[] = ["submitted", "accepted", "rejected", "cancelled"];
+
+export default async function TeacherRequestsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const user = await requireRolePage("teacher", "/teacher/dashboard/requests");
-  const demoEnabled = demoWorkspaceEnabled();
+  const query = await searchParams;
+
+  // Unknown values fall back to "all" rather than erroring.
+  const raw = typeof query.status === "string" ? query.status : "all";
+  const status = VALID.includes(raw as EnrollmentStatus) ? (raw as EnrollmentStatus) : undefined;
+
+  const [requests, counts] = await Promise.all([
+    listTeacherRequests(user.id, status ? { status } : {}),
+    getTeacherRequestCounts(user.id),
+  ]);
+
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
@@ -19,11 +42,15 @@ export default async function TeacherRequestsPage() {
           So‘rovlar
         </h1>
         <p className="max-w-prose text-base text-ink-500">
-          Kurslaringizga tegishli mahalliy prototip yozilish ma’lumotlari.
+          Kurslaringizga kelgan yozilish so‘rovlarini shu yerda qabul qilasiz
+          yoki rad etasiz. To‘lov tizimi hali ulanmagan.
         </p>
       </header>
-      <TeacherAccountRequests userId={user.id} />
-      <TeacherRequestsPanel directory={teacherDirectory} demoEnabled={demoEnabled} />
+      <RequestsManager
+        requests={requests}
+        counts={counts}
+        activeFilter={status ?? "all"}
+      />
     </div>
   );
 }

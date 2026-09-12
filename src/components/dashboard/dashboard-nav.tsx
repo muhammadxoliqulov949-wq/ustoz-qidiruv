@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bookmark, Heart, LayoutGrid, UserRound } from "lucide-react";
+import { Bookmark, Heart, LayoutGrid, UserRound, Bell } from "lucide-react";
 import type { ComponentType } from "react";
 import { cn, focusRing } from "@/lib/utils";
 import { isActiveNav, STUDENT_NAV, type DashNavItem } from "@/lib/dashboard";
@@ -21,6 +21,7 @@ const icons: Record<DashNavItem["icon"], ComponentType<{ className?: string }>> 
   requests: Bookmark,
   saved: Heart,
   profile: UserRound,
+  notifications: Bell,
 };
 
 export function DashboardSidebarNav() {

@@ -219,7 +219,13 @@ async function main(): Promise<void> {
     "SELECT unnest(enum_range(NULL::enrollment_status))::text AS v" as never,
   );
   const values = JSON.stringify(statusValues);
-  check("no approved/rejected/paid status in the DB enum", !/approved|rejected|paid|confirmed/.test(values));
+  // PHASE 13: the enum is exactly the four statuses the product implements.
+  // `rejected` is now real; `paid`/`completed`/`waitlisted` must NEVER appear,
+  // because nothing in the product can put a request into such a state.
+  check("enum contains the four implemented statuses",
+    ["submitted", "accepted", "rejected", "cancelled"].every((v) => values.includes(v)));
+  check("no unimplemented payment or lifecycle status in the DB enum",
+    !/paid|completed|refunded|expired|waitlisted|confirmed/.test(values));
 
   /* -------------------------- repo scoping (IDOR) -------------------------- */
   console.log("\n# repository scoping / IDOR");
@@ -374,11 +380,12 @@ async function main(): Promise<void> {
   check("projected course carries its groups",
     (publicDetail?.detail.groups.length ?? 0) >= 1);
 
-  // Availability is DERIVED, never stored: one submitted request was inserted
-  // for this group earlier, so capacity 12 must read as 11 remaining.
+  // Availability is DERIVED, never stored. PHASE 13: occupancy counts ACCEPTED
+  // requests only. The request inserted earlier is still `submitted`, so it
+  // occupies nothing and all 12 seats must still read as free.
   const seatGroup = publicDetail?.detail.groups.find((g) => g.id === groupId);
-  check("seats are derived from real enrollment rows, not stored",
-    seatGroup?.capacity === 12 && seatGroup?.seatsRemaining === 11);
+  check("a submitted request does not consume a public seat",
+    seatGroup?.capacity === 12 && seatGroup?.seatsRemaining === 12);
 
   // SQL-level facet filtering.
   check("price=free filter excludes a paid course",

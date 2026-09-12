@@ -1,6 +1,7 @@
 import "server-only";
 import { and, asc, count, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { getDb, schema } from "./db/client";
+import { getAcceptedCounts } from "./enrollment-service";
 import { categories } from "@/data/categories";
 import type {
   Course,
@@ -32,8 +33,8 @@ import type { CourseBrowseParams } from "@/lib/course-search";
 /*                                                                              */
 /* HONEST AVAILABILITY                                                          */
 /* `seatsRemaining` is NOT stored (Phase 11 rule: no invented occupancy). It is */
-/* derived as capacity minus the count of live `submitted` enrollment requests, */
-/* which is a real number backed by real rows. Cancelled requests do not count. */
+/* derived as capacity minus the count of ACCEPTED enrollment requests, which   */
+/* is a real number backed by real rows. Pending requests do not occupy a seat. */
 /* -------------------------------------------------------------------------- */
 
 const categoryById = new Map(categories.map((category) => [category.id, category]));
@@ -127,29 +128,20 @@ function toCourse(
 /* --------------------------- availability --------------------------------- */
 
 /**
- * Live seat availability for a set of groups, derived from REAL rows:
- * capacity − submitted (non-cancelled) enrollment requests, floored at 0.
- * Nothing is optimistically decremented and no number is invented.
+ * Live seat availability for a set of groups.
+ *
+ * PHASE 13: a seat is occupied only by an ACCEPTED request. A pending
+ * (`submitted`) request does not reduce availability — it has not been granted
+ * yet, and counting it would overstate how full a group is and could block
+ * other students on the strength of an undecided request.
+ *
+ * This delegates to the enrollment service so the public marketplace and the
+ * teacher dashboard compute occupancy from exactly one definition. Nothing is
+ * stored or decremented: cancelling an accepted place restores the seat for
+ * free, because this is a COUNT.
  */
 async function liveSeats(groupIds: string[]): Promise<Map<string, number>> {
-  const taken = new Map<string, number>();
-  if (groupIds.length === 0) return taken;
-  const db = getDb();
-  const rows = await db
-    .select({
-      groupId: schema.enrollmentRequests.groupId,
-      taken: count(schema.enrollmentRequests.id),
-    })
-    .from(schema.enrollmentRequests)
-    .where(
-      and(
-        inArray(schema.enrollmentRequests.groupId, groupIds),
-        eq(schema.enrollmentRequests.status, "submitted"),
-      ),
-    )
-    .groupBy(schema.enrollmentRequests.groupId);
-  for (const row of rows) taken.set(row.groupId, Number(row.taken));
-  return taken;
+  return getAcceptedCounts(groupIds);
 }
 
 /* ------------------------------ course reads ------------------------------ */
