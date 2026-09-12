@@ -51,9 +51,11 @@ export function OverviewPanels({ catalog }: { catalog: DashCatalog }) {
 
   if (!state.ready) {
     // Pre-hydration: keep the real section structure (headings stay in the
-    // document for SSR/a11y), only the data-dependent bodies wait.
+    // document for SSR/a11y), only the data-dependent bodies wait. The
+    // min-height reserves roughly the resolved panel height so the footer
+    // does not jump when the prototype stores hydrate (layout-shift fix).
     return (
-      <div className="flex flex-col gap-8">
+      <div className="flex min-h-[46rem] flex-col gap-8 sm:min-h-[40rem] lg:min-h-[52rem]">
         <section aria-labelledby="dash-next">
           <h2 id="dash-next" className="text-xl font-semibold text-ink-900">
             Tavsiya etilgan qadam

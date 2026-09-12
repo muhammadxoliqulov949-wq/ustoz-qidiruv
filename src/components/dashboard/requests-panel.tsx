@@ -19,7 +19,7 @@ export function RequestsPanel({ catalog }: { catalog: DashCatalog }) {
 
   if (!ready) {
     return (
-      <section aria-labelledby="requests-heading">
+      <section aria-labelledby="requests-heading" className="block min-h-[30rem]">
         <h2 id="requests-heading" className="text-xl font-semibold text-ink-900">
           Yozilish so‘rovlari
         </h2>

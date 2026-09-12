@@ -131,7 +131,7 @@ export function SavedPanel({ catalog }: { catalog: DashCatalog }) {
     // Pre-hydration: real section headings stay in the document; only the
     // lists (which depend on browser state) wait.
     return (
-      <div className="flex flex-col gap-8">
+      <div className="flex min-h-[28rem] flex-col gap-8">
         <section aria-labelledby="saved-courses">
           <h2 id="saved-courses" className="text-xl font-semibold text-ink-900">
             Saqlangan kurslar

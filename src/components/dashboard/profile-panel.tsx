@@ -44,7 +44,7 @@ export function ProfilePanel() {
 
   if (!ready) {
     return (
-      <Card className="flex flex-col gap-2">
+      <Card className="flex min-h-[24rem] flex-col gap-2">
         <h2 className="text-xl font-semibold text-ink-900">
           O‘quvchi ma’lumotlari
         </h2>
