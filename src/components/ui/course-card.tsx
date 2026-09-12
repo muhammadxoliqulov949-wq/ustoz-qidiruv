@@ -25,6 +25,7 @@ export interface CourseCardProps {
  */
 export function CourseCard({ course, className }: CourseCardProps) {
   const {
+    id,
     slug,
     title,
     teacher,
@@ -56,6 +57,8 @@ export function CourseCard({ course, className }: CourseCardProps) {
         ) : null}
         <SaveButton
           title={title}
+          kind="course"
+          entityId={id}
           className="absolute top-3 right-3"
         />
       </div>

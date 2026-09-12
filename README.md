@@ -273,6 +273,47 @@ hold. Price rows state the payment deferral; free courses show “Bepul” with
 no payment step at all. Full groups (seatsRemaining 0) are unselectable with
 a text “Joy qolmagan” state, never color-only.
 
+## Student dashboard (Phase 8)
+
+`/dashboard` (overview), `/dashboard/courses` (enrollment requests),
+`/dashboard/saved`, `/dashboard/profile` — the STUDENT cabinet. Flat sibling
+routes, not nested tabs: each section is independently linkable, gets its own
+`<h1>`/metadata and stays a server page. `src/app/dashboard/layout.tsx` is a
+server shell (identity card + desktop sidebar rail ≥ lg, scrollable tab strip
+< lg, sticky sidebar only on desktop) that mounts `<OnboardingProvider>` once
+so every screen reads the SAME Phase 6 draft. The marketing header/footer are
+untouched. `dashboard/[...segments]` + `dashboard/not-found.tsx` keep unknown
+nested URLs a real 404 rendered inside the shell.
+
+Data flow is derive-only. `src/data/dashboard-catalog.ts` builds one
+serializable projection (`DashCatalog`: ids + display strings + the Phase 7
+group lite shape) from the canonical `courses`/`teachers`/`categories`
+arrays; client islands never import the datasets, so a saved list does not
+drag the catalog into the bundle. `src/lib/dashboard.ts` is the pure model
+(`toDashRequest`, `savedCourses/savedTeachers`, `profileCompleteness`,
+`STUDENT_NAV`, `isActiveNav`) and `components/dashboard/use-student-state.ts`
+is the single hook that joins the three prototype stores against it.
+
+Saved state gained its canonical home: `src/lib/saved.ts` (versioned model,
+`parseSavedState`, pure `toggleSaved`) + `components/saved/saved-store.ts`
+(`ustoz.saved.v1`, `useSyncExternalStore`, cross-tab sync). It stores
+**canonical ids only** — course/teacher facts are always re-derived — and the
+existing `SaveButton` now reads/writes it (`kind` + `entityId` props), so
+there is exactly one saved store app-wide instead of the old per-button
+`useState`. Ids that no longer exist in the catalog silently drop out.
+
+Honesty rules: nothing claims a session. The identity area shows the
+onboarding draft's name or "Mehmon (profil to‘ldirilmagan)"; a draft with no
+role — or the `teacher` role — gets an explicit notice (Phase 9 owns the
+teacher panel). Request statuses are only `draft` ("Tugallanmagan qoralama")
+and `prepared` ("So‘rov tayyor" + "Backend ulanmagan"); the union has no
+accepted/confirmed/paid member. The overview shows counts of real things
+(requests, saved items, filled profile fields) and one derived next action —
+no hours, streaks, progress rings, certificates or charts. Profile is an
+editor over the SAME `StudentAnswers` schema, option taxonomies and
+validators as Phase 6, writing through the same draft store (storage format
+unchanged; nothing is migrated).
+
 ## Conventions
 
 - Server components by default; `"use client"` only where state/events live
@@ -295,8 +336,10 @@ Auth backend wiring (accounts, sessions, OTP, password recovery — the
 Phase 6 screens are UI-only), real enrollment submission (the Phase 7 flow
 stops at the honest “request prepared” state; teacher-side request handling,
 seat holds and notifications come with the backend), payment integration
-(never simulated), student/teacher dashboards, real onboarding
-persistence, course creation (teacher flow deliberately does not collect
+(never simulated), the teacher dashboard (Phase 9), real onboarding
+persistence (the Phase 8 profile editor still writes the browser-local
+prototype draft), cross-device saved state, enrollment request history
+(the Phase 7 store holds one draft at a time), course creation (teacher flow deliberately does not collect
 it), pagination (catalogs fit one page), messaging, save persistence, real
 API, premium motion pass, dark mode evaluation, i18n (`/uz`, `/ru`…),
 mobile bottom navigation.

@@ -161,6 +161,8 @@ export function EnrollmentCard({
       <div className="mt-4 flex items-center gap-2.5 border-t border-line pt-3.5">
         <SaveButton
           title={course.title}
+          kind="course"
+          entityId={course.id}
           className="bg-surface-muted shadow-none ring-1 ring-line"
         />
         <span className="text-sm text-ink-500">
