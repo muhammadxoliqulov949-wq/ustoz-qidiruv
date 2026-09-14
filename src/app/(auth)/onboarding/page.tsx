@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { OnboardingProvider } from "@/components/onboarding/draft-store";
 import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard";
 import { parseRoleParam } from "@/lib/onboarding";
@@ -30,6 +31,12 @@ export default async function OnboardingPage({
 }) {
   const params = await searchParams;
   const user = await getCurrentUser();
+  /*
+   * An admin has no student/teacher profile and no onboarding to complete:
+   * sending them here would offer a questionnaire that cannot be saved.
+   * (Admins are created by the operator CLI, never by this flow.)
+   */
+  if (user?.role === "admin") redirect("/admin");
   // The authenticated role is authoritative; ?role= only seeds anonymous runs.
   const role = user?.role ?? parseRoleParam(params.role);
   // ?next= (validated) lets the enrollment flow round-trip through register →

@@ -32,9 +32,26 @@ import { relations, sql } from "drizzle-orm";
 /* opaque cookie value.                                                          */
 /* -------------------------------------------------------------------------- */
 
-export const userRole = pgEnum("user_role", ["student", "teacher"]);
+/**
+ * Account roles.
+ *
+ * `admin` (Phase 15) is deliberately NOT reachable from any public surface:
+ * registration, onboarding and every client form validate against the narrower
+ * two-value `roleSchema` in validation.ts, so no HTTP input can produce it. An
+ * admin row can only be created out-of-band by the server-only operator CLI
+ * (`npm run admin:promote` / `admin:create`) — see scripts/admin.ts.
+ */
+export const userRole = pgEnum("user_role", ["student", "teacher", "admin"]);
 
-/** Honest states only — a teacher is NEVER auto-verified. */
+/**
+ * Teacher trust state. Honest states only — a teacher is NEVER auto-verified.
+ *
+ * Phase 15 keeps exactly these three values. A REJECTED verification request
+ * does NOT add a `rejected` value here: the profile returns to `unverified`,
+ * and the rejection itself lives on the request row (status, feedback,
+ * reviewed_at). That keeps the profile column a *current state* rather than a
+ * permanent scar, so a teacher can always fix their profile and re-apply.
+ */
 export const verificationStatus = pgEnum("verification_status", [
   "unverified",
   "pending",
@@ -46,10 +63,18 @@ export const courseLevel = pgEnum("course_level", ["boshlangich", "orta", "yuqor
 
 /** Phase 11 keeps the honest two-state lifecycle from Phase 10. */
 /**
- * Phase 12 lifecycle. `published` is added because the runtime genuinely uses
- * it: public marketplace queries select ONLY this value. A finished draft does
- * NOT become public on its own — promotion is an explicit, validated action.
- * Nothing beyond these three exists, because no moderation workflow exists.
+ * Phase 12 lifecycle, made real in Phase 15.
+ *
+ *   draft      — the teacher's private work in progress.
+ *   ready      — the teacher considers it finished and has submitted it to
+ *                admin moderation. STILL PRIVATE.
+ *   published  — in the public catalogue. Requires `published_at` (DB CHECK)
+ *                and can only be set by an admin moderation decision.
+ *
+ * There is deliberately NO `rejected` / `changes_requested` value here: a
+ * returned course goes back to `draft` and the moderation decision is recorded
+ * on `course_moderation_reviews`. A permanent status for "was sent back once"
+ * would describe history, and history belongs in the history table.
  */
 export const courseStatus = pgEnum("course_status", ["draft", "ready", "published"]);
 
@@ -83,6 +108,13 @@ export const notificationType = pgEnum("notification_type", [
   // Phase 14. Created ONLY from a verified provider callback, never from a
   // browser redirect or a query parameter.
   "payment_succeeded",
+  // Phase 15. Emitted by an admin decision, inside the same transaction that
+  // records the decision, so a notification can never describe a rolled-back
+  // action. Teachers only — no admin-facing notification types exist.
+  "verification_approved",
+  "verification_rejected",
+  "course_published",
+  "course_changes_requested",
 ]);
 
 /* ---------------------------------- users ---------------------------------- */
@@ -655,6 +687,188 @@ export const paymentEvents = pgTable(
   ],
 );
 
+/* ------------------------- Phase 15 · moderation --------------------------- */
+
+/*
+ * ADMIN CONTROL PLANE — Phase 15.
+ *
+ * Three tables, each with ONE job:
+ *
+ *   teacher_verification_requests — the teacher's application history, with
+ *     exactly one live `pending` row per teacher (partial unique index).
+ *   course_moderation_reviews     — the same shape for course publication,
+ *     one live `pending` row per course.
+ *   admin_audit_events            — an append-only record of every admin
+ *     decision. Nothing updates or deletes it.
+ *
+ * The DOMAIN STATE stays where it already lived (teacher_profiles.verification,
+ * courses.status); these tables record the *decision* around it. That is what
+ * keeps `draft ⇄ ready → published` and `unverified → pending → verified` from
+ * growing a second, contradictory source of truth.
+ */
+
+/** Lifecycle of one verification application. */
+export const verificationRequestStatus = pgEnum("verification_request_status", [
+  "pending",
+  "approved",
+  "rejected",
+]);
+
+/**
+ * A teacher's request to be verified.
+ *
+ * `feedback` is REQUIRED for a rejection (DB CHECK): sending a teacher back
+ * with no explanation would make the workflow punitive rather than useful.
+ * `reviewed_at` and `reviewed_by_admin_user_id` are all-or-nothing with the
+ * decision, so a "decided" row can never lack a reviewer.
+ */
+export const teacherVerificationRequests = pgTable(
+  "teacher_verification_requests",
+  {
+    id: text("id").primaryKey(),
+    teacherUserId: text("teacher_user_id")
+      .notNull()
+      .references(() => teacherProfiles.userId, { onDelete: "cascade" }),
+    status: verificationRequestStatus("status").notNull().default("pending"),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull().defaultNow(),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    /**
+     * The deciding admin. NO ACTION on delete on purpose: deleting an admin who
+     * has made decisions must fail rather than silently orphan the audit trail.
+     */
+    reviewedByAdminUserId: text("reviewed_by_admin_user_id").references(() => users.id),
+    /** Plain-text reviewer note shown to the teacher. Never HTML. */
+    feedback: text("feedback"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // History is read per teacher, newest first.
+    index("tvr_teacher_idx").on(table.teacherUserId, table.createdAt),
+    // The admin queue is "pending, oldest submission first".
+    index("tvr_status_idx").on(table.status, table.submittedAt),
+    // At most ONE live application per teacher — enforced by the database, so
+    // a double submit (even racing) cannot queue two applications.
+    uniqueIndex("tvr_one_pending_per_teacher")
+      .on(table.teacherUserId)
+      .where(sql`status = 'pending'`),
+    check("tvr_feedback_len", sql`${table.feedback} IS NULL OR length(${table.feedback}) <= 500`),
+    check(
+      "tvr_reviewed_consistency",
+      sql`(${table.status} = 'pending') = (${table.reviewedAt} IS NULL)`,
+    ),
+    check(
+      "tvr_reviewer_required",
+      sql`${table.status} = 'pending' OR ${table.reviewedByAdminUserId} IS NOT NULL`,
+    ),
+    check(
+      "tvr_rejection_needs_feedback",
+      sql`${table.status} <> 'rejected'
+          OR (${table.feedback} IS NOT NULL AND length(btrim(${table.feedback})) >= 10)`,
+    ),
+  ],
+);
+
+/** Lifecycle of one course moderation review. */
+export const courseModerationStatus = pgEnum("course_moderation_status", [
+  "pending",
+  "approved",
+  "changes_requested",
+]);
+
+/**
+ * One moderation review of a `ready` course.
+ *
+ * `changes_requested` is the honest name for "not published, here is why":
+ * the course returns to `draft`, remains private, and the teacher can edit and
+ * resubmit. There is no `rejected` value because a course is never permanently
+ * refused — that would be a moderation dead end the product cannot service.
+ */
+export const courseModerationReviews = pgTable(
+  "course_moderation_reviews",
+  {
+    id: text("id").primaryKey(),
+    courseId: text("course_id")
+      .notNull()
+      .references(() => courses.id, { onDelete: "cascade" }),
+    /** The owner at submission time — provenance for the review itself. */
+    submittedByTeacherUserId: text("submitted_by_teacher_user_id")
+      .notNull()
+      .references(() => teacherProfiles.userId, { onDelete: "cascade" }),
+    status: courseModerationStatus("status").notNull().default("pending"),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull().defaultNow(),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    reviewedByAdminUserId: text("reviewed_by_admin_user_id").references(() => users.id),
+    feedback: text("feedback"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("cmr_course_idx").on(table.courseId, table.createdAt),
+    index("cmr_status_idx").on(table.status, table.submittedAt),
+    // One live review per course: resubmitting after a decision creates a NEW
+    // row, which is exactly the history we want.
+    uniqueIndex("cmr_one_pending_per_course")
+      .on(table.courseId)
+      .where(sql`status = 'pending'`),
+    check("cmr_feedback_len", sql`${table.feedback} IS NULL OR length(${table.feedback}) <= 500`),
+    check(
+      "cmr_reviewed_consistency",
+      sql`(${table.status} = 'pending') = (${table.reviewedAt} IS NULL)`,
+    ),
+    check(
+      "cmr_reviewer_required",
+      sql`${table.status} = 'pending' OR ${table.reviewedByAdminUserId} IS NOT NULL`,
+    ),
+    check(
+      "cmr_changes_need_feedback",
+      sql`${table.status} <> 'changes_requested'
+          OR (${table.feedback} IS NOT NULL AND length(btrim(${table.feedback})) >= 10)`,
+    ),
+  ],
+);
+
+/**
+ * Append-only admin action log.
+ *
+ * `entity_id` carries NO foreign key on purpose: the log must survive whatever
+ * happens to the row it describes, and a cascade delete would quietly erase the
+ * record of an admin action. `metadata` is a short, safe, human-readable
+ * summary (an identifier or a status word) — never a payload dump, never a
+ * secret, never student data.
+ */
+export const adminAuditAction = pgEnum("admin_audit_action", [
+  "teacher_verified",
+  "teacher_verification_rejected",
+  "course_published",
+  "course_changes_requested",
+]);
+
+export const adminAuditEvents = pgTable(
+  "admin_audit_events",
+  {
+    id: text("id").primaryKey(),
+    adminUserId: text("admin_user_id")
+      .notNull()
+      .references(() => users.id),
+    action: adminAuditAction("action").notNull(),
+    /** Which kind of entity the action was performed on. */
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    /** Safe subset only: ids, slugs and status words. ≤ 300 chars. */
+    metadata: text("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("aae_created_idx").on(table.createdAt),
+    index("aae_admin_idx").on(table.adminUserId, table.createdAt),
+    index("aae_entity_idx").on(table.entityType, table.entityId),
+    check("aae_entity_type_check", sql`${table.entityType} IN ('teacher', 'course')`),
+    check("aae_entity_id_check", sql`length(btrim(${table.entityId})) > 0`),
+    check("aae_metadata_len", sql`${table.metadata} IS NULL OR length(${table.metadata}) <= 300`),
+  ],
+);
+
 /* -------------------------------- relations -------------------------------- */
 
 export const usersRelations = relations(users, ({ one, many }) => ({
@@ -709,3 +923,6 @@ export type EnrollmentRequestRow = typeof enrollmentRequests.$inferSelect;
 export type PaymentRow = typeof payments.$inferSelect;
 export type PaymentTransactionRow = typeof paymentTransactions.$inferSelect;
 export type PaymentEventRow = typeof paymentEvents.$inferSelect;
+export type TeacherVerificationRequestRow = typeof teacherVerificationRequests.$inferSelect;
+export type CourseModerationReviewRow = typeof courseModerationReviews.$inferSelect;
+export type AdminAuditEventRow = typeof adminAuditEvents.$inferSelect;

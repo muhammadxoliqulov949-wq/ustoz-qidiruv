@@ -311,7 +311,7 @@ export function hasTeacherDraft(answers: TeacherAnswers): boolean {
 export interface TeacherNavItem {
   href: string;
   label: string;
-  icon: "overview" | "courses" | "requests" | "profile" | "notifications";
+  icon: "overview" | "courses" | "requests" | "verification" | "profile" | "notifications";
   description: string;
 }
 
@@ -328,6 +328,12 @@ export const TEACHER_NAV: readonly TeacherNavItem[] = [
     label: "Kurslarim",
     icon: "courses",
     description: "Katalogdagi kurslaringiz, guruhlar va joylar.",
+  },
+  {
+    href: "/teacher/dashboard/verification",
+    label: "Tasdiqlash",
+    icon: "verification",
+    description: "Profil tasdig‘i holati va ariza yuborish.",
   },
   {
     href: "/teacher/dashboard/requests",

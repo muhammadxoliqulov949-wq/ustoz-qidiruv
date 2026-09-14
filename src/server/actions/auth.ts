@@ -159,8 +159,19 @@ export async function loginAction(form: FormData): Promise<ActionResult> {
   await createSession(user.id);
   void pruneExpiredSessions();
 
+  /*
+   * Phase 15: each role lands in its OWN area. An admin has no student or
+   * teacher profile, so sending them to /dashboard would render an empty
+   * cabinet (and bounce them straight back).
+   */
   const next = parseSafeNext(parsed.data.next ?? undefined);
-  redirect(next ?? (user.role === "teacher" ? "/teacher/dashboard" : "/dashboard"));
+  const home =
+    user.role === "admin"
+      ? "/admin"
+      : user.role === "teacher"
+        ? "/teacher/dashboard"
+        : "/dashboard";
+  redirect(next ?? home);
 }
 
 export async function logoutAction(): Promise<void> {

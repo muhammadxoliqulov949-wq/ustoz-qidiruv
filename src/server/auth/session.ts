@@ -26,7 +26,11 @@ const SESSION_TTL_DAYS = 30;
 
 export interface SessionUser {
   id: string;
-  role: "student" | "teacher";
+  /**
+   * The account's role, read from `users.role` on every request. Phase 15 adds
+   * `admin`, which is settable ONLY by the operator CLI — never by any request.
+   */
+  role: "student" | "teacher" | "admin";
   /** Private. Never rendered on a public page. */
   phone: string;
 }

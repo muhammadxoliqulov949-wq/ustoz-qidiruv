@@ -11,9 +11,14 @@
     "db:seed": "tsx --conditions=react-server scripts/db.ts seed",
     "db:reset": "tsx --conditions=react-server scripts/db.ts reset",
     "db:generate": "drizzle-kit generate",
+    "admin:list": "tsx --conditions=react-server scripts/admin.ts list",
+    "admin:promote": "tsx --conditions=react-server scripts/admin.ts promote",
+    "admin:demote": "tsx --conditions=react-server scripts/admin.ts demote",
+    "admin:create": "tsx --conditions=react-server scripts/admin.ts create",
     "test:server": "tsx --conditions=react-server tests/server.test.ts",
     "test:enrollment": "tsx --conditions=react-server tests/enrollment.test.ts",
-    "test:payments": "tsx --conditions=react-server tests/payments.test.ts"
+    "test:payments": "tsx --conditions=react-server tests/payments.test.ts",
+    "test:admin": "tsx --conditions=react-server tests/admin.test.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",

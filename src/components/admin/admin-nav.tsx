@@ -2,41 +2,61 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BadgeCheck, Bell, BookOpen, Inbox, LayoutGrid, UserRound } from "lucide-react";
+import { BookOpen, History, LayoutGrid, UserRoundCheck } from "lucide-react";
 import type { ComponentType } from "react";
 import { cn, focusRing } from "@/lib/utils";
-import {
-  isActiveTeacherNav,
-  TEACHER_NAV,
-  type TeacherNavItem,
-} from "@/lib/teacher-workspace";
+import { ADMIN_NAV, isActiveAdminNav, type AdminNavItem } from "@/lib/admin-workspace";
 
 /* -------------------------------------------------------------------------- */
-/* Teacher navigation — ONE nav model (lib/teacher-workspace.TEACHER_NAV)       */
-/* rendered in two shapes: a desktop sidebar rail (lg+) and a horizontally      */
-/* scrollable tab strip below it. Same accessibility contract as the Phase 8    */
-/* student navs (real nav/ul/a, aria-current="page", active state carried by    */
-/* weight + a rail/underline marker as well as colour) but a SEPARATE component */
-/* tree: the two dashboards stay distinct domains.                               */
+/* Admin navigation — Phase 15.                                                */
+/*                                                                              */
+/* ONE model (lib/admin-workspace.ADMIN_NAV) rendered in two shapes: a desktop   */
+/* rail and a horizontally scrollable tab strip. Same accessibility contract as   */
+/* the student/teacher navs — real nav/ul/a landmarks, `aria-current="page"`,    */
+/* and the active item is marked by weight + a rail/underline as well as colour. */
+/*                                                                              */
+/* The COUNT BADGE is a factual number handed down by the server layout, not     */
+/* client state: it can only ever show what the database said at render time.    */
+/* Zero is shown as no badge at all, so the rail is not noisy on a quiet day.    */
 /* -------------------------------------------------------------------------- */
 
-const icons: Record<TeacherNavItem["icon"], ComponentType<{ className?: string }>> = {
+const icons: Record<AdminNavItem["icon"], ComponentType<{ className?: string }>> = {
   overview: LayoutGrid,
+  teachers: UserRoundCheck,
   courses: BookOpen,
-  requests: Inbox,
-  verification: BadgeCheck,
-  profile: UserRound,
-  notifications: Bell,
+  activity: History,
 };
 
-export function TeacherSidebarNav() {
+export interface AdminNavCounts {
+  teachers?: number;
+  courses?: number;
+}
+
+function badgeFor(item: AdminNavItem, counts: AdminNavCounts | undefined): number | null {
+  if (!counts) return null;
+  if (item.icon === "teachers") return counts.teachers && counts.teachers > 0 ? counts.teachers : null;
+  if (item.icon === "courses") return counts.courses && counts.courses > 0 ? counts.courses : null;
+  return null;
+}
+
+function CountBadge({ value }: { value: number }) {
+  return (
+    <span className="ms-auto rounded-pill bg-accent-600 px-2 py-px text-xs font-semibold text-white tabular-nums">
+      {value}
+      <span className="sr-only"> ta kutilmoqda</span>
+    </span>
+  );
+}
+
+export function AdminSidebarNav({ counts }: { counts?: AdminNavCounts }) {
   const pathname = usePathname();
   return (
-    <nav aria-label="Ustoz paneli" className="max-lg:hidden">
+    <nav aria-label="Administrator paneli" className="max-lg:hidden">
       <ul className="flex flex-col gap-1">
-        {TEACHER_NAV.map((item) => {
+        {ADMIN_NAV.map((item) => {
           const Icon = icons[item.icon];
-          const active = isActiveTeacherNav(pathname, item.href);
+          const active = isActiveAdminNav(pathname, item.href);
+          const pending = badgeFor(item, counts);
           return (
             <li key={item.href}>
               <Link
@@ -60,6 +80,7 @@ export function TeacherSidebarNav() {
                 />
                 <Icon className="size-[18px] shrink-0" />
                 {item.label}
+                {pending ? <CountBadge value={pending} /> : null}
               </Link>
             </li>
           );
@@ -69,17 +90,18 @@ export function TeacherSidebarNav() {
   );
 }
 
-export function TeacherTabNav() {
+export function AdminTabNav({ counts }: { counts?: AdminNavCounts }) {
   const pathname = usePathname();
   return (
     <nav
-      aria-label="Ustoz paneli"
+      aria-label="Administrator paneli"
       className="-mx-5 border-b border-line px-5 md:-mx-8 md:px-8 lg:hidden"
     >
       <ul className="flex gap-1 overflow-x-auto pb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {TEACHER_NAV.map((item) => {
+        {ADMIN_NAV.map((item) => {
           const Icon = icons[item.icon];
-          const active = isActiveTeacherNav(pathname, item.href);
+          const active = isActiveAdminNav(pathname, item.href);
+          const pending = badgeFor(item, counts);
           return (
             <li key={item.href} className="shrink-0">
               <Link
@@ -96,6 +118,7 @@ export function TeacherTabNav() {
               >
                 <Icon className="size-[18px] shrink-0" />
                 {item.label}
+                {pending ? <CountBadge value={pending} /> : null}
               </Link>
             </li>
           );

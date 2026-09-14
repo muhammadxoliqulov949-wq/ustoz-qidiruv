@@ -1074,3 +1074,311 @@ concurrent Perform, and IDOR on the payment page.
 Refunds · payouts, commissions or split settlement · recurring payments ·
 stored cards or any card form · a CLICK, Uzum or other provider adapter · SMS or
 email receipts · an admin financial dashboard · fiscal receipt submission.
+
+# Phase 15 — admin control plane, teacher verification and course moderation
+
+Phase 15 adds the missing half of the marketplace: until now a teacher could
+mark a course *ready* but nothing could ever make it *published*, and a teacher
+profile could never become *verified*. Both now have a real, audited,
+database-backed decision path — and the decision can only be made by an
+`admin` account that no public surface can create.
+
+Three rules everything else follows from:
+
+> **1. The `admin` role cannot be obtained from the product.** No registration
+> form, onboarding step, server action, hidden input, URL parameter or
+> localStorage value can produce it. It is written by one command, run by an
+> operator with database access.
+>
+> **2. A teacher cannot verify or publish themselves.** The submission action
+> can only insert a `pending` application; the publish action can only act on a
+> live review row. `verified` and `published` are written exclusively in the
+> admin decision path — inside a transaction, under a row lock.
+>
+> **3. A private course never leaks.** `draft` and `ready` are excluded at the
+> query level in `public-repo.ts`; publishing changes what the *public* read
+> surface returns at request time, with no rebuild.
+
+## Roles
+
+| role | who | dashboard |
+| --- | --- | --- |
+| `student` | the default account | `/dashboard` |
+| `teacher` | an account with a `teacher_profiles` row | `/teacher/dashboard` |
+| `admin` | an operator account with **no profile row** | `/admin` |
+
+`user_role` gained `admin` in migration `0005`. The composite foreign keys
+(`student_profiles_(user_id, role)` and `teacher_profiles_(user_id, role)`, each
+with its own `role = 'student'` / `role = 'teacher'` CHECK) mean the database
+itself refuses to turn a profiled account into an admin, and refuses to attach a
+marketplace profile to an admin. That is a security property we keep: an operator
+account physically cannot own courses, be enrolled as a student, or inherit a
+marketplace identity. The practical consequence is documented below.
+
+## Bootstrapping an admin (out-of-band, by design)
+
+```bash
+npm run admin:list                                  # who is an admin right now
+ADMIN_PASSWORD='…12+ chars…' npm run admin:create -- +998XXXXXXXXX
+npm run admin:promote -- +998XXXXXXXXX              # an EXISTING profile-less account
+npm run admin:demote  -- +998XXXXXXXXX              # back to student
+```
+
+Why a CLI and not a route:
+
+* it is **not reachable over HTTP at all** — there is no endpoint, action or
+  page that grants the role, so an escalation attempt has nothing to call;
+* it never reads a role from a request; the operator states the target phone
+  explicitly and the command implies the role;
+* it is the **only** writer of `users.role = 'admin'` in the codebase.
+
+Safety properties:
+
+* **No default admin, no seeded admin, no committed password.** `admin:create`
+  requires `ADMIN_PASSWORD` in the environment (≥ 12 characters) and refuses a
+  weaker or missing one; it is never interactive, so no password is echoed to a
+  shell history or a log. `db:seed` refuses `NODE_ENV=production`.
+* **Safe failure.** An unknown phone number changes nothing and says nothing
+  about which numbers exist. Output is masked (`+998****233`).
+* **`promote` refuses a profiled account** with an explanation instead of
+  deleting data to force the update through — the composite role FK would reject
+  it anyway, and removing the profile would delete that teacher's courses.
+  Use `admin:create` for a dedicated operator account.
+* **Production is never seeded.** The dev fixtures below exist only when
+  `db:seed` runs outside production.
+
+The two supported ways to get an admin, in order of preference:
+
+1. `admin:create` — a dedicated, profile-less operator account (recommended).
+2. `admin:promote` — an existing account that has no profile row.
+
+### Development fixtures (dev seed only)
+
+`npm run db:seed` also creates three teacher accounts for exercising the queues
+locally — one verified with a complete profile, one pending with a live
+application, one deliberately incomplete:
+
+| fixture | phone | state |
+| --- | --- | --- |
+| Dilnoza Rahimova | `+998901000013` | `verified` — the owner that can actually publish |
+| Javohir Sattorov | `+998901000014` | `pending`, one live application in the queue |
+| Kamola Yusupova | `+998901000015` | `unverified`, profile incomplete (the eligibility gate) |
+
+They share the per-run seed password (`DEV_SEED_PASSWORD`, or one printed once by
+the seed) — the repository contains no credential of any kind.
+
+## Teacher verification lifecycle
+
+```
+unverified ──submit──▶ pending ──approve──▶ verified
+    ▲                     │
+    └──────reject─────────┘        (with REQUIRED feedback; resubmittable)
+```
+
+* **One live application per teacher**, enforced by a partial unique index
+  (`teacher_verification_requests_one_pending_per_teacher`). A double submit
+  returns `already_pending` and writes nothing.
+* **Submission is validated server-side** against a single requirement list
+  (name, specialization, city, ≥ 1 language, experience, bio, approach) shared
+  by the teacher's screen and the service, so the disabled button and the refusal
+  can never disagree. The whole submission runs in one transaction that sets the
+  profile to `pending` and inserts the request row.
+* **`verified` is written in exactly one place**: `approveVerification`,
+  after taking `FOR UPDATE` on the application row. Approving also sets
+  `isPublic = true`, otherwise a verified teacher's published course would link
+  to a 404 profile.
+* **A rejection is not a permanent block.** The profile returns to `unverified`,
+  the reviewer's feedback is stored on the request row (visible to the teacher),
+  and the teacher can fix the profile and re-apply. History is kept: a rejection
+  is a decision, never a ban.
+* **No document uploads.** There is no file-upload infrastructure in this phase,
+  and every screen says so:
+  `Hujjat orqali tekshirish keyingi bosqichda ulanadi.` — the reviewer approves
+  on the basis of the profile data shown on the plugin screen.
+
+## Course moderation lifecycle
+
+```
+draft ──teacher submits──▶ ready ──admin publishes──▶ published
+  ▲                          │
+  └──────admin requests changes──────┘   (with REQUIRED feedback)
+```
+
+* **`ready` means "sent for review"** and the UI says
+  `Ko'rib chiqish uchun yuborilgan`. No screen calls a ready course published.
+* **A submission creates exactly one live review**
+  (`course_moderation_reviews_one_pending_per_course`, partial unique index),
+  idempotently: submitting twice reuses the live review instead of queueing a
+  second one.
+* **There is no `rejected` course state.** A return is `ready → draft` plus
+  feedback; the teacher fixes the course and submits again. Nothing is
+  permanently blocked.
+* **Submitting requires a group and a syllabus module**, checked inside the
+  submission transaction — a course nobody can enrol in cannot enter the queue.
+* **A course under review or published is frozen for its teacher.** Every content
+  mutation re-checks this server-side (`assertEditable`); the disabled fieldset in
+  the editor is convenience, not the control.
+
+### The publication rule (enforced, not suggested)
+
+`publishCourse(reviewId, adminUserId)` succeeds only when **all four** hold, and
+re-checks them under `FOR UPDATE` on the review row:
+
+1. the course is `ready` (a decided review is refused, so it can never be
+   re-published — `published_at` is not overwritten);
+2. a **live** review exists for it (the review id is the only input — there is no
+   course-status setter);
+3. the owner is a real, active teacher;
+4. the owner's verification is **`verified`**.
+
+Rule 4 is the product rule: **a ready course from an unverified teacher stays
+private**. The admin sees the reason (`Ustoz tasdiqlanmagan — kursni e'lon qilib
+bo'lmaydi.`) and the course stays in the queue; the server refuses regardless of
+what the button says.
+
+Publishing writes, in one transaction: `courses.status = 'published'`,
+`published_at` (ISO date), the review decision, the reviewer, the audit row and
+the teacher's notification.
+
+### Published courses are read-only (Phase 15 limitation)
+
+Once published, a course cannot be edited by its teacher and cannot be
+un-published: there is no teacher edit path, no admin "return to draft" for a
+live listing, and no auto-unpublish. Editing live marketplace content is a
+product decision this phase does not make. The limitation is stated on the
+teacher's editor screen and enforced in `assertEditable`.
+
+## Audit log
+
+`admin_audit_events` is **append-only by construction**: it has no `updated_at`
+column, no product code issues `UPDATE`/`DELETE` against it, and the four
+recorded actions are the decisions themselves —
+
+| action | written by |
+| --- | --- |
+| `teacher_verified` | approve a verification application |
+| `teacher_verification_rejected` | return an application with feedback |
+| `course_published` | publish a reviewed course |
+| `course_changes_requested` | return a course to its teacher |
+
+Each row stores the acting admin, the entity (`teacher` / `course`), the entity
+id, a short machine-readable `metadata` string (≤ 300 characters, e.g.
+`verification=verified`) and the timestamp. It records **no** phone number,
+password hash, session token or free-form payload — `/admin/activity` renders it
+and there is nothing sensitive in it to leak. A `DELETE` of an admin who has made
+decisions is refused by the foreign key (NO ACTION), so the trail cannot be
+orphaned.
+
+## Notifications
+
+Four teacher-facing types were added to the existing notification
+infrastructure: `verification_approved`, `verification_rejected`,
+`course_published`, `course_changes_requested`. Each is inserted **inside the
+same transaction as the decision it announces**, so a decision and its
+notification cannot diverge, and an idempotent retry (or a losing race) produces
+neither a second decision nor a second notification.
+
+## Routes
+
+| route | purpose |
+| --- | --- |
+| `/admin` | factual counts + both live queues |
+| `/admin/teachers` | verification queue (oldest pending first, status filter) |
+| `/admin/teachers/[teacherId]` | full profile, owned courses, request history, decision controls |
+| `/admin/courses` | moderation queue with owner verification state |
+| `/admin/courses/[courseId]` | whole listing, groups, syllabus, decision controls |
+| `/admin/activity` | the immutable decision log |
+
+Authorization is resolved **once, in the admin layout, on the server**:
+
+* anonymous → `/login?next=/admin` (auth gate);
+* student/teacher → an explicit in-shell *"this area is not an admin"* screen
+  with links to their own dashboard — never a silent cross-dashboard redirect
+  that would make the attempt invisible;
+* admin → the shell.
+
+An unknown `/admin/**` path renders a real 404 **inside** the admin shell, and an
+unknown teacher/course id renders the same 404 as a nonexistent one, so the id is
+never echoed back and ids cannot be probed.
+
+`forbidden()` / `unauthorized()` from `next/navigation` are deliberately **not**
+used: they require `experimental.authInterrupts`, and no experimental flag is
+turned on for a production feature.
+
+## Layering and validation
+
+```
+database → verification-service / moderation-service / audit-service
+         → admin-service projections → server actions → admin UI
+```
+
+No Drizzle query appears in admin JSX. Every mutation is **intent-shaped** and
+validated with Zod `.strict()`:
+
+| action | input |
+| --- | --- |
+| `verifyTeacher` | `{ requestId }` |
+| `rejectTeacherVerification` | `{ requestId, feedback ≥ 10 }` |
+| `publishCourse` | `{ reviewId }` |
+| `requestCourseChanges` | `{ reviewId, feedback ≥ 10 }` |
+| teacher submission | `{}` — an *empty* strict object |
+
+There is no `updateStatus` and no `updateCourse`. `status`, `verification`,
+`role`, `adminUserId` and `decision` are not fields of any schema, and because
+the schemas are `.strict()` a payload that invents one is **rejected**, not
+silently ignored. The reviewer is always the session user, and the services
+re-check that identity's role inside the transaction as defence in depth.
+
+## Privacy boundary
+
+Admin projections select only moderation-relevant data. The teacher review detail
+carries the public profile fields and the teacher's own courses; it does **not**
+select a phone number, password hash, session row, token or any student record.
+There is **no payment panel** in the admin area and no admin payment action of any
+kind — Phase 14's Payme protocol behaviour is untouched, and payment state
+remains derived from authenticated callbacks only.
+
+## Building with no database
+
+`npm run build` must succeed with **no database at all** — no `DATABASE_URL`, no
+`.data` directory. This is a hard requirement, not a convenience: a build that
+touches the database fails on any host that builds before the database is
+reachable (this is exactly the failure the marketplace hit on Vercel).
+
+What makes it true:
+
+* no `generateStaticParams` on any database-backed route (it would enumerate
+  slugs at build time) and no slug-listing helper exists to reintroduce it;
+* the marketplace detail pages are `force-dynamic`;
+* **the admin layout declares `export const dynamic = "force-dynamic"`**, which
+  covers every nested admin route. Without it Next would try to prerender those
+  pages, and because the pages themselves do not read cookies Next would
+  *execute their queries* during `next build`. This was found by the Phase 15
+  build gate and fixed in the same change.
+
+`npm run build` was verified with no environment variables and no `.data`
+directory present, and with the assertion that `.data` is not created by the
+build.
+
+## Commands
+
+```bash
+npm run test:admin       # Phase 15 admin/verification/moderation suite (147 checks)
+npm run admin:list       # current admin accounts (masked)
+npm run admin:create     # new operator account (requires ADMIN_PASSWORD)
+```
+
+`npm run test:admin` runs against real PGlite migrations and covers the intent
+schemas and over-posting, bootstrap security (registration cannot create an
+admin; a profile cannot be attached to one), the whole verification lifecycle
+including idempotent retries and the "opposite decision" refusal, resubmission
+after a rejection, the publication rule (including an unverified owner being
+refused), the no-redeploy public visibility check, audit contents and
+immutability, and racing admins producing exactly one decision.
+
+## What Phase 15 does NOT implement
+
+Refunds, payouts, commissions or split settlement · chat · SMS, email or push ·
+file uploads or document review · review submission by students · waitlists ·
+analytics or metrics dashboards · admin payment controls · un-publishing or
+editing a live listing · bulk actions.

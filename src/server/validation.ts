@@ -7,6 +7,14 @@ import {
   onboardingLanguages,
   onboardingCategories,
 } from "@/lib/onboarding";
+import {
+  FEEDBACK_MAX_LENGTH,
+  FEEDBACK_MIN_LENGTH,
+} from "@/lib/teacher-verification";
+import {
+  MODERATION_FEEDBACK_MAX_LENGTH,
+  MODERATION_FEEDBACK_MIN_LENGTH,
+} from "@/lib/course-moderation";
 
 /* -------------------------------------------------------------------------- */
 /* Server-side input schemas — Phase 11.                                       */
@@ -156,6 +164,58 @@ export const rejectEnrollmentSchema = z
   .strict();
 
 export const notificationReadSchema = z.object({ notificationId: idSchema }).strict();
+
+/* ------------------------- Phase 15 · admin actions ------------------------- */
+
+/*
+ * INTENT-SHAPED, NEVER STATE-SHAPED.
+ *
+ * Every schema below names the DECISION the caller is making. There is no
+ * `status`, no `role`, no `verification`, no `decision` and no `adminUserId`
+ * field anywhere — and `.strict()` rejects the whole payload if a caller
+ * invents one. So `updateStatus({status:"verified"})` and
+ * `updateCourse({status:"published"})` are not merely forbidden: they are
+ * unparseable. The reviewer and the resulting state are derived server-side
+ * from the session and from the row being decided.
+ */
+
+/** Teacher submits their own profile for verification. No fields: the subject
+ *  is the session user, and any posted field is an over-post attempt. */
+export const submitTeacherVerificationSchema = z.object({}).strict();
+
+/** Admin approves a pending verification application. */
+export const verifyTeacherSchema = z.object({ requestId: idSchema }).strict();
+
+/** Admin returns a verification application with REQUIRED feedback. */
+export const rejectTeacherVerificationSchema = z
+  .object({
+    requestId: idSchema,
+    feedback: z
+      .string()
+      .trim()
+      .min(FEEDBACK_MIN_LENGTH, "Sabab kamida 10 belgidan iborat bo‘lsin.")
+      .max(FEEDBACK_MAX_LENGTH, "Sabab 500 belgidan oshmasin."),
+  })
+  .strict();
+
+/** Admin publishes a submitted course. Identified by its live REVIEW id, so a
+ *  caller cannot publish a course that has no pending moderation record. */
+export const publishCourseSchema = z.object({ reviewId: idSchema }).strict();
+
+/** Admin returns a submitted course to `draft` with REQUIRED feedback. */
+export const requestCourseChangesSchema = z
+  .object({
+    reviewId: idSchema,
+    feedback: z
+      .string()
+      .trim()
+      .min(MODERATION_FEEDBACK_MIN_LENGTH, "Sabab kamida 10 belgidan iborat bo‘lsin.")
+      .max(MODERATION_FEEDBACK_MAX_LENGTH, "Sabab 500 belgidan oshmasin."),
+  })
+  .strict();
+
+/** Teacher submits an owned course for moderation ("ready"). */
+export const submitCourseForReviewSchema = z.object({ courseId: idSchema }).strict();
 
 /* --------------------------------- payments --------------------------------- */
 

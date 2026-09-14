@@ -5,6 +5,14 @@ import { EmptyState } from "@/components/dashboard/empty-state";
 import { courseFormatLabels, courseLevelLabels } from "@/data/courses";
 import { formatPrice } from "@/lib/format";
 import { CopyCourseButton } from "./copy-course-button";
+import {
+  COURSE_CHANGES_REQUESTED_NOTE,
+  COURSE_PUBLISHED_EDIT_LOCKED_NOTE,
+  COURSE_STATE_LABEL,
+  COURSE_STATE_TONE,
+  COURSE_UNDER_REVIEW_NOTE,
+  canTeacherEdit,
+} from "@/lib/course-moderation";
 
 /* -------------------------------------------------------------------------- */
 /* Kurslarim — Phase 12 PRIMARY experience, rendered on the SERVER from the     */
@@ -14,6 +22,11 @@ import { CopyCourseButton } from "./copy-course-button";
 /* this account owns. Published courses and private drafts are shown as two     */
 /* clearly separated groups so the teacher can never mistake a draft for a live */
 /* listing — the draft group states in words that it is not public.             */
+/*                                                                              */
+/* Phase 15: a course that is "sent for review" says exactly that (never        */
+/* "published"), shows the moderator's latest note, and its edit action is       */
+/* replaced by an explanation, because the server refuses content writes while   */
+/* the course is in the moderation queue or already published.                   */
 /* -------------------------------------------------------------------------- */
 
 export interface DashboardGroup {
@@ -40,14 +53,20 @@ export interface DashboardCourse {
   groups: DashboardGroup[];
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  draft: "Qoralama",
-  ready: "Ko‘rib chiqishga tayyor",
-  published: "Katalogda e’lon qilingan",
-};
+export interface CourseModerationView {
+  reviewStatus: "pending" | "approved" | "changes_requested" | null;
+  latestFeedback: string | null;
+}
 
-function CourseItem({ course }: { course: DashboardCourse }) {
+function CourseItem({
+  course,
+  moderation,
+}: {
+  course: DashboardCourse;
+  moderation: CourseModerationView | null;
+}) {
   const isPublic = course.status === "published";
+  const editable = canTeacherEdit(course.status as "draft" | "ready" | "published");
   const seats = course.groups.reduce((sum, group) => sum + group.capacity, 0);
 
   return (
@@ -58,8 +77,8 @@ function CourseItem({ course }: { course: DashboardCourse }) {
         <div className="flex flex-wrap items-center gap-2 text-sm text-ink-500">
           <Badge variant="neutral">{courseFormatLabels[course.format]}</Badge>
           <Badge variant="neutral">{courseLevelLabels[course.level]}</Badge>
-          <Badge variant={isPublic ? "success" : "neutral"}>
-            {STATUS_LABEL[course.status] ?? course.status}
+          <Badge variant={COURSE_STATE_TONE[course.status as "draft" | "ready" | "published"]}>
+            {COURSE_STATE_LABEL[course.status as "draft" | "ready" | "published"]}
           </Badge>
           {course.location ? (
             <span className="inline-flex min-w-0 items-center gap-1">
@@ -84,19 +103,56 @@ function CourseItem({ course }: { course: DashboardCourse }) {
         </p>
       </div>
 
+      {moderation?.latestFeedback ? (
+        <div className="flex flex-col gap-1">
+          <p className="max-w-prose text-sm leading-relaxed text-ink-700">
+            <span className="text-ink-500">
+              {moderation.reviewStatus === "changes_requested"
+                ? "Moderator izohi: "
+                : "Oxirgi izoh: "}
+            </span>
+            {moderation.latestFeedback}
+          </p>
+          {moderation.reviewStatus === "changes_requested" ? (
+            <p className="max-w-prose text-sm leading-relaxed text-ink-500">
+              {COURSE_CHANGES_REQUESTED_NOTE}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {!editable ? (
+        <p className="rounded-lg border border-line bg-surface-muted px-4 py-3 text-sm leading-relaxed text-ink-700">
+          <span className="font-medium text-ink-900">
+            {isPublic ? "Tahrirlash yopilgan. " : "Ko‘rib chiqish davomida tahrirlash yopiq. "}
+          </span>
+          {isPublic ? COURSE_PUBLISHED_EDIT_LOCKED_NOTE : COURSE_UNDER_REVIEW_NOTE}
+        </p>
+      ) : null}
+
       <div className="flex flex-wrap gap-2">
         {isPublic ? (
           <ButtonLink href={`/courses/${course.slug}`} variant="outline" size="sm">
             Ko‘rish (ommaviy sahifa)
           </ButtonLink>
         ) : null}
-        <ButtonLink
-          href={`/teacher/dashboard/courses/${course.id}/edit`}
-          variant="outline"
-          size="sm"
-        >
-          Tahrirlash
-        </ButtonLink>
+        {editable ? (
+          <ButtonLink
+            href={`/teacher/dashboard/courses/${course.id}/edit`}
+            variant="outline"
+            size="sm"
+          >
+            Tahrirlash
+          </ButtonLink>
+        ) : (
+          <ButtonLink
+            href={`/teacher/dashboard/courses/${course.id}/edit`}
+            variant="outline"
+            size="sm"
+          >
+            {isPublic ? "Ko‘rish" : "Holatni ko‘rish"}
+          </ButtonLink>
+        )}
         <CopyCourseButton courseId={course.id} />
       </div>
     </Card>
@@ -107,10 +163,13 @@ export function DbCoursesPanel({
   published,
   drafts,
   teacherSlug,
+  moderation,
 }: {
   published: DashboardCourse[];
   drafts: DashboardCourse[];
   teacherSlug: string | null;
+  /** Keyed by course id. Missing entries simply render no extra state line. */
+  moderation: Record<string, CourseModerationView>;
 }) {
   return (
     <div className="flex flex-col gap-8">
@@ -139,7 +198,7 @@ export function DbCoursesPanel({
           <ul className="flex flex-col gap-4">
             {published.map((course) => (
               <li key={course.id}>
-                <CourseItem course={course} />
+                <CourseItem course={course} moderation={moderation[course.id] ?? null} />
               </li>
             ))}
           </ul>
@@ -157,10 +216,11 @@ export function DbCoursesPanel({
           </ButtonLink>
         </div>
 
-        <p className="text-sm text-ink-500">
-          Qoralamalar hisobingizga bog‘langan holda serverda saqlanadi va
-          brauzerni yopsangiz ham yo‘qolmaydi. Qoralama to‘liq bo‘lsa ham
-          katalogda ko‘rinmaydi — e’lon qilish alohida bosqich.
+        <p className="text-sm leading-relaxed text-ink-500">
+          Bu yerda hali e’lon qilinmagan kurslar: qoralamalar va moderatsiyaga
+          yuborilganlar. Ular hisobingizga bog‘langan holda serverda saqlanadi.
+          Ko‘rib chiqishga yuborilgan kurs ham ommaviy saytda ko‘rinmaydi —
+          uni administrator tasdiqlagachgina e’lon qilinadi.
         </p>
 
         {drafts.length === 0 ? (
@@ -171,7 +231,7 @@ export function DbCoursesPanel({
           <ul className="flex flex-col gap-4">
             {drafts.map((course) => (
               <li key={course.id}>
-                <CourseItem course={course} />
+                <CourseItem course={course} moderation={moderation[course.id] ?? null} />
               </li>
             ))}
           </ul>

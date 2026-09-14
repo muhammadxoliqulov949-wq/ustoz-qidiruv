@@ -9,6 +9,7 @@ import { categories } from "@/data/categories";
 import { onboardingCities } from "@/lib/onboarding";
 import { requireRolePage } from "@/server/auth/guards";
 import { getOwnedCourseDetail } from "@/server/repo";
+import { getTeacherModerationStates } from "@/server/moderation-service";
 
 export const metadata: Metadata = { title: "Kurs qoralamasi" };
 
@@ -40,8 +41,19 @@ export default async function EditCoursePage({
       "teacher",
       `/teacher/dashboard/courses/${courseId}/edit`,
     );
-    const detail = await getOwnedCourseDetail(courseId, user.id);
+    /*
+     * Ownership and content come from `getOwnedCourseDetail` (SQL-filtered by
+     * the session user id) and the moderation snapshot from the service. A
+     * course the account does not own fails BOTH lookups, and the page 404s
+     * identically — another teacher's id is indistinguishable from a missing one.
+     */
+    const [detail, moderationStates] = await Promise.all([
+      getOwnedCourseDetail(courseId, user.id),
+      getTeacherModerationStates(user.id),
+    ]);
     if (!detail) notFound();
+
+    const state = moderationStates.get(detail.course.id) ?? null;
 
     return (
       <div className="flex flex-col gap-6">
@@ -86,6 +98,15 @@ export default async function EditCoursePage({
           }))}
           categories={categories.map(({ id, name }) => ({ id, name }))}
           cities={[...onboardingCities]}
+          moderation={{
+            reviewStatus: state?.latestDecision?.status ?? state?.pendingReview?.status ?? null,
+            submittedAt: state?.pendingReview?.submittedAt ?? null,
+            // Feedback is shown for a decision that asked for changes OR one that
+            // approved; a pending review has no reviewer text yet.
+            latestFeedback:
+              state?.latestDecision?.feedback ?? null,
+            pending: Boolean(state?.pendingReview),
+          }}
         />
       </div>
     );
