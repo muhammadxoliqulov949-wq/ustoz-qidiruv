@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BadgeCheck, Bell, BookOpen, Inbox, LayoutGrid, UserRound } from "lucide-react";
+import { BadgeCheck, Bell, BookOpen, Inbox, LayoutGrid, MessageSquare, UserRound } from "lucide-react";
 import type { ComponentType } from "react";
 import { cn, focusRing } from "@/lib/utils";
+import { formatCount } from "@/lib/format";
 import {
   isActiveTeacherNav,
   TEACHER_NAV,
@@ -25,11 +26,24 @@ const icons: Record<TeacherNavItem["icon"], ComponentType<{ className?: string }
   courses: BookOpen,
   requests: Inbox,
   verification: BadgeCheck,
+  messages: MessageSquare,
   profile: UserRound,
   notifications: Bell,
 };
 
-export function TeacherSidebarNav() {
+/** Unread-message chip (Phase 16) — same contract as the student shell: a real
+ *  count, derived from the DB read markers, announced with its meaning. */
+function UnreadChip({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span className="relative inline-flex min-w-[1.5rem] items-center justify-center rounded-pill bg-accent-600 px-1.5 py-px text-xs font-semibold text-white">
+      <span className="sr-only">O‘qilmagan xabarlar: </span>
+      {formatCount(count)}
+    </span>
+  );
+}
+
+export function TeacherSidebarNav({ unreadMessages = 0 }: { unreadMessages?: number }) {
   const pathname = usePathname();
   return (
     <nav aria-label="Ustoz paneli" className="max-lg:hidden">
@@ -60,6 +74,9 @@ export function TeacherSidebarNav() {
                 />
                 <Icon className="size-[18px] shrink-0" />
                 {item.label}
+                {item.icon === "messages" ? (
+                  <UnreadChip count={unreadMessages} />
+                ) : null}
               </Link>
             </li>
           );
@@ -69,7 +86,7 @@ export function TeacherSidebarNav() {
   );
 }
 
-export function TeacherTabNav() {
+export function TeacherTabNav({ unreadMessages = 0 }: { unreadMessages?: number }) {
   const pathname = usePathname();
   return (
     <nav
@@ -96,6 +113,7 @@ export function TeacherTabNav() {
               >
                 <Icon className="size-[18px] shrink-0" />
                 {item.label}
+                {item.icon === "messages" ? <UnreadChip count={unreadMessages} /> : null}
               </Link>
             </li>
           );

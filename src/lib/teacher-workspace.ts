@@ -311,7 +311,14 @@ export function hasTeacherDraft(answers: TeacherAnswers): boolean {
 export interface TeacherNavItem {
   href: string;
   label: string;
-  icon: "overview" | "courses" | "requests" | "verification" | "profile" | "notifications";
+  icon:
+    | "overview"
+    | "courses"
+    | "requests"
+    | "verification"
+    | "messages"
+    | "profile"
+    | "notifications";
   description: string;
 }
 
@@ -340,6 +347,13 @@ export const TEACHER_NAV: readonly TeacherNavItem[] = [
     label: "So‘rovlar",
     icon: "requests",
     description: "Kelgan yozilish so‘rovlarini qabul qilish yoki rad etish.",
+  },
+  {
+    // Phase 16. Threads exist only for enrollments this teacher accepted.
+    href: "/teacher/dashboard/messages",
+    label: "Xabarlar",
+    icon: "messages",
+    description: "Qabul qilingan o‘quvchilar bilan shaxsiy suhbatlar.",
   },
   {
     href: "/notifications",

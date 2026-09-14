@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui";
 import { EmptyState } from "@/components/dashboard/empty-state";
 import { CancelRequestButton } from "./cancel-request-button";
+import { OpenConversationButton } from "@/components/messaging/open-conversation-button";
 import { PayButton } from "@/components/payments/pay-button";
 import { listStudentRequests } from "@/server/enrollment-service";
 import { getPaymentStatusByEnrollment } from "@/server/payments/payment-service";
@@ -124,6 +125,22 @@ export async function AccountRequests({ userId }: { userId: string }) {
                 <p className="text-sm text-ink-500">
                   {ENROLLMENT_STATUS_NOTE[request.status]}
                 </p>
+
+                {/*
+                  Phase 16 entry point — shown ONLY for an accepted place, and it
+                  posts an ENROLLMENT id: the server derives both participants.
+                  Payment state is irrelevant here (accepted + unpaid, accepted +
+                  paid and a free course all allow messaging), and a cancelled
+                  request gets no button because its thread is read-only.
+                */}
+                {isAccepted ? (
+                  <div className="border-t border-line pt-2.5">
+                    <OpenConversationButton
+                      enrollmentRequestId={request.id}
+                      label="Ustozga yozish"
+                    />
+                  </div>
+                ) : null}
 
                 {/* Payment detail for an accepted place. */}
                 {isAccepted ? (

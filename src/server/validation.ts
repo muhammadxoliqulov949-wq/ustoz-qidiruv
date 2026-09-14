@@ -15,6 +15,7 @@ import {
   MODERATION_FEEDBACK_MAX_LENGTH,
   MODERATION_FEEDBACK_MIN_LENGTH,
 } from "@/lib/course-moderation";
+import { MESSAGE_BODY_MAX_LENGTH } from "@/lib/messaging";
 
 /* -------------------------------------------------------------------------- */
 /* Server-side input schemas — Phase 11.                                       */
@@ -314,6 +315,45 @@ export const syllabusModuleSchema = z
     description: z.string().trim().max(600),
     lessons: z.number().int().min(1).max(200),
   })
+  .strict();
+
+/* ---------------------- Phase 16 · private messaging ------------------------ */
+
+/*
+ * Messaging payloads are INTENT-SHAPED like the Phase 15 admin ones: they name
+ * a conversation and (at most) one message. There is deliberately no field for
+ * a sender, a recipient, a student id, a teacher id or a participant list —
+ * `.strict()` rejects the whole payload if a caller invents one, so "send this
+ * as somebody else" and "post into a thread I don't own" are unparseable
+ * requests, not merely refused ones.
+ */
+
+/** Open (or fetch) the thread of one enrollment request the caller is part of. */
+export const openConversationSchema = z
+  .object({ enrollmentRequestId: idSchema })
+  .strict();
+
+/**
+ * Send one plain-text message.
+ *
+ * Trimmed, non-empty, bounded by the SAME constant the database CHECK uses.
+ * Line breaks are preserved; markup is not interpreted anywhere (the UI renders
+ * the stored text through React, which escapes it).
+ */
+export const sendMessageSchema = z
+  .object({
+    conversationId: idSchema,
+    body: z
+      .string()
+      .trim()
+      .min(1, "Xabar bo‘sh bo‘lmasin.")
+      .max(MESSAGE_BODY_MAX_LENGTH, `Xabar ${MESSAGE_BODY_MAX_LENGTH} belgidan oshmasin.`),
+  })
+  .strict();
+
+/** Advance my read marker to one message I was actually shown. */
+export const markConversationReadSchema = z
+  .object({ conversationId: idSchema, lastMessageId: idSchema })
   .strict();
 
 export type RegisterInput = z.infer<typeof registerSchema>;

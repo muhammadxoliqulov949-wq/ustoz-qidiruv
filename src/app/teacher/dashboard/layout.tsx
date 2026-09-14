@@ -8,6 +8,7 @@ import {
   TeacherTabNav,
 } from "@/components/teacher-dashboard/teacher-nav";
 import { requireRolePage } from "@/server/auth/guards";
+import { countUnreadMessages } from "@/server/messaging-service";
 import { getTeacherProfile } from "@/server/repo";
 
 /* -------------------------------------------------------------------------- */
@@ -47,7 +48,11 @@ export default async function TeacherDashboardLayout({
   children: ReactNode;
 }) {
   const user = await requireRolePage("teacher", "/teacher/dashboard");
-  const profile = await getTeacherProfile(user.id);
+  // Phase 16: unread-message badge, derived from the read markers on the server.
+  const [profile, unreadMessages] = await Promise.all([
+    getTeacherProfile(user.id),
+    countUnreadMessages(user.id),
+  ]);
   return (
     <OnboardingProvider>
       <div className="site-container py-8 lg:py-12">
@@ -61,7 +66,7 @@ export default async function TeacherDashboardLayout({
                 onboardingCompleted={profile?.onboardingCompleted ?? false}
               />
             </div>
-            <TeacherSidebarNav />
+            <TeacherSidebarNav unreadMessages={unreadMessages} />
             <p className="text-sm leading-relaxed text-ink-500 max-lg:hidden">
               Panel hisobingizga bog‘langan. Yozilish so‘rovlarini shu yerda
               qabul qilasiz yoki rad etasiz. To‘lovlar o‘quvchi tomonidan
@@ -77,7 +82,7 @@ export default async function TeacherDashboardLayout({
 
           {/* ------------------------------ content ------------------------------ */}
           <div className="flex min-w-0 flex-col gap-6">
-            <TeacherTabNav />
+            <TeacherTabNav unreadMessages={unreadMessages} />
             {children}
           </div>
         </div>

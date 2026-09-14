@@ -1382,3 +1382,177 @@ Refunds, payouts, commissions or split settlement · chat · SMS, email or push 
 file uploads or document review · review submission by students · waitlists ·
 analytics or metrics dashboards · admin payment controls · un-publishing or
 editing a live listing · bulk actions.
+
+# Phase 16 — private student ↔ teacher messaging
+
+Phase 16 adds the one conversation this marketplace actually needs: a private
+channel between a student and the teacher of a course the student was
+**accepted** into. It is deliberately not a social network — there is no
+directory, no way to message a stranger, no public DM, and no admin window into
+a private thread.
+
+Three rules everything else follows from:
+
+> **1. A conversation exists only inside an enrollment.** `accepted` (paid,
+> unpaid or free) → a writable thread. `cancelled` → the history stays, the
+> thread is **read-only**, enforced by the server. `submitted` / `rejected` →
+> never a conversation, ever. Payment never gates messaging.
+>
+> **2. The browser sends an intent, never an identity.** The only send mutation
+> is `sendMessage({ conversationId, body })`. Participants are derived in SQL
+> from the enrollment row (student) and its course (teacher); no
+> `studentId` / `teacherId` / `senderId` field exists in any payload, and there
+> is no `startConversation(teacherId)` endpoint to enumerate.
+>
+> **3. Read state is data, not a counter.** `conversation_reads` holds one
+> marker per (conversation, user) with a composite foreign key to
+> `messages (id, conversation_id)`; unread is derived by comparing
+> `(created_at, id)` tuples. Nothing can drift, because nothing is incremented.
+
+## Eligibility
+
+| enrollment status | conversation | writing |
+| --- | --- | --- |
+| `accepted` (unpaid, paid or free) | yes | yes |
+| `cancelled` | history, read-only | **no** — refused by the service, not by hiding the composer |
+| `submitted` | none | no |
+| `rejected` | none | no |
+
+Opening a thread from the enrolment card is the only entry point, and the card
+offers it only while the enrollment is `accepted`.
+
+## One conversation per enrollment
+
+`CREATE UNIQUE INDEX conversations_enrollment_key ON conversations (enrollment_request_id)`.
+Creation is lazy: the first eligible open creates the row inside a transaction
+that locks the enrollment (`select … for update`), derives both participants,
+re-checks `accepted`, inserts with `onConflictDoNothing` and re-selects. Two
+simultaneous opens therefore end with exactly one row — the loser of the race
+reads the winner's row instead of failing or duplicating. A conversation is
+never deleted, so a cancelled enrollment keeps its history and keeps the same
+identity.
+
+## Authorization
+
+Participants are never stored or supplied — every query is scoped by
+`participantWhere(me)`, which matches the session user against the enrollment's
+student or the course's teacher. One refusal path covers every wrong case:
+unknown id, another student's thread, another teacher's thread, an admin, a
+thread of the wrong role. All of them return the same `not_found`, which the
+pages render as the shell's ordinary 404 — so an id cannot be probed for
+existence, and an error message cannot leak who is talking to whom.
+
+## Routes
+
+| route | purpose |
+| --- | --- |
+| `/dashboard/messages` | the student's conversations, latest activity first |
+| `/dashboard/messages/[conversationId]` | one thread (student side) |
+| `/teacher/dashboard/messages` | the teacher's conversations |
+| `/teacher/dashboard/messages/[conversationId]` | one thread (teacher side) |
+
+There is no `/messages/[userId]` route and no "new message" composer that asks
+for a recipient. Both dashboards carry a **Xabarlar** nav entry whose unread
+badge is rendered on the server on every navigation — a real count derived from
+the read markers, never a polling client.
+
+## Sending a message
+
+```
+sendMessageAction (server action)
+  → requireRole → Zod .strict() → sendMessage({ conversationId, body })
+      lock conversation row
+      re-derive participants and the enrollment state
+      cancelled/missing  → not_writable / not_found
+      insert immutable message (1..2000 chars, trimmed, plain text)
+      bump conversations.updated_at
+      create the recipient's collapsed notification
+  → revalidatePath(thread, list, dashboards, notifications)
+```
+
+Hiding the composer in a read-only thread is a courtesy; the refusal above is
+the actual rule, and a replayed mutation from before the cancellation is
+refused by the server. Messages are **immutable**: there are no edit, delete or
+unsend columns, endpoints or UI affordances of any kind.
+
+## Read and unread
+
+Opening a thread marks it read **up to the newest message that was actually
+rendered**. The write is monotonic (`onConflictDoUpdate` guarded by a
+`(last_read_at, last_read_message_id)` tuple comparison), so a double render
+cannot corrupt it, and a message that arrives while the page is open stays
+unread until it is really seen. Refresh, a second tab and a second device all
+recompute the same answer from the same row — there is no fragile counter to
+fall out of sync, and no client-chosen arbitrary or future message id is ever
+accepted.
+
+## Notifications
+
+A recipient gets an in-app `Yangi xabar` notification whose body names the
+sender and the course, linking to the conversation route for their role. The
+recipient is deduplicated: while an unread `message_received` notification for
+that conversation exists, further messages do **not** create more rows, so a
+burst of ten messages produces one notification, not ten. The sender is never
+notified about their own message.
+
+## Pagination
+
+A thread renders the latest 30 messages; `?before=<messageId>` renders the page
+immediately older, with a *Oldingi xabarlarni ko‘rish* link and a way back to
+the newest page. The cursor is the stable `(created_at, id)` pair, a cursor that
+belongs to another conversation is ignored rather than trusted, and there is no
+"load the whole history" path and no client-side slicing.
+
+## Privacy boundary
+
+A conversation shows the counterpart's public display name and public slug, the
+course, the group and the enrollment state. It never shows a phone number,
+payment data (transaction ids, amounts and provider identifiers stay in the
+payment domain), another enrollment, or any profile field that is not already
+public. Student↔student, teacher↔teacher and student↔teacher-outside-an-
+enrollment conversations are all impossible by construction.
+
+**No admin surveillance.** The Phase 15 control plane is untouched and gains no
+message access: there is no admin messages route, no read-all view, no
+impersonation, no send-as and no deletion. Admins are bounced to `/admin` by the
+existing role guard, exactly like any other non-participant.
+
+## Rate limiting (an honest boundary)
+
+`sendMessage` refuses a sender's 31st message inside a minute, counted from the
+`messages` table. That is a **soft, database-derived guard against a runaway
+loop**, not production rate limiting: there is no shared or durable limiter
+infrastructure yet, and a process-memory limiter would be a lie on a
+multi-instance deployment. Real rate limiting is listed as Phase 20 hardening.
+
+## Commands
+
+```bash
+npm run test:messaging   # Phase 16 messaging suite (109 checks, real PGlite migrations)
+```
+
+The suite covers eligibility (accepted / cancelled / submitted / rejected),
+one-conversation-per-enrollment including the database unique index, both send
+directions, the whole authorization matrix (other student, other teacher,
+anonymous session, admin), over-posting of `senderId` / `studentId` /
+`teacherId` / `enrollmentId`, stored-XSS inertness, unread counting and
+monotonic read markers, cursor pagination and deterministic ordering, the
+collapsed notification rule, the cancelled read-only refusal, the rate-limit
+window, and the raw database invariants (check constraints, foreign keys, the
+composite read-marker FK).
+
+## Building with no database
+
+Unchanged and re-verified for Phase 16: no `generateStaticParams`, no
+database-backed route is prerendered, and `npm run build` succeeds with no
+`.data` directory and no database environment variables. Both new route groups
+are dynamic (`ƒ`) in the build output.
+
+## What Phase 16 does NOT implement
+
+File attachments, image or voice messages, audio/video calls, group chats,
+teacher↔teacher and student↔student chat, public DMs, typing indicators,
+reactions, message editing or deletion, realtime transport (websockets/polling),
+SMS/email/push delivery, an AI chat assistant, message search,
+blocking/reporting, read receipts, a moderation or surveillance dashboard, and
+Phase 17.

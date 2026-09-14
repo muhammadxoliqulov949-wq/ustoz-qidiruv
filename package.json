@@ -18,6 +18,7 @@
     "test:server": "tsx --conditions=react-server tests/server.test.ts",
     "test:enrollment": "tsx --conditions=react-server tests/enrollment.test.ts",
     "test:payments": "tsx --conditions=react-server tests/payments.test.ts",
+    "test:messaging": "tsx --conditions=react-server tests/messaging.test.ts",
     "test:admin": "tsx --conditions=react-server tests/admin.test.ts"
   },
   "dependencies": {

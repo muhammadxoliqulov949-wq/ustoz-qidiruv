@@ -7,6 +7,7 @@ import {
   integer,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -115,6 +116,10 @@ export const notificationType = pgEnum("notification_type", [
   "verification_rejected",
   "course_published",
   "course_changes_requested",
+  // Phase 16. One COLLAPSED notification per conversation while the recipient
+  // has it unread — a long exchange must not spam the bell (see messaging
+  // service, `notifyRecipient`).
+  "message_received",
 ]);
 
 /* ---------------------------------- users ---------------------------------- */
@@ -869,6 +874,142 @@ export const adminAuditEvents = pgTable(
   ],
 );
 
+/* ------------------------------ private messages ---------------------------- */
+
+/*
+ * PRIVATE STUDENT ↔ TEACHER MESSAGING (Phase 16).
+ *
+ * THREE DECISIONS WORTH READING BEFORE TOUCHING THIS SCHEMA
+ *
+ * 1. PARTICIPANTS ARE NOT STORED. A conversation carries ONLY the enrollment
+ *    request it belongs to; the student is `enrollment_requests.student_user_id`
+ *    and the teacher is `courses.teacher_user_id`. There is no `student_user_id`
+ *    / `teacher_user_id` column to drift out of sync with the enrollment, and no
+ *    payload (from a form, a URL or a JSON body) can name a participant. A
+ *    "one conversation per enrollment" unique index is therefore also a
+ *    "participants can never disagree with the enrollment" guarantee.
+ *
+ * 2. THERE IS NO MESSAGE-EDIT OR MESSAGE-DELETE COLUMN, and no service function
+ *    that updates or removes a message row. A sent message is immutable, which
+ *    is what makes the read marker safe to reason about.
+ *
+ * 3. READ STATE IS A MARKER, NOT A COUNTER. `conversation_reads` stores the id
+ *    and timestamp of the newest message a participant has actually seen.
+ *    Unread is DERIVED by comparing (created_at, id) tuples, so it is
+ *    impossible to drift, cannot be incremented twice by a retry, and survives
+ *    a refresh or a second device. A composite foreign key ties the marker to a
+ *    message OF THE SAME CONVERSATION, so even a buggy caller cannot mark a
+ *    message from somebody else's thread as read.
+ */
+
+/**
+ * One private thread per accepted enrollment request.
+ *
+ * Rows are created LAZILY: the first time either eligible participant opens
+ * messaging for that enrollment. The unique index is what makes two
+ * simultaneous opens collapse into one conversation.
+ */
+export const conversations = pgTable(
+  "conversations",
+  {
+    id: text("id").primaryKey(),
+    /**
+     * The enrollment this thread belongs to. UNIQUE — one conversation per
+     * enrollment, enforced by the database, not by a service convention.
+     */
+    enrollmentRequestId: text("enrollment_request_id")
+      .notNull()
+      .references(() => enrollmentRequests.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Latest message time. Drives "latest activity first" in both lists. */
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // THE rule of §2 of the phase spec, expressed as a constraint.
+    uniqueIndex("conversations_enrollment_key").on(table.enrollmentRequestId),
+    index("conversations_activity_idx").on(table.updatedAt),
+    check("conversations_updated_after_created", sql`${table.updatedAt} >= ${table.createdAt}`),
+  ],
+);
+
+/**
+ * An immutable message. Plain text only: no HTML, no attachments, no media.
+ *
+ * `body` is bounded and stored trimmed; the UI renders it as text through
+ * React, so markup is displayed, never executed.
+ */
+export const messages = pgTable(
+  "messages",
+  {
+    id: text("id").primaryKey(),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    senderUserId: text("sender_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // The thread query AND the cursor pagination both walk this order.
+    index("messages_conversation_created_idx").on(
+      table.conversationId,
+      table.createdAt,
+      table.id,
+    ),
+    // Sender-side index for the per-minute send guard.
+    index("messages_sender_created_idx").on(table.senderUserId, table.createdAt),
+    // Makes `conversation_reads` able to reference a message + its thread.
+    // Declared as a table CONSTRAINT (not an index) so it exists by the time
+    // PostgreSQL validates the composite foreign key in the same migration —
+    // drizzle-kit emits separate CREATE INDEX statements after all ALTER TABLE
+    // ... ADD CONSTRAINT statements.
+    unique("messages_id_conversation_key").on(table.id, table.conversationId),
+    check("messages_body_len", sql`length(${table.body}) BETWEEN 1 AND 2000`),
+    // Outer whitespace is trimmed before insert; this makes that a fact.
+    check("messages_body_trimmed", sql`${table.body} = btrim(${table.body})`),
+  ],
+);
+
+/**
+ * Per-participant read marker. One row per (conversation, participant).
+ *
+ * There is no participants table on purpose (see the note above): membership is
+ * derived, so the only thing worth persisting per channel is the read position.
+ * `lastReadAt` duplicates the marker message's `created_at` so unread counts can
+ * compare tuples without a join, and the composite FK keeps the copied
+ * timestamp honest (the row can only point at a message in this conversation).
+ */
+export const conversationReads = pgTable(
+  "conversation_reads",
+  {
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** The newest message this participant has actually seen. */
+    lastReadMessageId: text("last_read_message_id").notNull(),
+    /** That message's `created_at`, copied for tuple comparison. */
+    lastReadAt: timestamp("last_read_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // One marker per participant per conversation.
+    primaryKey({ columns: [table.conversationId, table.userId] }),
+    // "Do I have unread messages?" — and the nav count — start from the user.
+    index("conversation_reads_user_idx").on(table.userId),
+    // A marker may only point at a message OF THIS CONVERSATION.
+    foreignKey({
+      name: "conversation_reads_message_fk",
+      columns: [table.lastReadMessageId, table.conversationId],
+      foreignColumns: [messages.id, messages.conversationId],
+    }).onDelete("cascade"),
+  ],
+);
+
 /* -------------------------------- relations -------------------------------- */
 
 export const usersRelations = relations(users, ({ one, many }) => ({
@@ -906,6 +1047,34 @@ export const courseGroupsRelations = relations(courseGroups, ({ one }) => ({
   course: one(courses, { fields: [courseGroups.courseId], references: [courses.id] }),
 }));
 
+export const conversationsRelations = relations(conversations, ({ one, many }) => ({
+  enrollmentRequest: one(enrollmentRequests, {
+    fields: [conversations.enrollmentRequestId],
+    references: [enrollmentRequests.id],
+  }),
+  messages: many(messages),
+  reads: many(conversationReads),
+}));
+
+export const messagesRelations = relations(messages, ({ one }) => ({
+  conversation: one(conversations, {
+    fields: [messages.conversationId],
+    references: [conversations.id],
+  }),
+  sender: one(users, { fields: [messages.senderUserId], references: [users.id] }),
+}));
+
+export const conversationReadsRelations = relations(conversationReads, ({ one }) => ({
+  conversation: one(conversations, {
+    fields: [conversationReads.conversationId],
+    references: [conversations.id],
+  }),
+  message: one(messages, {
+    fields: [conversationReads.lastReadMessageId],
+    references: [messages.id],
+  }),
+}));
+
 export const enrollmentRequestsRelations = relations(enrollmentRequests, ({ one }) => ({
   student: one(studentProfiles, {
     fields: [enrollmentRequests.studentUserId],
@@ -926,3 +1095,6 @@ export type PaymentEventRow = typeof paymentEvents.$inferSelect;
 export type TeacherVerificationRequestRow = typeof teacherVerificationRequests.$inferSelect;
 export type CourseModerationReviewRow = typeof courseModerationReviews.$inferSelect;
 export type AdminAuditEventRow = typeof adminAuditEvents.$inferSelect;
+export type ConversationRow = typeof conversations.$inferSelect;
+export type MessageRow = typeof messages.$inferSelect;
+export type ConversationReadRow = typeof conversationReads.$inferSelect;

@@ -10,6 +10,7 @@ import {
 import { RoleNotice } from "@/components/dashboard/role-notice";
 import { requireRolePage } from "@/server/auth/guards";
 import { getStudentProfile } from "@/server/repo";
+import { countUnreadMessages } from "@/server/messaging-service";
 
 /* -------------------------------------------------------------------------- */
 /* /dashboard — the STUDENT application shell (Phase 8).                        */
@@ -42,7 +43,16 @@ export const metadata: Metadata = {
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   const user = await requireRolePage("student", "/dashboard");
-  const profile = await getStudentProfile(user.id);
+  /*
+   * Phase 16: the message badge is rendered by the shell on every page. It is a
+   * request-time read of the DB read markers — no polling, no client store —
+   * so it updates on navigation, on a refresh and after any mutation that
+   * revalidates the surface.
+   */
+  const [profile, unreadMessages] = await Promise.all([
+    getStudentProfile(user.id),
+    countUnreadMessages(user.id),
+  ]);
   return (
     <OnboardingProvider>
       <div className="site-container py-8 lg:py-12">
@@ -55,7 +65,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
                 onboardingCompleted={profile?.onboardingCompleted ?? false}
               />
             </div>
-            <DashboardSidebarNav />
+            <DashboardSidebarNav unreadMessages={unreadMessages} />
             <p className="text-sm leading-relaxed text-ink-500 max-lg:hidden">
               Kabinet hisobingizga bog‘langan. Saqlangan kurslar hozircha shu
               brauzerda saqlanadi. Pullik kurslarga to‘lov so‘rovingiz qabul
@@ -71,7 +81,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
 
           {/* ------------------------------ content ------------------------------ */}
           <div className="flex min-w-0 flex-col gap-6">
-            <DashboardTabNav />
+            <DashboardTabNav unreadMessages={unreadMessages} />
             <RoleNotice />
             {children}
           </div>
