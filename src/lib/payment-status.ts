@@ -90,11 +90,15 @@ export const FREE_COURSE_NOTE = "Kurs bepul. To‘lov talab qilinmaydi.";
 
 /**
  * Refusal shown when a student tries to cancel an enrollment they have already
- * paid for. Refunds do not exist yet, so the honest answer is that this cannot
- * be self-served — not a silent cancellation that keeps their money.
+ * paid for.
+ *
+ * Phase 17 KEEPS the refusal — a paid place still cannot be cancelled by the
+ * self-service button, because that would take the seat away while the money
+ * stayed with the course — and now names the path that does exist: a refund
+ * request, which an administrator reviews and the provider confirms.
  */
 export const PAID_CANCELLATION_BLOCKED =
-  "To‘langan yozilishni bekor qilish va pulni qaytarish jarayoni hali qo‘llab-quvvatlanmaydi.";
+  "To‘langan yozilishni to‘g‘ridan-to‘g‘ri bekor qilib bo‘lmaydi: avval pulni qaytarish so‘rovini yuboring. So‘rov administrator tomonidan ko‘rib chiqiladi.";
 
 /** Shown when payments are not configured for this deployment. */
 export const PAYMENT_UNAVAILABLE_NOTE = "To‘lov tizimi hali ulanmagan.";

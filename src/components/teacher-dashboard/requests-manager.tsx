@@ -13,6 +13,7 @@ import {
   teacherPaymentView,
   type PaymentStatus,
 } from "@/lib/payment-status";
+import { TEACHER_REFUND_LABEL, refundStatusTone, type RefundStatus } from "@/lib/refund";
 import { cn, focusRing } from "@/lib/utils";
 
 /* -------------------------------------------------------------------------- */
@@ -43,6 +44,16 @@ export interface RequestRow {
   coursePriceUzs: number;
   /** Live payment status for this enrollment, if one exists. */
   paymentStatus: PaymentStatus | null;
+  /**
+   * Phase 17 — the refund state of this enrollment, if there is one.
+   *
+   * A FACT, not a control: the teacher is told that a paid place has been
+   * refunded (or is being refunded) because it changes whether the student is
+   * coming, and nothing more. There is no approve/reject/initiate action here,
+   * and `getTeacherRefundStates` refuses to answer about an enrollment in a
+   * course this teacher does not own.
+   */
+  refundStatus: RefundStatus | null;
 }
 
 const FILTERS: { value: string; label: string }[] = [
@@ -167,6 +178,12 @@ export function RequestsManager({
                           )
                         ]
                       }
+                    </Badge>
+                  ) : null}
+
+                  {request.refundStatus ? (
+                    <Badge variant={refundStatusTone(request.refundStatus)}>
+                      {TEACHER_REFUND_LABEL[request.refundStatus]}
                     </Badge>
                   ) : null}
                 </div>

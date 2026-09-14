@@ -1556,3 +1556,225 @@ reactions, message editing or deletion, realtime transport (websockets/polling),
 SMS/email/push delivery, an AI chat assistant, message search,
 blocking/reporting, read receipts, a moderation or surveillance dashboard, and
 Phase 17.
+
+# Phase 17 — refunds, paid-enrollment cancellation and the provider boundary
+
+Phase 17 replaces one dead end with an honest workflow. Before it, an accepted
+and **paid** enrollment could not be cancelled at all, because refunds did not
+exist: cancelling would have taken the student's place away while their money
+stayed with the course. The self-service button still refuses that (the money
+would be gone), but it now names the path that does exist:
+
+```
+student requests  →  admin reviews  →  approved, awaiting_provider
+                                          ↓
+                        merchant returns the money in the Payme cabinet
+                                          ↓
+        authenticated Payme CancelTransaction (state −2)  →  refund completed
+                                          ↓
+                    enrollment cancelled  →  seat released  →  both parties told
+```
+
+## The official audit that shaped this phase
+
+The Payme Business Merchant API exposes **six** methods — `CheckPerformTransaction`,
+`CreateTransaction`, `PerformTransaction`, `CancelTransaction`,
+`CheckTransaction`, `GetStatement` — and **no merchant-side refund endpoint**.
+The official documentation states that refunds to buyers are performed by the
+merchant **in the merchant cabinet** (`merchant.paycom.uz`) and that a refund is
+only possible if the merchant implements `CancelTransaction`.
+
+So this phase does **not** invent an outbound refund call. It implements
+`CancelTransaction` truthfully and lets that authenticated callback *finalise*
+the refund:
+
+| Protocol fact | Meaning here |
+| --- | --- |
+| state `1` → `2` (`PerformTransaction`) | money arrived; payment becomes `succeeded` |
+| state `1` → `-1` (`CancelTransaction`) | a failed attempt; **not** a refund, Phase 14 behaviour unchanged |
+| state `2` → `-2` (`CancelTransaction`) | money **arrived and went back**: a genuine refund signal |
+| error `-31007` | service fully delivered; cancellation refused by the provider — eligibility for a refund then becomes a *business* rule, not a protocol one, and is documented as future work rather than faked |
+| `reason` codes `1…5, 10` | stored as safe provider metadata (`reason_code`) and mapped to factual internal copy; the raw code is never the primary user-facing text |
+
+## Three domains, deliberately not merged
+
+```
+enrollment_requests.status   does this student have a place?   submitted | accepted | rejected | cancelled
+payments.status              did the money actually arrive?     pending | succeeded | cancelled | failed
+refund_requests.status       did it go back, on whose authority? requested | awaiting_provider | completed | rejected | failed
+```
+
+A refund in flight is therefore `accepted` + `succeeded` + `requested`, which is
+exactly why the seat stays **occupied** through `requested` and
+`awaiting_provider`. There is no `refund_pending` enrollment state, and the
+`payment_status` enum gains no `refunded` value: the payment really did succeed,
+and the money really did come back — two different facts, both true, each stored
+once.
+
+`approved` is not a stored status. The admin's approval and the wait for the
+provider operation are the **same instant** (the provider has no API to call), so
+the row moves straight to `awaiting_provider` while the decision itself is
+recorded in `reviewed_by_admin_user_id` / `reviewed_at` and in the immutable
+`refund_events` row of type `approved`.
+
+## Eligibility
+
+A refund request is possible when **all** of these hold, checked in SQL and
+again inside the transaction that writes the row:
+
+- the enrollment belongs to the session student (`student_user_id` is in the
+  predicate, so somebody else's id matches nothing);
+- the enrollment is `accepted`;
+- the course is not free;
+- a live payment exists and its status is `succeeded`;
+- no live refund (`requested` / `awaiting_provider`) exists for that payment.
+
+Full refunds only: the amount is **copied from the payment's immutable snapshot**
+(`payments.amount_tiyin`). No partial refund, no percentage, no admin-entered
+amount, and the browser never supplies an amount at all.
+
+## Student interface
+
+The enrollment card gains a separate **Pulni qaytarish** section — payment and
+refund are shown as two different facts, never merged into one badge:
+
+- `Bekor qilish va pulni qaytarishni so‘rash` opens a labelled reason field and
+  states, before submission, that an administrator reviews the request and that
+  money counts as returned **only after the provider confirms it**;
+- per state the student reads *Pulni qaytarish so‘rovi yuborildi* →
+  *Pulni qaytarish jarayonda* → **To‘lov qaytarildi** (the only wording that
+  claims the money came back), or *…so‘rovi rad etildi* / *…amalga oshmadi*;
+- a rejection or a recorded failure shows the admin's explanation and states that
+  the place and the payment are unchanged, so a student can ask again;
+- the payment detail page carries the same refund history and timestamps.
+
+Nothing in the interface can complete a refund. There is no button, no query
+parameter and no client state that produces `completed`.
+
+## Admin interface
+
+- `/admin/refunds` — the queue, live work first (`requested` before
+  `awaiting_provider`, oldest first inside it), with a status filter and counts;
+  it is linked from the overview and counted in the navigation badge.
+- `/admin/refunds/[refundId]` — student, course, group, payment snapshot,
+  provider transaction (id, state in words, performed/cancelled times, reason
+  code with its official meaning) and the immutable event history.
+- `approveRefund` — admin-only, locks the payment row, re-reads the refund and
+  re-verifies *accepted* + *succeeded*, writes `awaiting_provider`, records the
+  event, the audit row (`refund_approved`) and the student's notification. The
+  screen then says `Payme’da qaytarishni amalga oshirish kutilmoqda.` There is no
+  "refund succeeded" control anywhere in the product.
+- `rejectRefund` — only from `requested`, requires feedback, leaves the
+  enrollment `accepted` and the seat occupied.
+- `recordRefundFailure` — only from `awaiting_provider`, requires feedback; also
+  leaves the enrollment and the seat untouched, so a failed provider operation
+  never costs the student their place as well as their money.
+
+Audit actions `refund_approved` / `refund_rejected` / `refund_failed` are written
+inside the decision's own transaction with a short, safe summary (ids and status
+words only — never a payload, never a credential).
+
+## Provider boundary and the ONLY writer of `completed`
+
+`src/server/payments/payme-adapter.ts` maps the provider event onto a domain
+event:
+
+```
+Payme CancelTransaction on a PERFORMED transaction  →  provider_refund_confirmed
+```
+
+and calls `reconcileProviderRefund` through a hook that
+`payment-service.markCancelled` runs **inside its own transaction**, so protocol
+state `-2`, the refund reaching `completed`, the enrollment becoming `cancelled`
+and both notifications commit together or not at all. A future CLICK adapter
+would emit the same domain event; nothing outside the provider modules changes.
+
+Two shapes of truth are handled:
+
+1. **A live request exists** → it becomes `completed` on the provider's
+   authority, the enrollment is cancelled (seat released, since occupancy is a
+   COUNT over `accepted` rows) and both parties are notified.
+2. **Nobody asked** — the provider reversed a performed payment on its own (for
+   example the buyer cancelled through Payme). The reversal is *still* recorded,
+   as a `system_initiated` completed refund with no reviewer, the enrollment is
+   cancelled, the student is told, and **every admin is notified**, so a
+   paid-and-reversed enrollment can never be left looking paid.
+
+A retried `CancelTransaction` returns the byte-identical provider response, finds
+the reconciliation already done and changes nothing. A retried callback for a
+request that was meanwhile rejected records the reversal as a *second*, completed
+row: the rejection and the reversal are both true, and neither is deleted to make
+the other look tidy.
+
+## Cancellation, capacity and messaging
+
+- an accepted **unpaid** place can still be cancelled with the ordinary button;
+- an accepted **paid** place cannot be cancelled directly — the refusal now
+  points at the refund path;
+- the seat stays occupied through `requested` and `awaiting_provider` and is
+  released only when the refund is `completed` and the enrollment becomes
+  `cancelled`;
+- messaging is **not** special-cased: a thread whose enrollment is `accepted`
+  stays writable while a refund is pending, and becomes read-only automatically
+  once the refund completes and the enrollment is cancelled — the Phase 16 rule
+  does all of it.
+
+## Idempotency and concurrency
+
+| Repeated action | Result |
+| --- | --- |
+| student request | returns the live request; no second row, no second event |
+| admin approval / rejection | second attempt is refused with `invalid_transition` |
+| Payme `CancelTransaction` | provider-identical response, no duplicate financial transition |
+| completion notifications | exactly one per logical transition |
+| unknown transaction / refund id | protocol error / typed `not_found` |
+
+Every financial mutation takes `SELECT … FOR UPDATE` on the **payment** row and
+re-reads inside that lock, so a student request, an approval, a rejection and a
+callback serialise. A partial unique index
+(`refund_requests_one_live_per_payment`) makes two live requests physically
+impossible even if that lock were ever bypassed.
+
+## Privacy
+
+A student sees only their own refunds (the student id is in the predicate, so a
+foreign id returns nothing rather than a 403 that confirms existence). A teacher
+sees a **fact** — the refund state of enrollments in courses they own, by way of a
+join on `courses.teacher_user_id` — with no amount, no payment id, no provider
+transaction and no control: a teacher cannot approve, reject or initiate
+anything. An administrator sees the moderation view, and the projection still
+carries no credential, no card data (the product never sees a card) and no raw
+provider payload. `refund_events` stores only a transaction id, a reason code and
+a short metadata string; the merchant key and the Authorization header never
+reach the database, a page or an audit row.
+
+## Commands
+
+```bash
+npm run test:refunds   # Phase 17 suite (161 checks, real PGlite migrations + the real Payme adapter)
+```
+
+The suite proves the property the phase exists for — *a refund becomes
+`completed` only from an authenticated provider callback* — plus eligibility,
+ownership, over-posting (`.strict()` rejects `paymentId` / `studentId` / `amount`
+/ `status` / `provider` / `teacherId`), idempotency, racing decisions, the
+pre-perform cancel that is **not** a refund, unsolicited reversals, rejection and
+failure semantics, seat timing, capacity, messaging interaction, the paid
+cancellation refusal, and the raw database constraints.
+
+## Building with no database
+
+Unchanged and re-verified: no `generateStaticParams`, no build-time refund query,
+and `npm run build` succeeds with `.data` removed and every database variable
+unset. The admin layout stays `force-dynamic`; `/admin/refunds` and
+`/admin/refunds/[refundId]` inherit it.
+
+## What Phase 17 does NOT implement
+
+Partial refunds, percentage or prorated refunds, teacher payouts, commissions,
+split settlements, wallet or balance, stored cards, recurring billing,
+chargebacks or dispute handling, automatic teacher compensation, a CLICK or Uzum
+refund adapter, an outbound provider refund call (**none exists**), SMS/email/push
+delivery, chat changes, LMS or lesson-completion tracking, admin revenue
+analytics, an automatic refund-eligibility rule for the `-31007`
+service-fulfilment case, and Phase 18.

@@ -11,7 +11,7 @@
 export interface AdminNavItem {
   href: string;
   label: string;
-  icon: "overview" | "teachers" | "courses" | "activity";
+  icon: "overview" | "teachers" | "courses" | "refunds" | "activity";
   description: string;
 }
 
@@ -33,6 +33,13 @@ export const ADMIN_NAV: readonly AdminNavItem[] = [
     label: "Kurslar",
     icon: "courses",
     description: "Tayyor kurslarni moderatsiya qilish va e’lon qilish.",
+  },
+  {
+    href: "/admin/refunds",
+    label: "Qaytarishlar",
+    icon: "refunds",
+    description:
+      "O‘quvchilarning pulni qaytarish so‘rovlari. Tasdiqlash — bu qaror, to‘lovni qaytarishni esa provayder bajaradi.",
   },
   {
     href: "/admin/activity",

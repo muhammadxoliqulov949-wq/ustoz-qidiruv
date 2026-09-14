@@ -546,6 +546,30 @@ export async function markCancelled(
   providerTransactionId: string,
   cancelledAtMs: number,
   reasonCode: number | null,
+  /**
+   * PHASE 17 — the seam between "the provider cancelled a transaction" and "the
+   * money went back".
+   *
+   * Cancelling a transaction that had already been PERFORMED (protocol state -2)
+   * means money that arrived has been reversed: that is a genuine refund signal,
+   * and the refund domain has to hear about it. The payment domain must not
+   * learn what a refund is, so the refund service is injected here instead of
+   * being imported, and it runs INSIDE THIS TRANSACTION — the -2 write, the
+   * refund becoming `completed` and the enrollment becoming `cancelled` either
+   * all commit or none of them do. A pre-perform cancel (state -1) never calls
+   * it, because no money ever moved.
+   */
+  options?: {
+    onCancelledAfterPerform?: (
+      tx: Tx,
+      info: {
+        paymentId: string;
+        providerTransactionId: string;
+        reasonCode: number | null;
+        cancelledAtMs: number;
+      },
+    ) => Promise<void>;
+  },
 ): Promise<
   PaymentResult<{ transaction: ProviderTransactionView; alreadyCancelled: boolean }>
 > {
@@ -601,6 +625,17 @@ export async function markCancelled(
         providerTransactionId,
         metadata: `state=${nextState}${reasonCode === null ? "" : `,reason=${reasonCode}`}`,
       });
+
+      if (wasPerformed && options?.onCancelledAfterPerform) {
+        // Same transaction: a failure here rolls the cancellation back too, so
+        // a reversed payment can never be left without its refund record.
+        await options.onCancelledAfterPerform(tx, {
+          paymentId: current.paymentId,
+          providerTransactionId,
+          reasonCode,
+          cancelledAtMs,
+        });
+      }
 
       const updated = await findProviderTransaction(providerTransactionId, tx);
       return {

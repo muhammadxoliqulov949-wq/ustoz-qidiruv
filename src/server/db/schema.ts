@@ -120,6 +120,16 @@ export const notificationType = pgEnum("notification_type", [
   // has it unread — a long exchange must not spam the bell (see messaging
   // service, `notifyRecipient`).
   "message_received",
+  // Phase 17. Refund lifecycle. The student is told what actually happened to
+  // their money at each authenticated step; the teacher is told only that a
+  // paid place was refunded, and admins are told when a reversal arrived from
+  // the provider that nobody in the application asked for.
+  "refund_requested",
+  "refund_approved",
+  "refund_rejected",
+  "refund_completed",
+  "refund_failed",
+  "refund_provider_reversal",
 ]);
 
 /* ---------------------------------- users ---------------------------------- */
@@ -470,10 +480,17 @@ export const enrollmentEvents = pgTable(
     enrollmentRequestId: text("enrollment_request_id")
       .notNull()
       .references(() => enrollmentRequests.id, { onDelete: "cascade" }),
-    /** Who performed the transition. Always a real session user. */
-    actorUserId: text("actor_user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    /**
+     * Who performed the transition.
+     *
+     * NULL means no session user did: Phase 17 cancels an enrollment when an
+     * AUTHENTICATED provider callback confirms that the money was returned, and
+     * attributing that to the student would misrepresent the history. The
+     * matching `refund_events` row carries the provider evidence.
+     */
+    actorUserId: text("actor_user_id").references(() => users.id, {
+      onDelete: "cascade",
+    }),
     /** NULL for the creation event — there is no previous status. */
     fromStatus: enrollmentStatus("from_status"),
     toStatus: enrollmentStatus("to_status").notNull(),
@@ -560,6 +577,15 @@ export const paymentEventType = pgEnum("payment_event_type", [
   "provider_transaction_created",
   "payment_succeeded",
   "provider_cancelled",
+  /**
+   * Phase 17. The payment's own history now distinguishes the two cancellations
+   * the protocol defines: a cancellation BEFORE performing (state -1) is just a
+   * `provider_cancelled` — no money ever moved; a cancellation AFTER performing
+   * (state -2) means money arrived and went back, so it is recorded as a refund
+   * confirmation. The payment's `status` stays `succeeded`: the money DID
+   * arrive, and the refund is its own domain (`refund_requests`).
+   */
+  "provider_refund_confirmed",
   "payment_failed",
 ]);
 
@@ -847,6 +873,16 @@ export const adminAuditAction = pgEnum("admin_audit_action", [
   "teacher_verification_rejected",
   "course_published",
   "course_changes_requested",
+  /*
+   * Phase 17. A refund decision is an administrative action with a financial
+   * consequence, so it MUST leave a trace. There is deliberately NO
+   * `refund_completed` action: completing a refund is not something an admin
+   * does from a page — it is confirmed by an authenticated provider callback,
+   * and that evidence lives in `refund_events`, not in the audit log.
+   */
+  "refund_approved",
+  "refund_rejected",
+  "refund_failed",
 ]);
 
 export const adminAuditEvents = pgTable(
@@ -868,7 +904,7 @@ export const adminAuditEvents = pgTable(
     index("aae_created_idx").on(table.createdAt),
     index("aae_admin_idx").on(table.adminUserId, table.createdAt),
     index("aae_entity_idx").on(table.entityType, table.entityId),
-    check("aae_entity_type_check", sql`${table.entityType} IN ('teacher', 'course')`),
+    check("aae_entity_type_check", sql`${table.entityType} IN ('teacher', 'course', 'refund')`),
     check("aae_entity_id_check", sql`length(btrim(${table.entityId})) > 0`),
     check("aae_metadata_len", sql`${table.metadata} IS NULL OR length(${table.metadata}) <= 300`),
   ],
@@ -1007,6 +1043,199 @@ export const conversationReads = pgTable(
       columns: [table.lastReadMessageId, table.conversationId],
       foreignColumns: [messages.id, messages.conversationId],
     }).onDelete("cascade"),
+  ],
+);
+
+/* --------------------------- Phase 17 · refunds ---------------------------- */
+
+/*
+ * REFUNDS — Phase 17.
+ *
+ * A refund is a THIRD domain, deliberately not folded into either neighbour:
+ *
+ *   • enrollment answers "does this student have a place?"   → accepted
+ *   • payment   answers "did the money actually arrive?"      → succeeded
+ *   • refund    answers "has that money been given back, and on whose
+ *                authority?"                                 → requested …
+ *
+ * A place whose refund is in flight is therefore `enrollment = accepted` +
+ * `payment = succeeded` + `refund = requested|awaiting_provider`, and the seat
+ * stays occupied through both of those stages. Only a PROVIDER-CONFIRMED
+ * refund (an authenticated Payme `CancelTransaction` that cancels an already
+ * performed transaction, protocol state `-2`) moves the enrollment to
+ * `cancelled` and frees the seat.
+ *
+ * WHAT THIS TABLE DOES NOT STORE
+ * No card data, no merchant credentials, no provider tokens: only the Payme
+ * transaction id, its documented numeric cancellation reason and short
+ * human-readable metadata. The amount is a copy of the payment's immutable
+ * snapshot, never something a browser or an admin typed.
+ */
+
+export const refundStatus = pgEnum("refund_status", [
+  /** The student asked; nothing has been decided. */
+  "requested",
+  /**
+   * An admin approved the policy decision and the money still has to be
+   * returned by the merchant in the Payme merchant cabinet. The provider
+   * offers no outbound refund API, so this is the state where the merchant
+   * operator acts OUTSIDE the application.
+   */
+  "awaiting_provider",
+  /** Authenticated provider evidence confirms the money went back. */
+  "completed",
+  /** An admin declined the request; the enrollment and the seat are untouched. */
+  "rejected",
+  /** The provider operation genuinely failed (recorded by the merchant operator). */
+  "failed",
+]);
+
+/** Immutable refund history. Append-only: nothing in this table is ever updated. */
+export const refundEventType = pgEnum("refund_event_type", [
+  "requested",
+  "approved",
+  "rejected",
+  /** `awaiting_provider` → `completed`, from an authenticated provider callback. */
+  "provider_refund_completed",
+  /** `awaiting_provider` → `failed`, recorded from a genuine provider failure. */
+  "provider_refund_failed",
+  /**
+   * A provider confirmation arrived that NO application user asked for: the
+   * transaction was cancelled after being performed while there was no live
+   * request. Financial truth is recorded either way — the row this event
+   * belongs to is created `system_initiated`.
+   */
+  "provider_reversal_recorded",
+]);
+
+export const refundRequests = pgTable(
+  "refund_requests",
+  {
+    id: text("id").primaryKey(),
+    /** The succeeded payment being refunded. */
+    paymentId: text("payment_id")
+      .notNull()
+      .references(() => payments.id, { onDelete: "cascade" }),
+    enrollmentRequestId: text("enrollment_request_id")
+      .notNull()
+      .references(() => enrollmentRequests.id, { onDelete: "cascade" }),
+    studentUserId: text("student_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** The provider transaction whose cancellation confirms this refund. */
+    providerTransactionId: text("provider_transaction_id"),
+    status: refundStatus("status").notNull(),
+    /**
+     * FULL refunds only: a copy of the payment's immutable amount snapshot,
+     * written from the database — never from a request body.
+     */
+    amountTiyin: bigint("amount_tiyin", { mode: "bigint" }).notNull(),
+    reason: text("reason").notNull(),
+    /** Required for `rejected` and `failed`; optional otherwise. */
+    adminFeedback: text("admin_feedback"),
+    reviewedByAdminUserId: text("reviewed_by_admin_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    /**
+     * TRUE when the row exists because the provider reversed a performed
+     * payment nobody in the application asked to refund. Such a row is born
+     * `completed` and has no reviewer.
+     */
+    systemInitiated: boolean("system_initiated").notNull().default(false),
+    requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("refund_requests_student_idx").on(table.studentUserId, table.requestedAt),
+    index("refund_requests_status_idx").on(table.status, table.requestedAt),
+    index("refund_requests_enrollment_idx").on(table.enrollmentRequestId),
+    /*
+     * ONE LIVE REFUND PER PAYMENT. Partial, so a rejected or failed attempt
+     * does not block a later, legitimate request — while two simultaneous
+     * submissions can only ever produce one live row.
+     */
+    uniqueIndex("refund_requests_one_live_per_payment")
+      .on(table.paymentId)
+      .where(sql`status IN ('requested', 'awaiting_provider')`),
+    check("refund_requests_amount_positive", sql`${table.amountTiyin} > 0`),
+    check(
+      "refund_requests_reason_len",
+      sql`length(${table.reason}) BETWEEN 1 AND 1000`,
+    ),
+    check("refund_requests_reason_trimmed", sql`${table.reason} = btrim(${table.reason})`),
+    check(
+      "refund_requests_feedback_len",
+      sql`${table.adminFeedback} IS NULL OR (length(${table.adminFeedback}) BETWEEN 1 AND 1000 AND ${table.adminFeedback} = btrim(${table.adminFeedback}))`,
+    ),
+    /*
+     * PROVIDER EVIDENCE. A completed refund must carry the moment it was
+     * confirmed; `completed` can therefore never be written as a bare status
+     * flip by a page, an action or a script.
+     */
+    check(
+      "refund_requests_completed_evidence",
+      sql`${table.status} <> 'completed' OR ${table.completedAt} IS NOT NULL`,
+    ),
+    check(
+      "refund_requests_rejected_feedback",
+      sql`${table.status} <> 'rejected' OR ${table.adminFeedback} IS NOT NULL`,
+    ),
+    check(
+      "refund_requests_failed_feedback",
+      sql`${table.status} <> 'failed' OR ${table.adminFeedback} IS NOT NULL`,
+    ),
+    /** Reviewer and review time are written together or not at all. */
+    check(
+      "refund_requests_review_pair",
+      sql`(${table.reviewedByAdminUserId} IS NULL) = (${table.reviewedAt} IS NULL)`,
+    ),
+    /*
+     * An APPROVAL, a REJECTION or a FAILURE always has an admin behind it. A
+     * `completed` row does not: an unsolicited provider reversal is confirmed
+     * by the provider, not by a person.
+     */
+    check(
+      "refund_requests_decision_has_admin",
+      sql`${table.status} NOT IN ('awaiting_provider', 'rejected', 'failed') OR ${table.reviewedByAdminUserId} IS NOT NULL`,
+    ),
+  ],
+);
+
+export const refundEvents = pgTable(
+  "refund_events",
+  {
+    id: text("id").primaryKey(),
+    refundRequestId: text("refund_request_id")
+      .notNull()
+      .references(() => refundRequests.id, { onDelete: "cascade" }),
+    /**
+     * Who caused the step. NULL means the PROVIDER did — an authenticated
+     * Payme confirmation is not a session user, and attributing it to one
+     * would be a lie in the audit history.
+     */
+    actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    type: refundEventType("type").notNull(),
+    fromStatus: refundStatus("from_status"),
+    toStatus: refundStatus("to_status").notNull(),
+    providerTransactionId: text("provider_transaction_id"),
+    /** Payme's documented cancellation reason code, as safe provider metadata. */
+    reasonCode: integer("reason_code"),
+    metadata: text("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("refund_events_refund_idx").on(table.refundRequestId, table.createdAt),
+    check(
+      "refund_events_from_differs",
+      sql`${table.fromStatus} IS NULL OR ${table.fromStatus} <> ${table.toStatus}`,
+    ),
+    check(
+      "refund_events_metadata_len",
+      sql`${table.metadata} IS NULL OR length(${table.metadata}) <= 500`,
+    ),
   ],
 );
 

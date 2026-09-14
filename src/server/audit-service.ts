@@ -21,7 +21,14 @@ import { newId } from "./auth/ids";
 /* -------------------------------------------------------------------------- */
 
 export type AdminAuditAction = (typeof schema.adminAuditAction.enumValues)[number];
-export type AdminAuditEntityType = "teacher" | "course";
+/**
+ * Which kind of record an action was performed on.
+ *
+ * Phase 17 adds `refund`: a refund decision has a financial consequence, so it
+ * is audited exactly like a verification or a moderation decision. The database
+ * CHECK lists the same three values.
+ */
+export type AdminAuditEntityType = "teacher" | "course" | "refund";
 
 type Tx = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
 
@@ -54,6 +61,17 @@ export async function recordAdminEvent(tx: Tx, input: AdminAuditInput): Promise<
     entityId: input.entityId,
     metadata: safeMetadata(input.metadata),
   });
+}
+
+/**
+ * Narrow the free-text `entity_type` column to the three values the CHECK
+ * constraint allows. Anything unexpected is treated as a teacher record, which
+ * is the behaviour this reader had before refunds existed.
+ */
+function narrowEntityType(value: string): AdminAuditEntityType {
+  if (value === "course") return "course";
+  if (value === "refund") return "refund";
+  return "teacher";
 }
 
 /* --------------------------------- reading --------------------------------- */
@@ -102,7 +120,13 @@ export async function listAuditEvents(options: { limit?: number } = {}): Promise
   return rows.map((row) => ({
     id: row.id,
     action: row.action,
-    entityType: row.entityType === "course" ? "course" : "teacher",
+    /*
+     * Phase 17 widened this from a two-way guess to an explicit narrowing: the
+     * old `=== "course" ? "course" : "teacher"` turned a REFUND decision into a
+     * "teacher" decision, which would have misfiled the audit trail and pointed
+     * the activity page at the wrong detail route.
+     */
+    entityType: narrowEntityType(row.entityType),
     entityId: row.entityId,
     metadata: row.metadata,
     createdAt: row.createdAt,

@@ -11,6 +11,7 @@ import {
 import { requireAdminPage } from "@/server/auth/guards";
 import { getVerificationQueueCounts } from "@/server/verification-service";
 import { getModerationCounts } from "@/server/moderation-service";
+import { getRefundQueueCounts } from "@/server/refund-service";
 
 /* -------------------------------------------------------------------------- */
 /* /admin — the ADMIN control-plane shell (Phase 15).                          */
@@ -86,13 +87,17 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     );
   }
 
-  const [verification, moderation] = await Promise.all([
+  const [verification, moderation, refundQueue] = await Promise.all([
     getVerificationQueueCounts(),
     getModerationCounts(),
+    getRefundQueueCounts(),
   ]);
   const counts = {
     teachers: verification.pending,
     courses: moderation.pendingReviews,
+    // Live refund work: a request nobody has decided yet, or an approved refund
+    // the provider still has to return.
+    refunds: refundQueue.live,
   };
 
   return (
@@ -111,7 +116,9 @@ export default async function AdminLayout({ children }: { children: ReactNode })
           <AdminSidebarNav counts={counts} />
           <p className="text-sm leading-relaxed text-ink-500 max-lg:hidden">
             Har bir qaror jurnalga yoziladi va ustozga bildirishnoma yuboriladi.
-            To‘lovlar bu panelning bir qismi emas.
+            Pulni qaytarish so‘rovlari shu panelda ko‘rib chiqiladi, lekin pulni
+            Payme’ning merchant kabinetida qaytarishni operator bajaradi — bu
+            ilova tashqariga qaytarish chaqiruvini yubormaydi.
           </p>
           <Link
             href="/"

@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ButtonLink } from "@/components/ui";
+import { Badge, ButtonLink } from "@/components/ui";
 import { AdminField, AdminPanel } from "@/components/admin/admin-ui";
 import { EmptyState } from "@/components/dashboard/empty-state";
 import { getAdminOverview } from "@/server/admin-service";
 import { listVerificationQueue } from "@/server/verification-service";
 import { listModerationQueue } from "@/server/moderation-service";
+import { listAdminRefunds } from "@/server/refund-service";
+import { REFUND_STATUS_LABEL, refundStatusTone } from "@/lib/refund";
+import { formatTiyin } from "@/lib/money";
 import { ADMIN_AREA_TITLE } from "@/lib/admin-workspace";
 import { formatAdminDate } from "@/components/admin/admin-ui";
 
@@ -15,9 +18,15 @@ import { formatAdminDate } from "@/components/admin/admin-ui";
 /* WHAT THIS PAGE IS: the two work queues, in the order they must be worked      */
 /* (oldest first), plus the factual totals. That is the whole dashboard.         */
 /*                                                                              */
-/* WHAT IT IS NOT: no charts, no KPI tiles, no trend arrows, no payment panel.   */
-/* Every number below is the length of a real query result, and each section      */
-/* links to the screen where the work actually happens.                          */
+/* WHAT IT IS NOT: no charts, no trend arrows, no analytics. Every number below   */
+/* is the length of a real query result, and each section links to the screen     */
+/* where the work actually happens.                                              */
+/*                                                                              */
+/* PHASE 17 adds ONE queue: refund requests. It belongs here because it is work   */
+/* a human must do — a `requested` row waits for a decision, and an              */
+/* `awaiting_provider` row waits for the merchant operator to return the money in */
+/* the Payme cabinet. The queue deliberately shows the provider dependency       */
+/* instead of a "refund" button that nothing behind it could honour.             */
 /*                                                                              */
 /* Server-rendered with no client JS at all, so it cannot drift out of date     */
 /* between polls and there is no loading flash.                                 */
@@ -33,10 +42,11 @@ export const metadata: Metadata = {
 const PREVIEW_LIMIT = 5;
 
 export default async function AdminOverviewPage() {
-  const [overview, verificationQueue, moderationQueue] = await Promise.all([
+  const [overview, verificationQueue, moderationQueue, refundQueue] = await Promise.all([
     getAdminOverview(),
     listVerificationQueue({ status: "pending" }),
     listModerationQueue({ status: "pending" }),
+    listAdminRefunds({ statuses: ["requested", "awaiting_provider"] }),
   ]);
 
   const oldestWaiting = verificationQueue[0] ?? null;
@@ -53,7 +63,7 @@ export default async function AdminOverviewPage() {
         </p>
       </header>
 
-      <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <dl className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
         <div className="rounded-xl border border-line bg-surface p-4 shadow-xs">
           <dt className="text-sm text-ink-500">Tasdiqlash kutilmoqda</dt>
           <dd className="mt-1 text-3xl font-semibold tabular-nums text-ink-900">
@@ -76,6 +86,12 @@ export default async function AdminOverviewPage() {
           <dt className="text-sm text-ink-500">E’lon qilingan kurslar</dt>
           <dd className="mt-1 text-3xl font-semibold tabular-nums text-ink-900">
             {overview.publishedCourses}
+          </dd>
+        </div>
+        <div className="rounded-xl border border-line bg-surface p-4 shadow-xs">
+          <dt className="text-sm text-ink-500">Qaytarish so‘rovlari navbatda</dt>
+          <dd className="mt-1 text-3xl font-semibold tabular-nums text-ink-900">
+            {overview.pendingRefunds}
           </dd>
         </div>
       </dl>
@@ -181,6 +197,49 @@ export default async function AdminOverviewPage() {
         )}
       </AdminPanel>
 
+      <AdminPanel
+        title="Pulni qaytarish navbati"
+        description="So‘rovni administrator tasdiqlaydi, pulni esa Payme’ning merchant kabinetida operator qaytaradi. Yakuniy holat provayder tasdiqlagandan keyin qayd etiladi."
+        action={
+          <ButtonLink href="/admin/refunds" variant="outline" size="sm">
+            Butun navbat
+          </ButtonLink>
+        }
+      >
+        {refundQueue.length === 0 ? (
+          <EmptyState title="Qaytarish so‘rovi yo‘q" as="h3">
+            Hozir na qaror, na provayder tasdiqini kutayotgan so‘rov bor.
+          </EmptyState>
+        ) : (
+          <ul className="flex flex-col divide-y divide-line">
+            {refundQueue.slice(0, PREVIEW_LIMIT).map((row) => (
+              <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 py-3">
+                <div className="min-w-0">
+                  <Link
+                    href={`/admin/refunds/${row.id}`}
+                    className="font-medium text-accent-700 underline underline-offset-2"
+                  >
+                    {row.studentName}
+                  </Link>
+                  <p className="text-sm text-ink-500">
+                    {row.courseTitle} · {row.groupTitle} · {formatTiyin(row.amountTiyin)} ·{" "}
+                    {formatAdminDate(row.requestedAt)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant={refundStatusTone(row.status)}>
+                    {REFUND_STATUS_LABEL[row.status]}
+                  </Badge>
+                  <ButtonLink href={`/admin/refunds/${row.id}`} variant="outline" size="sm">
+                    Ko‘rib chiqish
+                  </ButtonLink>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </AdminPanel>
+
       <AdminPanel title="Katalog holati" description="Ommaviy katalogdagi real sonlar.">
         <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
           <AdminField label="Qoralamalar">{overview.draftCourses}</AdminField>
@@ -191,6 +250,12 @@ export default async function AdminOverviewPage() {
           Qoralama va “ko‘rib chiqish uchun yuborilgan” kurslar ommaviy saytda
           ko‘rinmaydi. E’lon qilingan kurs darhol ommaviy sahifalarda paydo
           bo‘ladi — qayta joylashtirish (deploy) kerak emas.
+        </p>
+        <p className="mt-2 text-sm leading-relaxed text-ink-500">
+          Pulni qaytarish tugallangach o‘quvchining yozilishi bekor qilinadi va
+          guruhdagi joy bo‘shatiladi. Bu avtomatik hisoblanadi: joy soni
+          “qabul qilingan” yozuvlar sonidan olinadi, shuning uchun alohida
+          tuzatish talab qilinmaydi.
         </p>
       </AdminPanel>
     </div>

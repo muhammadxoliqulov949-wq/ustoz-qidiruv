@@ -489,9 +489,17 @@ async function main(): Promise<void> {
 
   const cancelPaid = await enrollment.cancelRequest(enrAccepted, studentA);
   check("a PAID enrollment cannot be self-cancelled", !cancelPaid.ok);
-  check("…and the refusal is honest about refunds",
+  /*
+   * PHASE 17 — intentionally changed assertion. The block itself is unchanged
+   * (a paid place still cannot be cancelled through the ordinary button), but
+   * the refusal must no longer say that refunds are unsupported: Phase 17 built
+   * the request -> admin decision -> provider-confirmed-refund path, so the
+   * honest answer now points the student at it.
+   */
+  check("…and the refusal points the student at the refund path",
     !cancelPaid.ok && cancelPaid.message ===
-      "To‘langan yozilishni bekor qilish va pulni qaytarish jarayoni hali qo‘llab-quvvatlanmaydi.");
+      "To‘langan yozilishni to‘g‘ridan-to‘g‘ri bekor qilib bo‘lmaydi: avval pulni "
+      + "qaytarish so‘rovini yuboring. So‘rov administrator tomonidan ko‘rib chiqiladi.");
   check("…and the enrollment is still accepted",
     (await db.select().from(schema.enrollmentRequests)
       .where(eq(schema.enrollmentRequests.id, enrAccepted)))[0]?.status === "accepted");

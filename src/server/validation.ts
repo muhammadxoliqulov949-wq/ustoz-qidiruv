@@ -16,6 +16,12 @@ import {
   MODERATION_FEEDBACK_MIN_LENGTH,
 } from "@/lib/course-moderation";
 import { MESSAGE_BODY_MAX_LENGTH } from "@/lib/messaging";
+import {
+  REFUND_FEEDBACK_MAX_LENGTH,
+  REFUND_FEEDBACK_MIN_LENGTH,
+  REFUND_REASON_MAX_LENGTH,
+  REFUND_REASON_MIN_LENGTH,
+} from "@/lib/refund";
 
 /* -------------------------------------------------------------------------- */
 /* Server-side input schemas — Phase 11.                                       */
@@ -355,6 +361,63 @@ export const sendMessageSchema = z
 export const markConversationReadSchema = z
   .object({ conversationId: idSchema, lastMessageId: idSchema })
   .strict();
+
+/* --------------------------- Phase 17 · refunds ---------------------------- */
+
+/**
+ * Student refund request — INTENT ONLY.
+ *
+ * The form may carry exactly two fields: WHICH enrollment and WHY. Everything
+ * else about the money is derived server-side from the database:
+ *   • the amount comes from the payment's immutable Phase 14 snapshot;
+ *   • the payment comes from the enrollment, not from the browser;
+ *   • the student comes from the session cookie, never from a field.
+ *
+ * `.strict()` is the enforcement: a request that carries `paymentId`,
+ * `studentId`, `amount`, `status`, `provider` or `teacherId` is REJECTED rather
+ * than silently stripped, so an over-posting attempt fails loudly in tests and
+ * cannot be mistaken for a supported input.
+ */
+export const refundRequestSchema = z
+  .object({
+    enrollmentRequestId: idSchema,
+    reason: z
+      .string()
+      .trim()
+      .min(
+        REFUND_REASON_MIN_LENGTH,
+        `Sababni kamida ${REFUND_REASON_MIN_LENGTH} belgi bilan yozing.`,
+      )
+      .max(
+        REFUND_REASON_MAX_LENGTH,
+        `Sabab ${REFUND_REASON_MAX_LENGTH} belgidan oshmasin.`,
+      ),
+  })
+  .strict();
+
+/** Admin approval — the decision is the ONLY input; no amount, no status. */
+export const refundApprovalSchema = z.object({ refundRequestId: idSchema }).strict();
+
+/** Admin rejection — a decision requires a reason for the student. */
+export const refundRejectionSchema = z
+  .object({
+    refundRequestId: idSchema,
+    feedback: z
+      .string()
+      .trim()
+      .min(
+        REFUND_FEEDBACK_MIN_LENGTH,
+        `Izohni kamida ${REFUND_FEEDBACK_MIN_LENGTH} belgi bilan yozing.`,
+      )
+      .max(
+        REFUND_FEEDBACK_MAX_LENGTH,
+        `Izoh ${REFUND_FEEDBACK_MAX_LENGTH} belgidan oshmasin.`,
+      ),
+  })
+  .strict();
+
+/** Admin records the outcome of the provider operation. Same shape as rejection. */
+export const refundFailureSchema = refundRejectionSchema;
 
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, History, LayoutGrid, UserRoundCheck } from "lucide-react";
+import { BookOpen, History, LayoutGrid, RotateCcw, UserRoundCheck } from "lucide-react";
 import type { ComponentType } from "react";
 import { cn, focusRing } from "@/lib/utils";
 import { ADMIN_NAV, isActiveAdminNav, type AdminNavItem } from "@/lib/admin-workspace";
@@ -24,18 +24,24 @@ const icons: Record<AdminNavItem["icon"], ComponentType<{ className?: string }>>
   overview: LayoutGrid,
   teachers: UserRoundCheck,
   courses: BookOpen,
+  // Phase 17 — the refund queue, which is work nobody can do by waiting: the
+  // provider performs the money movement only after an admin approves it.
+  refunds: RotateCcw,
   activity: History,
 };
 
 export interface AdminNavCounts {
   teachers?: number;
   courses?: number;
+  /** Live refund requests: `requested` + `awaiting_provider`. */
+  refunds?: number;
 }
 
 function badgeFor(item: AdminNavItem, counts: AdminNavCounts | undefined): number | null {
   if (!counts) return null;
   if (item.icon === "teachers") return counts.teachers && counts.teachers > 0 ? counts.teachers : null;
   if (item.icon === "courses") return counts.courses && counts.courses > 0 ? counts.courses : null;
+  if (item.icon === "refunds") return counts.refunds && counts.refunds > 0 ? counts.refunds : null;
   return null;
 }
 

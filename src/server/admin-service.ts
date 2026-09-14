@@ -1,5 +1,5 @@
 import "server-only";
-import { count, eq } from "drizzle-orm";
+import { count, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "./db/client";
 
 /* -------------------------------------------------------------------------- */
@@ -29,6 +29,14 @@ export interface AdminOverview {
   draftCourses: number;
   /** Decisions recorded in the append-only audit log. */
   auditEvents: number;
+  /**
+   * Phase 17: refund requests that are still LIVE (`requested` or
+   * `awaiting_provider`). This is real work rather than a statistic — a
+   * `requested` row is waiting for a decision, and an `awaiting_provider` row is
+   * waiting for the merchant operator to return the money in the Payme cabinet.
+   * Completed, rejected and failed refunds are history and are not counted here.
+   */
+  pendingRefunds: number;
 }
 
 /**
@@ -48,6 +56,7 @@ export async function getAdminOverview(): Promise<AdminOverview> {
     publishedCourseRows,
     draftCourseRows,
     auditEventRows,
+    liveRefundRows,
   ] = await Promise.all([
     db
       .select({ total: count(schema.teacherVerificationRequests.id) })
@@ -70,6 +79,10 @@ export async function getAdminOverview(): Promise<AdminOverview> {
       .from(schema.courses)
       .where(eq(schema.courses.status, "draft")),
     db.select({ total: count(schema.adminAuditEvents.id) }).from(schema.adminAuditEvents),
+    db
+      .select({ total: count(schema.refundRequests.id) })
+      .from(schema.refundRequests)
+      .where(inArray(schema.refundRequests.status, ["requested", "awaiting_provider"])),
   ]);
 
   return {
@@ -79,6 +92,7 @@ export async function getAdminOverview(): Promise<AdminOverview> {
     publishedCourses: Number(publishedCourseRows[0]?.total ?? 0),
     draftCourses: Number(draftCourseRows[0]?.total ?? 0),
     auditEvents: Number(auditEventRows[0]?.total ?? 0),
+    pendingRefunds: Number(liveRefundRows[0]?.total ?? 0),
   };
 }
 

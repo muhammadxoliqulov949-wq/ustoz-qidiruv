@@ -30,16 +30,25 @@ const ACTION_LABEL: Record<AdminAuditAction, string> = {
   teacher_verification_rejected: "Ustoz arizasi qaytarildi",
   course_published: "Kurs e’lon qilindi",
   course_changes_requested: "Kursga o‘zgartirish so‘raldi",
+  // Phase 17. Note what is recorded: the DECISION. Completion is a provider
+  // fact and lives in the refund's own event history, not here.
+  refund_approved: "Pulni qaytarish so‘rovi tasdiqlandi",
+  refund_rejected: "Pulni qaytarish so‘rovi rad etildi",
+  refund_failed: "Pulni qaytarish natijasi: bajarilmadi",
 };
 
 const ACTION_TONE: Record<AdminAuditAction, "success" | "warning"> = {
   teacher_verified: "success",
   course_published: "success",
+  refund_approved: "success",
   teacher_verification_rejected: "warning",
   course_changes_requested: "warning",
+  refund_rejected: "warning",
+  refund_failed: "warning",
 };
 
-function entityHref(entityType: "teacher" | "course", entityId: string): string {
+function entityHref(entityType: "teacher" | "course" | "refund", entityId: string): string {
+  if (entityType === "refund") return `/admin/refunds/${entityId}`;
   return entityType === "teacher"
     ? `/admin/teachers/${entityId}`
     : `/admin/courses/${entityId}`;
