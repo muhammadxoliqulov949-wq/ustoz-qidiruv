@@ -35,6 +35,14 @@ import type { CourseBrowseParams } from "@/lib/course-search";
 /* `seatsRemaining` is NOT stored (Phase 11 rule: no invented occupancy). It is */
 /* derived as capacity minus the count of ACCEPTED enrollment requests, which   */
 /* is a real number backed by real rows. Pending requests do not occupy a seat. */
+/*                                                                              */
+/* RUNTIME ONLY — NEVER AT BUILD TIME                                           */
+/* Every read here is a request-time query. Nothing in this module is called    */
+/* from `generateStaticParams`, and no slug-listing helper exists for that      */
+/* purpose: enumerating runtime rows during `next build` would make every       */
+/* deployment depend on a reachable database and would freeze a path set that   */
+/* changes after deploy. Unknown, draft and unpublished slugs 404 at request    */
+/* time through the `status = 'published'` predicate below.                     */
 /* -------------------------------------------------------------------------- */
 
 const categoryById = new Map(categories.map((category) => [category.id, category]));
@@ -279,16 +287,6 @@ export async function getPublicCourseBySlug(slug: string): Promise<Course | null
   );
 }
 
-/** Slugs of every public course — used by generateStaticParams. */
-export async function listPublicCourseSlugs(): Promise<string[]> {
-  const db = getDb();
-  const rows = await db
-    .select({ slug: schema.courses.slug })
-    .from(schema.courses)
-    .where(eq(schema.courses.status, PUBLIC_STATUS));
-  return rows.map((row) => row.slug);
-}
-
 /* ------------------------------ teacher reads ----------------------------- */
 
 /**
@@ -438,15 +436,6 @@ export async function getPublicTeacherBySlug(
     },
     courses,
   };
-}
-
-export async function listPublicTeacherSlugs(): Promise<string[]> {
-  const db = getDb();
-  const rows = await db
-    .select({ slug: schema.teacherProfiles.slug })
-    .from(schema.teacherProfiles)
-    .where(eq(schema.teacherProfiles.isPublic, true));
-  return rows.map((row) => row.slug);
 }
 
 /* ------------------------------ facet options ----------------------------- */

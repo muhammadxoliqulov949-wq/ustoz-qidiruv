@@ -345,7 +345,7 @@ async function main(): Promise<void> {
 
   const {
     listPublicCourses, getPublicCourseBySlug, listPublicTeachers,
-    getPublicTeacherBySlug, listPublicCourseSlugs,
+    getPublicTeacherBySlug,
   } = await import("../src/server/public-repo");
   const { getTeacherDashboardCourses, getOwnedCourseDetail } =
     await import("../src/server/repo");
@@ -360,8 +360,12 @@ async function main(): Promise<void> {
     (await listPublicCourses(browseAll)).every((c) => c.id !== courseId));
   check("draft course slug lookup returns null (not merely hidden)",
     (await getPublicCourseBySlug("test-ielts-kursi")) === null);
-  check("draft slug is absent from generateStaticParams input",
-    !(await listPublicCourseSlugs()).includes("test-ielts-kursi"));
+  // Replaces the former "absent from generateStaticParams input" assertion:
+  // marketplace detail routes no longer enumerate slugs during `next build`,
+  // so the same draft-invisibility guarantee is asserted against the runtime
+  // read surface that actually decides 200 vs 404 for a detail URL.
+  check("a teacher with only a draft is absent from the public directory",
+    (await listPublicTeachers()).every((r) => r.teacher.id !== teacherId));
 
   // Publish it and make the owner public — then it must appear everywhere.
   await db.update(schema.teacherProfiles)

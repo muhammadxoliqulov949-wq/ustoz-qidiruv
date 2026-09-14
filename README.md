@@ -23,7 +23,8 @@ foundation.
 
 ```bash
 npm run dev         # dev server (0.0.0.0:3000)
-npm run build       # production build (offline-safe: fonts are self-hosted)
+npm run build       # production build — offline-safe: fonts are self-hosted
+                    # and it needs NO database (no build-time DB queries)
 npm run lint        # eslint
 npx tsc --noEmit    # typecheck
 
@@ -385,6 +386,39 @@ npm run dev
 No PostgreSQL installation is required: the default `DB_DRIVER=pglite` stores
 the database under `.data/pglite` (git-ignored).
 
+## Deployment (Vercel)
+
+**The build needs nothing but the repo.** There is no build-time database
+access, so no DB env var is needed to produce a successful `npm run build`.
+
+The **runtime** needs a real PostgreSQL server — the embedded driver is a
+development tool and cannot serve a serverless deployment:
+
+- `DB_DRIVER=pg` — required in production (`pglite` writes to a local
+  filesystem that serverless platforms do not persist).
+- `DATABASE_URL` — a **pooled** connection string (Neon pooler, Supabase
+  pgbouncer, Vercel Postgres pooled) with TLS parameters such as
+  `?sslmode=require`; there is no separate `ssl` option in the pool. Startup
+  fails loudly if `DB_DRIVER=pg` is set without it.
+- `AUTH_INSECURE_COOKIES` must stay unset/`0` so session cookies remain
+  `Secure`; `DEMO_TEACHER_WORKSPACE` is forced off in production regardless.
+- Payments stay off unless configured: `PAYMENT_MODE=disabled` (the default)
+  needs no credentials, while enabling it requires `PAYME_MERCHANT_ID` and
+  `PAYME_MERCHANT_KEY` or the process refuses to boot. Set `APP_BASE_URL` when
+  payments are enabled so the provider return URL can be built server-side.
+
+Schema setup is an explicit operator step, run from a trusted environment —
+**never** from the Vercel build and **never** automatically:
+
+```bash
+DB_DRIVER=pg DATABASE_URL=<production-url> npm run db:migrate
+```
+
+`db:seed` / `db:reset` refuse to run when `NODE_ENV=production`: the canonical
+datasets are development fixtures (they create accounts and a demo password),
+not production content. A migrated but empty database is a supported state —
+listings render their empty state and detail slugs 404 honestly.
+
 ## Environment variables
 
 Everything is documented in **`.env.example`** — the only env file in git. Real
@@ -469,7 +503,7 @@ are inserted as `published`; everything a teacher creates starts as `draft`.
 
 **Visibility is enforced in SQL, not in the UI.** Every public query filters
 `status = 'published'`, so a draft is never selected — it does not appear in
-listings, search, teacher profiles or `generateStaticParams`, its slug 404s, and
+listings, search, teacher profiles or any path enumeration, its slug 404s, and
 `enrollment` refuses to target it.
 
 Teacher profiles are public only when `is_public` is set *and* they own at least
@@ -490,9 +524,16 @@ teacher records.
 | Route | Mode | Why |
 |---|---|---|
 | `/courses`, `/categories/[slug]` | Dynamic SSR | Results depend on the URL *and* live DB state; a build-time snapshot would go stale the moment a course changes. |
-| `/courses/[slug]` | Dynamic SSR | Seat availability is derived from live enrollment rows. `generateStaticParams` still enumerates published slugs; unknown slugs 404 at request time. |
-| `/teachers`, `/teachers/[slug]` | Dynamic SSR | The roster and each profile's course set change at runtime. |
+| `/courses/[slug]` | Dynamic SSR | Seat availability is derived from live enrollment rows. **No `generateStaticParams`:** slugs are resolved at request time, so unknown, draft and unpublished slugs 404 then — and a course published *after* the deploy works without a rebuild. |
+| `/teachers`, `/teachers/[slug]` | Dynamic SSR | The roster and each profile's course set change at runtime. **No `generateStaticParams`**, same reasoning. |
 | All `/dashboard` and `/teacher/dashboard` routes | Dynamic | Account-sensitive; never prerendered. |
+
+**`npm run build` does not require a database.** No route in the app enumerates
+DB rows at build time, so `next build` runs with no `DATABASE_URL`, no
+`.data/pglite` and no network access, and a paused or unreachable production
+database cannot fail a deployment. The database is required **at runtime only**,
+where every marketplace read is a request-time query through
+`src/server/public-repo.ts`.
 
 Writes call `revalidatePath()` for the affected surfaces (`/courses`,
 `/teachers`, the course's public page and the teacher dashboard), so data is not
