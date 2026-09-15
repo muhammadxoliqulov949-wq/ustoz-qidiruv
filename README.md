@@ -23,7 +23,8 @@ foundation.
 
 ```bash
 npm run dev         # dev server (0.0.0.0:3000)
-npm run build       # production build (offline-safe: fonts are self-hosted)
+npm run build       # production build — offline-safe: fonts are self-hosted
+                    # and it needs NO database (no build-time DB queries)
 npm run lint        # eslint
 npx tsc --noEmit    # typecheck
 
@@ -385,6 +386,39 @@ npm run dev
 No PostgreSQL installation is required: the default `DB_DRIVER=pglite` stores
 the database under `.data/pglite` (git-ignored).
 
+## Deployment (Vercel)
+
+**The build needs nothing but the repo.** There is no build-time database
+access, so no DB env var is needed to produce a successful `npm run build`.
+
+The **runtime** needs a real PostgreSQL server — the embedded driver is a
+development tool and cannot serve a serverless deployment:
+
+- `DB_DRIVER=pg` — required in production (`pglite` writes to a local
+  filesystem that serverless platforms do not persist).
+- `DATABASE_URL` — a **pooled** connection string (Neon pooler, Supabase
+  pgbouncer, Vercel Postgres pooled) with TLS parameters such as
+  `?sslmode=require`; there is no separate `ssl` option in the pool. Startup
+  fails loudly if `DB_DRIVER=pg` is set without it.
+- `AUTH_INSECURE_COOKIES` must stay unset/`0` so session cookies remain
+  `Secure`; `DEMO_TEACHER_WORKSPACE` is forced off in production regardless.
+- Payments stay off unless configured: `PAYMENT_MODE=disabled` (the default)
+  needs no credentials, while enabling it requires `PAYME_MERCHANT_ID` and
+  `PAYME_MERCHANT_KEY` or the process refuses to boot. Set `APP_BASE_URL` when
+  payments are enabled so the provider return URL can be built server-side.
+
+Schema setup is an explicit operator step, run from a trusted environment —
+**never** from the Vercel build and **never** automatically:
+
+```bash
+DB_DRIVER=pg DATABASE_URL=<production-url> npm run db:migrate
+```
+
+`db:seed` / `db:reset` refuse to run when `NODE_ENV=production`: the canonical
+datasets are development fixtures (they create accounts and a demo password),
+not production content. A migrated but empty database is a supported state —
+listings render their empty state and detail slugs 404 honestly.
+
 ## Environment variables
 
 Everything is documented in **`.env.example`** — the only env file in git. Real
@@ -469,7 +503,7 @@ are inserted as `published`; everything a teacher creates starts as `draft`.
 
 **Visibility is enforced in SQL, not in the UI.** Every public query filters
 `status = 'published'`, so a draft is never selected — it does not appear in
-listings, search, teacher profiles or `generateStaticParams`, its slug 404s, and
+listings, search, teacher profiles or any path enumeration, its slug 404s, and
 `enrollment` refuses to target it.
 
 Teacher profiles are public only when `is_public` is set *and* they own at least
@@ -490,9 +524,16 @@ teacher records.
 | Route | Mode | Why |
 |---|---|---|
 | `/courses`, `/categories/[slug]` | Dynamic SSR | Results depend on the URL *and* live DB state; a build-time snapshot would go stale the moment a course changes. |
-| `/courses/[slug]` | Dynamic SSR | Seat availability is derived from live enrollment rows. `generateStaticParams` still enumerates published slugs; unknown slugs 404 at request time. |
-| `/teachers`, `/teachers/[slug]` | Dynamic SSR | The roster and each profile's course set change at runtime. |
+| `/courses/[slug]` | Dynamic SSR | Seat availability is derived from live enrollment rows. **No `generateStaticParams`:** slugs are resolved at request time, so unknown, draft and unpublished slugs 404 then — and a course published *after* the deploy works without a rebuild. |
+| `/teachers`, `/teachers/[slug]` | Dynamic SSR | The roster and each profile's course set change at runtime. **No `generateStaticParams`**, same reasoning. |
 | All `/dashboard` and `/teacher/dashboard` routes | Dynamic | Account-sensitive; never prerendered. |
+
+**`npm run build` does not require a database.** No route in the app enumerates
+DB rows at build time, so `next build` runs with no `DATABASE_URL`, no
+`.data/pglite` and no network access, and a paused or unreachable production
+database cannot fail a deployment. The database is required **at runtime only**,
+where every marketplace read is a request-time query through
+`src/server/public-repo.ts`.
 
 Writes call `revalidatePath()` for the affected surfaces (`/courses`,
 `/teachers`, the course's public page and the teacher dashboard), so data is not
@@ -1033,3 +1074,935 @@ concurrent Perform, and IDOR on the payment page.
 Refunds · payouts, commissions or split settlement · recurring payments ·
 stored cards or any card form · a CLICK, Uzum or other provider adapter · SMS or
 email receipts · an admin financial dashboard · fiscal receipt submission.
+
+# Phase 15 — admin control plane, teacher verification and course moderation
+
+Phase 15 adds the missing half of the marketplace: until now a teacher could
+mark a course *ready* but nothing could ever make it *published*, and a teacher
+profile could never become *verified*. Both now have a real, audited,
+database-backed decision path — and the decision can only be made by an
+`admin` account that no public surface can create.
+
+Three rules everything else follows from:
+
+> **1. The `admin` role cannot be obtained from the product.** No registration
+> form, onboarding step, server action, hidden input, URL parameter or
+> localStorage value can produce it. It is written by one command, run by an
+> operator with database access.
+>
+> **2. A teacher cannot verify or publish themselves.** The submission action
+> can only insert a `pending` application; the publish action can only act on a
+> live review row. `verified` and `published` are written exclusively in the
+> admin decision path — inside a transaction, under a row lock.
+>
+> **3. A private course never leaks.** `draft` and `ready` are excluded at the
+> query level in `public-repo.ts`; publishing changes what the *public* read
+> surface returns at request time, with no rebuild.
+
+## Roles
+
+| role | who | dashboard |
+| --- | --- | --- |
+| `student` | the default account | `/dashboard` |
+| `teacher` | an account with a `teacher_profiles` row | `/teacher/dashboard` |
+| `admin` | an operator account with **no profile row** | `/admin` |
+
+`user_role` gained `admin` in migration `0005`. The composite foreign keys
+(`student_profiles_(user_id, role)` and `teacher_profiles_(user_id, role)`, each
+with its own `role = 'student'` / `role = 'teacher'` CHECK) mean the database
+itself refuses to turn a profiled account into an admin, and refuses to attach a
+marketplace profile to an admin. That is a security property we keep: an operator
+account physically cannot own courses, be enrolled as a student, or inherit a
+marketplace identity. The practical consequence is documented below.
+
+## Bootstrapping an admin (out-of-band, by design)
+
+```bash
+npm run admin:list                                  # who is an admin right now
+ADMIN_PASSWORD='…12+ chars…' npm run admin:create -- +998XXXXXXXXX
+npm run admin:promote -- +998XXXXXXXXX              # an EXISTING profile-less account
+npm run admin:demote  -- +998XXXXXXXXX              # back to student
+```
+
+Why a CLI and not a route:
+
+* it is **not reachable over HTTP at all** — there is no endpoint, action or
+  page that grants the role, so an escalation attempt has nothing to call;
+* it never reads a role from a request; the operator states the target phone
+  explicitly and the command implies the role;
+* it is the **only** writer of `users.role = 'admin'` in the codebase.
+
+Safety properties:
+
+* **No default admin, no seeded admin, no committed password.** `admin:create`
+  requires `ADMIN_PASSWORD` in the environment (≥ 12 characters) and refuses a
+  weaker or missing one; it is never interactive, so no password is echoed to a
+  shell history or a log. `db:seed` refuses `NODE_ENV=production`.
+* **Safe failure.** An unknown phone number changes nothing and says nothing
+  about which numbers exist. Output is masked (`+998****233`).
+* **`promote` refuses a profiled account** with an explanation instead of
+  deleting data to force the update through — the composite role FK would reject
+  it anyway, and removing the profile would delete that teacher's courses.
+  Use `admin:create` for a dedicated operator account.
+* **Production is never seeded.** The dev fixtures below exist only when
+  `db:seed` runs outside production.
+
+The two supported ways to get an admin, in order of preference:
+
+1. `admin:create` — a dedicated, profile-less operator account (recommended).
+2. `admin:promote` — an existing account that has no profile row.
+
+### Development fixtures (dev seed only)
+
+`npm run db:seed` also creates three teacher accounts for exercising the queues
+locally — one verified with a complete profile, one pending with a live
+application, one deliberately incomplete:
+
+| fixture | phone | state |
+| --- | --- | --- |
+| Dilnoza Rahimova | `+998901000013` | `verified` — the owner that can actually publish |
+| Javohir Sattorov | `+998901000014` | `pending`, one live application in the queue |
+| Kamola Yusupova | `+998901000015` | `unverified`, profile incomplete (the eligibility gate) |
+
+They share the per-run seed password (`DEV_SEED_PASSWORD`, or one printed once by
+the seed) — the repository contains no credential of any kind.
+
+## Teacher verification lifecycle
+
+```
+unverified ──submit──▶ pending ──approve──▶ verified
+    ▲                     │
+    └──────reject─────────┘        (with REQUIRED feedback; resubmittable)
+```
+
+* **One live application per teacher**, enforced by a partial unique index
+  (`teacher_verification_requests_one_pending_per_teacher`). A double submit
+  returns `already_pending` and writes nothing.
+* **Submission is validated server-side** against a single requirement list
+  (name, specialization, city, ≥ 1 language, experience, bio, approach) shared
+  by the teacher's screen and the service, so the disabled button and the refusal
+  can never disagree. The whole submission runs in one transaction that sets the
+  profile to `pending` and inserts the request row.
+* **`verified` is written in exactly one place**: `approveVerification`,
+  after taking `FOR UPDATE` on the application row. Approving also sets
+  `isPublic = true`, otherwise a verified teacher's published course would link
+  to a 404 profile.
+* **A rejection is not a permanent block.** The profile returns to `unverified`,
+  the reviewer's feedback is stored on the request row (visible to the teacher),
+  and the teacher can fix the profile and re-apply. History is kept: a rejection
+  is a decision, never a ban.
+* **No document uploads.** There is no file-upload infrastructure in this phase,
+  and every screen says so:
+  `Hujjat orqali tekshirish keyingi bosqichda ulanadi.` — the reviewer approves
+  on the basis of the profile data shown on the plugin screen.
+
+## Course moderation lifecycle
+
+```
+draft ──teacher submits──▶ ready ──admin publishes──▶ published
+  ▲                          │
+  └──────admin requests changes──────┘   (with REQUIRED feedback)
+```
+
+* **`ready` means "sent for review"** and the UI says
+  `Ko'rib chiqish uchun yuborilgan`. No screen calls a ready course published.
+* **A submission creates exactly one live review**
+  (`course_moderation_reviews_one_pending_per_course`, partial unique index),
+  idempotently: submitting twice reuses the live review instead of queueing a
+  second one.
+* **There is no `rejected` course state.** A return is `ready → draft` plus
+  feedback; the teacher fixes the course and submits again. Nothing is
+  permanently blocked.
+* **Submitting requires a group and a syllabus module**, checked inside the
+  submission transaction — a course nobody can enrol in cannot enter the queue.
+* **A course under review or published is frozen for its teacher.** Every content
+  mutation re-checks this server-side (`assertEditable`); the disabled fieldset in
+  the editor is convenience, not the control.
+
+### The publication rule (enforced, not suggested)
+
+`publishCourse(reviewId, adminUserId)` succeeds only when **all four** hold, and
+re-checks them under `FOR UPDATE` on the review row:
+
+1. the course is `ready` (a decided review is refused, so it can never be
+   re-published — `published_at` is not overwritten);
+2. a **live** review exists for it (the review id is the only input — there is no
+   course-status setter);
+3. the owner is a real, active teacher;
+4. the owner's verification is **`verified`**.
+
+Rule 4 is the product rule: **a ready course from an unverified teacher stays
+private**. The admin sees the reason (`Ustoz tasdiqlanmagan — kursni e'lon qilib
+bo'lmaydi.`) and the course stays in the queue; the server refuses regardless of
+what the button says.
+
+Publishing writes, in one transaction: `courses.status = 'published'`,
+`published_at` (ISO date), the review decision, the reviewer, the audit row and
+the teacher's notification.
+
+### Published courses are read-only (Phase 15 limitation)
+
+Once published, a course cannot be edited by its teacher and cannot be
+un-published: there is no teacher edit path, no admin "return to draft" for a
+live listing, and no auto-unpublish. Editing live marketplace content is a
+product decision this phase does not make. The limitation is stated on the
+teacher's editor screen and enforced in `assertEditable`.
+
+## Audit log
+
+`admin_audit_events` is **append-only by construction**: it has no `updated_at`
+column, no product code issues `UPDATE`/`DELETE` against it, and the four
+recorded actions are the decisions themselves —
+
+| action | written by |
+| --- | --- |
+| `teacher_verified` | approve a verification application |
+| `teacher_verification_rejected` | return an application with feedback |
+| `course_published` | publish a reviewed course |
+| `course_changes_requested` | return a course to its teacher |
+
+Each row stores the acting admin, the entity (`teacher` / `course`), the entity
+id, a short machine-readable `metadata` string (≤ 300 characters, e.g.
+`verification=verified`) and the timestamp. It records **no** phone number,
+password hash, session token or free-form payload — `/admin/activity` renders it
+and there is nothing sensitive in it to leak. A `DELETE` of an admin who has made
+decisions is refused by the foreign key (NO ACTION), so the trail cannot be
+orphaned.
+
+## Notifications
+
+Four teacher-facing types were added to the existing notification
+infrastructure: `verification_approved`, `verification_rejected`,
+`course_published`, `course_changes_requested`. Each is inserted **inside the
+same transaction as the decision it announces**, so a decision and its
+notification cannot diverge, and an idempotent retry (or a losing race) produces
+neither a second decision nor a second notification.
+
+## Routes
+
+| route | purpose |
+| --- | --- |
+| `/admin` | factual counts + both live queues |
+| `/admin/teachers` | verification queue (oldest pending first, status filter) |
+| `/admin/teachers/[teacherId]` | full profile, owned courses, request history, decision controls |
+| `/admin/courses` | moderation queue with owner verification state |
+| `/admin/courses/[courseId]` | whole listing, groups, syllabus, decision controls |
+| `/admin/activity` | the immutable decision log |
+
+Authorization is resolved **once, in the admin layout, on the server**:
+
+* anonymous → `/login?next=/admin` (auth gate);
+* student/teacher → an explicit in-shell *"this area is not an admin"* screen
+  with links to their own dashboard — never a silent cross-dashboard redirect
+  that would make the attempt invisible;
+* admin → the shell.
+
+An unknown `/admin/**` path renders a real 404 **inside** the admin shell, and an
+unknown teacher/course id renders the same 404 as a nonexistent one, so the id is
+never echoed back and ids cannot be probed.
+
+`forbidden()` / `unauthorized()` from `next/navigation` are deliberately **not**
+used: they require `experimental.authInterrupts`, and no experimental flag is
+turned on for a production feature.
+
+## Layering and validation
+
+```
+database → verification-service / moderation-service / audit-service
+         → admin-service projections → server actions → admin UI
+```
+
+No Drizzle query appears in admin JSX. Every mutation is **intent-shaped** and
+validated with Zod `.strict()`:
+
+| action | input |
+| --- | --- |
+| `verifyTeacher` | `{ requestId }` |
+| `rejectTeacherVerification` | `{ requestId, feedback ≥ 10 }` |
+| `publishCourse` | `{ reviewId }` |
+| `requestCourseChanges` | `{ reviewId, feedback ≥ 10 }` |
+| teacher submission | `{}` — an *empty* strict object |
+
+There is no `updateStatus` and no `updateCourse`. `status`, `verification`,
+`role`, `adminUserId` and `decision` are not fields of any schema, and because
+the schemas are `.strict()` a payload that invents one is **rejected**, not
+silently ignored. The reviewer is always the session user, and the services
+re-check that identity's role inside the transaction as defence in depth.
+
+## Privacy boundary
+
+Admin projections select only moderation-relevant data. The teacher review detail
+carries the public profile fields and the teacher's own courses; it does **not**
+select a phone number, password hash, session row, token or any student record.
+There is **no payment panel** in the admin area and no admin payment action of any
+kind — Phase 14's Payme protocol behaviour is untouched, and payment state
+remains derived from authenticated callbacks only.
+
+## Building with no database
+
+`npm run build` must succeed with **no database at all** — no `DATABASE_URL`, no
+`.data` directory. This is a hard requirement, not a convenience: a build that
+touches the database fails on any host that builds before the database is
+reachable (this is exactly the failure the marketplace hit on Vercel).
+
+What makes it true:
+
+* no `generateStaticParams` on any database-backed route (it would enumerate
+  slugs at build time) and no slug-listing helper exists to reintroduce it;
+* the marketplace detail pages are `force-dynamic`;
+* **the admin layout declares `export const dynamic = "force-dynamic"`**, which
+  covers every nested admin route. Without it Next would try to prerender those
+  pages, and because the pages themselves do not read cookies Next would
+  *execute their queries* during `next build`. This was found by the Phase 15
+  build gate and fixed in the same change.
+
+`npm run build` was verified with no environment variables and no `.data`
+directory present, and with the assertion that `.data` is not created by the
+build.
+
+## Commands
+
+```bash
+npm run test:admin       # Phase 15 admin/verification/moderation suite (147 checks)
+npm run admin:list       # current admin accounts (masked)
+npm run admin:create     # new operator account (requires ADMIN_PASSWORD)
+```
+
+`npm run test:admin` runs against real PGlite migrations and covers the intent
+schemas and over-posting, bootstrap security (registration cannot create an
+admin; a profile cannot be attached to one), the whole verification lifecycle
+including idempotent retries and the "opposite decision" refusal, resubmission
+after a rejection, the publication rule (including an unverified owner being
+refused), the no-redeploy public visibility check, audit contents and
+immutability, and racing admins producing exactly one decision.
+
+## What Phase 15 does NOT implement
+
+Refunds, payouts, commissions or split settlement · chat · SMS, email or push ·
+file uploads or document review · review submission by students · waitlists ·
+analytics or metrics dashboards · admin payment controls · un-publishing or
+editing a live listing · bulk actions.
+
+# Phase 16 — private student ↔ teacher messaging
+
+Phase 16 adds the one conversation this marketplace actually needs: a private
+channel between a student and the teacher of a course the student was
+**accepted** into. It is deliberately not a social network — there is no
+directory, no way to message a stranger, no public DM, and no admin window into
+a private thread.
+
+Three rules everything else follows from:
+
+> **1. A conversation exists only inside an enrollment.** `accepted` (paid,
+> unpaid or free) → a writable thread. `cancelled` → the history stays, the
+> thread is **read-only**, enforced by the server. `submitted` / `rejected` →
+> never a conversation, ever. Payment never gates messaging.
+>
+> **2. The browser sends an intent, never an identity.** The only send mutation
+> is `sendMessage({ conversationId, body })`. Participants are derived in SQL
+> from the enrollment row (student) and its course (teacher); no
+> `studentId` / `teacherId` / `senderId` field exists in any payload, and there
+> is no `startConversation(teacherId)` endpoint to enumerate.
+>
+> **3. Read state is data, not a counter.** `conversation_reads` holds one
+> marker per (conversation, user) with a composite foreign key to
+> `messages (id, conversation_id)`; unread is derived by comparing
+> `(created_at, id)` tuples. Nothing can drift, because nothing is incremented.
+
+## Eligibility
+
+| enrollment status | conversation | writing |
+| --- | --- | --- |
+| `accepted` (unpaid, paid or free) | yes | yes |
+| `cancelled` | history, read-only | **no** — refused by the service, not by hiding the composer |
+| `submitted` | none | no |
+| `rejected` | none | no |
+
+Opening a thread from the enrolment card is the only entry point, and the card
+offers it only while the enrollment is `accepted`.
+
+## One conversation per enrollment
+
+`CREATE UNIQUE INDEX conversations_enrollment_key ON conversations (enrollment_request_id)`.
+Creation is lazy: the first eligible open creates the row inside a transaction
+that locks the enrollment (`select … for update`), derives both participants,
+re-checks `accepted`, inserts with `onConflictDoNothing` and re-selects. Two
+simultaneous opens therefore end with exactly one row — the loser of the race
+reads the winner's row instead of failing or duplicating. A conversation is
+never deleted, so a cancelled enrollment keeps its history and keeps the same
+identity.
+
+## Authorization
+
+Participants are never stored or supplied — every query is scoped by
+`participantWhere(me)`, which matches the session user against the enrollment's
+student or the course's teacher. One refusal path covers every wrong case:
+unknown id, another student's thread, another teacher's thread, an admin, a
+thread of the wrong role. All of them return the same `not_found`, which the
+pages render as the shell's ordinary 404 — so an id cannot be probed for
+existence, and an error message cannot leak who is talking to whom.
+
+## Routes
+
+| route | purpose |
+| --- | --- |
+| `/dashboard/messages` | the student's conversations, latest activity first |
+| `/dashboard/messages/[conversationId]` | one thread (student side) |
+| `/teacher/dashboard/messages` | the teacher's conversations |
+| `/teacher/dashboard/messages/[conversationId]` | one thread (teacher side) |
+
+There is no `/messages/[userId]` route and no "new message" composer that asks
+for a recipient. Both dashboards carry a **Xabarlar** nav entry whose unread
+badge is rendered on the server on every navigation — a real count derived from
+the read markers, never a polling client.
+
+## Sending a message
+
+```
+sendMessageAction (server action)
+  → requireRole → Zod .strict() → sendMessage({ conversationId, body })
+      lock conversation row
+      re-derive participants and the enrollment state
+      cancelled/missing  → not_writable / not_found
+      insert immutable message (1..2000 chars, trimmed, plain text)
+      bump conversations.updated_at
+      create the recipient's collapsed notification
+  → revalidatePath(thread, list, dashboards, notifications)
+```
+
+Hiding the composer in a read-only thread is a courtesy; the refusal above is
+the actual rule, and a replayed mutation from before the cancellation is
+refused by the server. Messages are **immutable**: there are no edit, delete or
+unsend columns, endpoints or UI affordances of any kind.
+
+## Read and unread
+
+Opening a thread marks it read **up to the newest message that was actually
+rendered**. The write is monotonic (`onConflictDoUpdate` guarded by a
+`(last_read_at, last_read_message_id)` tuple comparison), so a double render
+cannot corrupt it, and a message that arrives while the page is open stays
+unread until it is really seen. Refresh, a second tab and a second device all
+recompute the same answer from the same row — there is no fragile counter to
+fall out of sync, and no client-chosen arbitrary or future message id is ever
+accepted.
+
+## Notifications
+
+A recipient gets an in-app `Yangi xabar` notification whose body names the
+sender and the course, linking to the conversation route for their role. The
+recipient is deduplicated: while an unread `message_received` notification for
+that conversation exists, further messages do **not** create more rows, so a
+burst of ten messages produces one notification, not ten. The sender is never
+notified about their own message.
+
+## Pagination
+
+A thread renders the latest 30 messages; `?before=<messageId>` renders the page
+immediately older, with a *Oldingi xabarlarni ko‘rish* link and a way back to
+the newest page. The cursor is the stable `(created_at, id)` pair, a cursor that
+belongs to another conversation is ignored rather than trusted, and there is no
+"load the whole history" path and no client-side slicing.
+
+## Privacy boundary
+
+A conversation shows the counterpart's public display name and public slug, the
+course, the group and the enrollment state. It never shows a phone number,
+payment data (transaction ids, amounts and provider identifiers stay in the
+payment domain), another enrollment, or any profile field that is not already
+public. Student↔student, teacher↔teacher and student↔teacher-outside-an-
+enrollment conversations are all impossible by construction.
+
+**No admin surveillance.** The Phase 15 control plane is untouched and gains no
+message access: there is no admin messages route, no read-all view, no
+impersonation, no send-as and no deletion. Admins are bounced to `/admin` by the
+existing role guard, exactly like any other non-participant.
+
+## Rate limiting (an honest boundary)
+
+`sendMessage` refuses a sender's 31st message inside a minute, counted from the
+`messages` table. That is a **soft, database-derived guard against a runaway
+loop**, not production rate limiting: there is no shared or durable limiter
+infrastructure yet, and a process-memory limiter would be a lie on a
+multi-instance deployment. Real rate limiting is listed as Phase 20 hardening.
+
+## Commands
+
+```bash
+npm run test:messaging   # Phase 16 messaging suite (109 checks, real PGlite migrations)
+```
+
+The suite covers eligibility (accepted / cancelled / submitted / rejected),
+one-conversation-per-enrollment including the database unique index, both send
+directions, the whole authorization matrix (other student, other teacher,
+anonymous session, admin), over-posting of `senderId` / `studentId` /
+`teacherId` / `enrollmentId`, stored-XSS inertness, unread counting and
+monotonic read markers, cursor pagination and deterministic ordering, the
+collapsed notification rule, the cancelled read-only refusal, the rate-limit
+window, and the raw database invariants (check constraints, foreign keys, the
+composite read-marker FK).
+
+## Building with no database
+
+Unchanged and re-verified for Phase 16: no `generateStaticParams`, no
+database-backed route is prerendered, and `npm run build` succeeds with no
+`.data` directory and no database environment variables. Both new route groups
+are dynamic (`ƒ`) in the build output.
+
+## What Phase 16 does NOT implement
+
+File attachments, image or voice messages, audio/video calls, group chats,
+teacher↔teacher and student↔student chat, public DMs, typing indicators,
+reactions, message editing or deletion, realtime transport (websockets/polling),
+SMS/email/push delivery, an AI chat assistant, message search,
+blocking/reporting, read receipts, a moderation or surveillance dashboard, and
+Phase 17.
+
+# Phase 17 — refunds, paid-enrollment cancellation and the provider boundary
+
+Phase 17 replaces one dead end with an honest workflow. Before it, an accepted
+and **paid** enrollment could not be cancelled at all, because refunds did not
+exist: cancelling would have taken the student's place away while their money
+stayed with the course. The self-service button still refuses that (the money
+would be gone), but it now names the path that does exist:
+
+```
+student requests  →  admin reviews  →  approved, awaiting_provider
+                                          ↓
+                        merchant returns the money in the Payme cabinet
+                                          ↓
+        authenticated Payme CancelTransaction (state −2)  →  refund completed
+                                          ↓
+                    enrollment cancelled  →  seat released  →  both parties told
+```
+
+## The official audit that shaped this phase
+
+The Payme Business Merchant API exposes **six** methods — `CheckPerformTransaction`,
+`CreateTransaction`, `PerformTransaction`, `CancelTransaction`,
+`CheckTransaction`, `GetStatement` — and **no merchant-side refund endpoint**.
+The official documentation states that refunds to buyers are performed by the
+merchant **in the merchant cabinet** (`merchant.paycom.uz`) and that a refund is
+only possible if the merchant implements `CancelTransaction`.
+
+So this phase does **not** invent an outbound refund call. It implements
+`CancelTransaction` truthfully and lets that authenticated callback *finalise*
+the refund:
+
+| Protocol fact | Meaning here |
+| --- | --- |
+| state `1` → `2` (`PerformTransaction`) | money arrived; payment becomes `succeeded` |
+| state `1` → `-1` (`CancelTransaction`) | a failed attempt; **not** a refund, Phase 14 behaviour unchanged |
+| state `2` → `-2` (`CancelTransaction`) | money **arrived and went back**: a genuine refund signal |
+| error `-31007` | service fully delivered; cancellation refused by the provider — eligibility for a refund then becomes a *business* rule, not a protocol one, and is documented as future work rather than faked |
+| `reason` codes `1…5, 10` | stored as safe provider metadata (`reason_code`) and mapped to factual internal copy; the raw code is never the primary user-facing text |
+
+## Three domains, deliberately not merged
+
+```
+enrollment_requests.status   does this student have a place?   submitted | accepted | rejected | cancelled
+payments.status              did the money actually arrive?     pending | succeeded | cancelled | failed
+refund_requests.status       did it go back, on whose authority? requested | awaiting_provider | completed | rejected | failed
+```
+
+A refund in flight is therefore `accepted` + `succeeded` + `requested`, which is
+exactly why the seat stays **occupied** through `requested` and
+`awaiting_provider`. There is no `refund_pending` enrollment state, and the
+`payment_status` enum gains no `refunded` value: the payment really did succeed,
+and the money really did come back — two different facts, both true, each stored
+once.
+
+`approved` is not a stored status. The admin's approval and the wait for the
+provider operation are the **same instant** (the provider has no API to call), so
+the row moves straight to `awaiting_provider` while the decision itself is
+recorded in `reviewed_by_admin_user_id` / `reviewed_at` and in the immutable
+`refund_events` row of type `approved`.
+
+## Eligibility
+
+A refund request is possible when **all** of these hold, checked in SQL and
+again inside the transaction that writes the row:
+
+- the enrollment belongs to the session student (`student_user_id` is in the
+  predicate, so somebody else's id matches nothing);
+- the enrollment is `accepted`;
+- the course is not free;
+- a live payment exists and its status is `succeeded`;
+- no live refund (`requested` / `awaiting_provider`) exists for that payment.
+
+Full refunds only: the amount is **copied from the payment's immutable snapshot**
+(`payments.amount_tiyin`). No partial refund, no percentage, no admin-entered
+amount, and the browser never supplies an amount at all.
+
+## Student interface
+
+The enrollment card gains a separate **Pulni qaytarish** section — payment and
+refund are shown as two different facts, never merged into one badge:
+
+- `Bekor qilish va pulni qaytarishni so‘rash` opens a labelled reason field and
+  states, before submission, that an administrator reviews the request and that
+  money counts as returned **only after the provider confirms it**;
+- per state the student reads *Pulni qaytarish so‘rovi yuborildi* →
+  *Pulni qaytarish jarayonda* → **To‘lov qaytarildi** (the only wording that
+  claims the money came back), or *…so‘rovi rad etildi* / *…amalga oshmadi*;
+- a rejection or a recorded failure shows the admin's explanation and states that
+  the place and the payment are unchanged, so a student can ask again;
+- the payment detail page carries the same refund history and timestamps.
+
+Nothing in the interface can complete a refund. There is no button, no query
+parameter and no client state that produces `completed`.
+
+## Admin interface
+
+- `/admin/refunds` — the queue, live work first (`requested` before
+  `awaiting_provider`, oldest first inside it), with a status filter and counts;
+  it is linked from the overview and counted in the navigation badge.
+- `/admin/refunds/[refundId]` — student, course, group, payment snapshot,
+  provider transaction (id, state in words, performed/cancelled times, reason
+  code with its official meaning) and the immutable event history.
+- `approveRefund` — admin-only, locks the payment row, re-reads the refund and
+  re-verifies *accepted* + *succeeded*, writes `awaiting_provider`, records the
+  event, the audit row (`refund_approved`) and the student's notification. The
+  screen then says `Payme’da qaytarishni amalga oshirish kutilmoqda.` There is no
+  "refund succeeded" control anywhere in the product.
+- `rejectRefund` — only from `requested`, requires feedback, leaves the
+  enrollment `accepted` and the seat occupied.
+- `recordRefundFailure` — only from `awaiting_provider`, requires feedback; also
+  leaves the enrollment and the seat untouched, so a failed provider operation
+  never costs the student their place as well as their money.
+
+Audit actions `refund_approved` / `refund_rejected` / `refund_failed` are written
+inside the decision's own transaction with a short, safe summary (ids and status
+words only — never a payload, never a credential).
+
+## Provider boundary and the ONLY writer of `completed`
+
+`src/server/payments/payme-adapter.ts` maps the provider event onto a domain
+event:
+
+```
+Payme CancelTransaction on a PERFORMED transaction  →  provider_refund_confirmed
+```
+
+and calls `reconcileProviderRefund` through a hook that
+`payment-service.markCancelled` runs **inside its own transaction**, so protocol
+state `-2`, the refund reaching `completed`, the enrollment becoming `cancelled`
+and both notifications commit together or not at all. A future CLICK adapter
+would emit the same domain event; nothing outside the provider modules changes.
+
+Two shapes of truth are handled:
+
+1. **A live request exists** → it becomes `completed` on the provider's
+   authority, the enrollment is cancelled (seat released, since occupancy is a
+   COUNT over `accepted` rows) and both parties are notified.
+2. **Nobody asked** — the provider reversed a performed payment on its own (for
+   example the buyer cancelled through Payme). The reversal is *still* recorded,
+   as a `system_initiated` completed refund with no reviewer, the enrollment is
+   cancelled, the student is told, and **every admin is notified**, so a
+   paid-and-reversed enrollment can never be left looking paid.
+
+A retried `CancelTransaction` returns the byte-identical provider response, finds
+the reconciliation already done and changes nothing. A retried callback for a
+request that was meanwhile rejected records the reversal as a *second*, completed
+row: the rejection and the reversal are both true, and neither is deleted to make
+the other look tidy.
+
+## Cancellation, capacity and messaging
+
+- an accepted **unpaid** place can still be cancelled with the ordinary button;
+- an accepted **paid** place cannot be cancelled directly — the refusal now
+  points at the refund path;
+- the seat stays occupied through `requested` and `awaiting_provider` and is
+  released only when the refund is `completed` and the enrollment becomes
+  `cancelled`;
+- messaging is **not** special-cased: a thread whose enrollment is `accepted`
+  stays writable while a refund is pending, and becomes read-only automatically
+  once the refund completes and the enrollment is cancelled — the Phase 16 rule
+  does all of it.
+
+## Idempotency and concurrency
+
+| Repeated action | Result |
+| --- | --- |
+| student request | returns the live request; no second row, no second event |
+| admin approval / rejection | second attempt is refused with `invalid_transition` |
+| Payme `CancelTransaction` | provider-identical response, no duplicate financial transition |
+| completion notifications | exactly one per logical transition |
+| unknown transaction / refund id | protocol error / typed `not_found` |
+
+Every financial mutation takes `SELECT … FOR UPDATE` on the **payment** row and
+re-reads inside that lock, so a student request, an approval, a rejection and a
+callback serialise. A partial unique index
+(`refund_requests_one_live_per_payment`) makes two live requests physically
+impossible even if that lock were ever bypassed.
+
+## Privacy
+
+A student sees only their own refunds (the student id is in the predicate, so a
+foreign id returns nothing rather than a 403 that confirms existence). A teacher
+sees a **fact** — the refund state of enrollments in courses they own, by way of a
+join on `courses.teacher_user_id` — with no amount, no payment id, no provider
+transaction and no control: a teacher cannot approve, reject or initiate
+anything. An administrator sees the moderation view, and the projection still
+carries no credential, no card data (the product never sees a card) and no raw
+provider payload. `refund_events` stores only a transaction id, a reason code and
+a short metadata string; the merchant key and the Authorization header never
+reach the database, a page or an audit row.
+
+## Commands
+
+```bash
+npm run test:refunds   # Phase 17 suite (161 checks, real PGlite migrations + the real Payme adapter)
+```
+
+The suite proves the property the phase exists for — *a refund becomes
+`completed` only from an authenticated provider callback* — plus eligibility,
+ownership, over-posting (`.strict()` rejects `paymentId` / `studentId` / `amount`
+/ `status` / `provider` / `teacherId`), idempotency, racing decisions, the
+pre-perform cancel that is **not** a refund, unsolicited reversals, rejection and
+failure semantics, seat timing, capacity, messaging interaction, the paid
+cancellation refusal, and the raw database constraints.
+
+## Building with no database
+
+Unchanged and re-verified: no `generateStaticParams`, no build-time refund query,
+and `npm run build` succeeds with `.data` removed and every database variable
+unset. The admin layout stays `force-dynamic`; `/admin/refunds` and
+`/admin/refunds/[refundId]` inherit it.
+
+## What Phase 17 does NOT implement
+
+Partial refunds, percentage or prorated refunds, teacher payouts, commissions,
+split settlements, wallet or balance, stored cards, recurring billing,
+chargebacks or dispute handling, automatic teacher compensation, a CLICK or Uzum
+refund adapter, an outbound provider refund call (**none exists**), SMS/email/push
+delivery, chat changes, LMS or lesson-completion tracking, admin revenue
+analytics, an automatic refund-eligibility rule for the `-31007`
+service-fulfilment case, and Phase 18.
+
+# Phase 18 — secure uploads, verification documents and course media
+
+Phase 18 adds the first byte-level feature to the product: images and documents
+that a teacher uploads. Everything here is built around one rule — **the caller
+never decides what a file is, who may read it, or whether it is done**.
+
+## Two visibility classes, and nothing in between
+
+| Purpose | Visibility | Written by | Read by |
+| --- | --- | --- | --- |
+| `teacher_verification_document` | **private** | the teacher (own account) | the owner, and an admin reviewing a **submitted** application |
+| `teacher_profile_image` | public | the teacher (own account) | anyone (public profile projection) |
+| `course_cover_image` | public | the teacher who **owns the course** | anyone (marketplace projection) |
+
+`visibility` is a **function of purpose**, not a parameter. There is no API that
+accepts a visibility, no upload takes a caller-supplied type, and `file_assets`
+carries CHECK constraints (`file_assets_visibility_matches_purpose`,
+`file_assets_key_namespace`) so a row that contradicts its purpose is refused by
+PostgreSQL — not by the service that happens to be running.
+
+## The storage contract
+
+The application talks to one small interface (`src/server/storage/types.ts`):
+
+```
+putObject · headObject · deleteObject · getPublicUrl · createPrivateReadUrl
+```
+
+Provider internals never leak: no page, action or service imports an SDK, builds
+an S3 hostname, or knows that a bucket exists. `src/server/storage/index.ts` is
+the only factory, and it reads the environment once:
+
+| Variable | Meaning |
+| --- | --- |
+| `STORAGE_PROVIDER` | `disabled` (default) · `local` (development) · `s3` |
+| `STORAGE_LOCAL_DIR` | object root for the local provider (gitignored, default `.data/storage`) |
+| `STORAGE_SIGNING_SECRET` | HMAC secret for private read capabilities |
+| `STORAGE_S3_BUCKET`, `STORAGE_S3_PUBLIC_BUCKET` | private and public buckets |
+| `STORAGE_S3_REGION`, `STORAGE_S3_ENDPOINT`, `STORAGE_S3_ACCESS_KEY_ID`, `STORAGE_S3_SECRET_ACCESS_KEY`, `STORAGE_S3_FORCE_PATH_STYLE` | S3-compatible credentials (AWS, R2, MinIO) |
+| `STORAGE_PUBLIC_BASE_URL` | CDN/base URL public objects are addressed with |
+
+Rules the factory enforces:
+
+* `local` **refuses to run in production** — a filesystem is not durable storage,
+  and a silent production fallback is exactly the failure mode this design
+  avoids. `s3` refuses to start with an incomplete configuration, and the error
+  names the missing **variable names**, never a value.
+* Credentials are server-only. Nothing is prefixed `NEXT_PUBLIC`, nothing is
+  committed, and nothing is ever returned to the browser.
+* The test double (`memory-provider.ts`) implements the **same** contract, so the
+  suite proves contract behaviour rather than the quirks of a mock.
+
+## Upload lifecycle
+
+```
+prepare → object written → provider head-verifies (size + content type)
+        → row activated                    ← only now is the file real
+```
+
+* **Safe ordering.** Upload writes the object, verifies it, and only then flips
+  the `file_assets` row to `active`. Replacement writes the new asset first,
+  swaps the active row second, and leaves the previous object for the cleanup
+  command. Deletion marks the row first and deletes bytes best-effort, so a
+  failed delete leaks bytes instead of breaking a reference.
+* **Layered validation** (`src/lib/media.ts`): size limit per purpose, real
+  magic-byte detection, extension derived from the detected type, loose geometry
+  (a 1×1 avatar is refused), ownership and state re-checked in SQL. The
+  browser's `File.type`, `File.size` and "success" are all treated as claims.
+* **Keys** are server-generated: `<visibility>/<namespace>/<owner-scope>/<id>.<ext>`.
+  The uploaded filename is stored separately, sanitized for display, and is never
+  part of a path.
+* **Statuses**: `pending → active → superseded | deleted`. `superseded` is what a
+  replaced asset becomes; `deleted` is what a removed or abandoned one becomes.
+  Nothing is ever hard-deleted while a verification request still points at it.
+* **Checksums** are optional metadata (integrity aid), not a content-addressed
+  store.
+
+## Verification documents
+
+A verification application is now **document-backed**. Two document types exist,
+and only one is required:
+
+* `identity_document` — required;
+* `qualification_evidence` — optional (a diploma, a certificate).
+
+The trust decision is unchanged and still Phase 15's: an admin approves, rejects
+or returns the application, the database refuses any other transition, and the
+profile column remains a *current state*. What Phase 18 adds is evidence:
+
+* A submission needs a complete profile **and** the active required document
+  (`missing_documents` is the honest refusal otherwise).
+* Submission **freezes** the evidence: while a request is pending the teacher
+  cannot add or remove a document, because the reviewer is reading exactly that
+  set.
+* Historical requests keep their own evidence forever (`file_asset_id` with
+  `ON DELETE RESTRICT`), so a later approval can never make an earlier decision
+  unreadable.
+
+### Honesty rules for this feature
+
+* This is **platform trust verification**, not state certification. No copy
+  implies `Davlat tomonidan tasdiqlangan`, and no invented legal/KYC rules were
+  added: the documents are only ever described as what they are.
+* The teacher-facing screen states the real limit:
+  `Tasdiqlash hujjatlari ommaviy profilga chiqarilmaydi va faqat tekshiruv uchun
+  vakolatli administratorlarga ko‘rsatiladi.` There is no absolute-privacy
+  promise, because no system can make one.
+* **No malware scanning is claimed.** Nothing in the UI says a file was scanned.
+  The seam exists (`MEDIA_SCAN_BOUNDARY_NOTE`, and every activation flows through
+  one function that could call a scanner) but no scanner is wired in, and the
+  product says so.
+
+## Private access: short-lived, purpose-scoped capabilities
+
+Private objects have **no public address**. There is no permanent URL, no CDN
+path, and no guessable endpoint. Reading evidence means one of two things:
+
+1. an **authorized proxy** call that checks the session, ownership and the
+   request attachment; or
+2. a **short-lived signed URL** (10 minutes, hard-capped at 15) minted on demand.
+
+The authorization rule is purpose-scoped, not role-scoped:
+
+* the **owner** may read their own document at any time;
+* an **admin** may read a document **only** when it is attached to a submitted
+  application — an unattached draft document is the teacher's own business;
+* everyone else (another teacher, a student, an anonymous visitor) receives
+  `not_found`, which leaks nothing about existence.
+
+Nothing is stored: the URL is minted per render, `expiresAt` is checked after the
+signature, and the signature covers the key **and** the expiry, so extending
+`e=` invalidates the link instead of prolonging it. Private responses are served
+`Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff`, a sandbox
+CSP and a sanitized `Content-Disposition`.
+
+### The development delivery route
+
+`/api/media/[...key]` exists **only** so the local provider can be exercised on a
+laptop. It refuses to serve anything unless the active provider is the local one,
+which is why a "temporary dev helper" can never become an unauthenticated file
+server in production. In production the store serves the bytes: a public URL from
+the CDN for public objects, a presigned URL for private ones.
+
+## Profile image and course cover
+
+* The teacher's managed photo wins; the seeded `/media/...` path stays the
+  fallback, so **no fixture was migrated** and published seed courses keep
+  working. The same overlay applies to the public marketplace, the teacher
+  dashboard, the course editor and the moderation queue.
+* A course cover can only be set by the teacher who **owns the course**, only
+  while it is a `draft`. A course under review or published is locked (Phase 15's
+  rule), and the extra lock is applied a second time inside the DB transaction —
+  a crafted request from a frozen course changes nothing.
+* Replacing an image never rewrites live published media silently.
+
+## Cleanup
+
+`npm run storage:cleanup` (with `--dry-run`, `--hours`, `--limit`) removes two
+classes of garbage: abandoned `pending` rows with their bytes, and objects left
+behind by `superseded`/`deleted` rows. The database is updated first, so a failed
+object delete is an orphaned byte rather than a broken reference. Scheduling is
+**not** implemented; the intended shape on a real deployment is a nightly cron
+entry (for example `0 3 * * *  cd /srv/app && npm run storage:cleanup`). Frozen
+evidence is never touched. `npm run storage:status` reports the provider, whether
+it is configured, and the asset counts per status — never a key or a credential.
+
+## Security limits (stated, not implied)
+
+* A signed URL is a **bearer capability**: whoever holds the link during its ten
+  minutes can read the object. That is why it is minted per render and never
+  written into a cached page, a log or a database column.
+* A file that passes validation is not proven to be *innocuous* content — a valid
+  PDF can still be a PDF nobody wants. The type, size, namespace and ownership
+  rules are enforced; content scanning is deliberately out of scope (see above).
+* Duplicate uploads are allowed: there is no content-addressed store, so an
+  identical image uploaded twice is stored twice. That is a cost decision, not a
+  security one.
+* Storage failures are reported honestly. No upload reports success that did not
+  become an active, head-verified object.
+
+## Building with no database or storage
+
+Phase 18 keeps the build independent of both: `.data/` deleted, `DB_*` unset and
+`STORAGE_*` unset must still `npm run build`. Nothing reads storage at build
+time, every page that touches media is dynamic, and the media route is
+`force-dynamic`. `next.config.ts` derives `images.remotePatterns` from
+`STORAGE_PUBLIC_BASE_URL` only (never `*`), so an arbitrary external image URL
+cannot become an editable input.
+
+## Operations
+
+* **Buckets.** Two policies are expected: a public bucket readable by anyone (or
+  fronted by a CDN) and a private bucket readable by **no one but the app's
+  credentials**. No `s3:ListBucket` for anonymous callers; no public ACL on the
+  private bucket; block public access on it.
+* **CORS.** Only needed if the browser uploads directly to the store. This
+  implementation uploads through a server action, so no CORS rule is required;
+  if that changes, allow `PUT`/`GET` from the app origin only.
+* **Signed-URL TTL.** 600 seconds for private reads, capped at 900. Public
+  objects are immutable-by-key: a replacement is a new key, which is what makes
+  `Cache-Control: immutable` honest.
+* **Limits and types.** Profile image ≤ 5 MB, course cover ≤ 8 MB, document ≤ 10
+  MB, ≤ 4 documents and ≤ 30 MB per submission; JPEG/PNG/WEBP for images,
+  plus PDF for documents. SVG, HTML, XML and archives (ZIP/DOCX) are refused by
+  content, not by name.
+* **Production migration order.** (1) apply migrations; (2) create the two
+  buckets and the credentials; (3) set the `STORAGE_*` variables; (4) set
+  `STORAGE_PUBLIC_BASE_URL` to the CDN origin; (5) verify with
+  `npm run storage:status`; (6) run `npm run storage:cleanup -- --dry-run`
+  before trusting the first real sweep.
+
+## Commands
+
+```
+npm run test:media       # 159 assertions: privacy + abuse matrices, lifecycle, route, cleanup
+npm run storage:status   # provider + configuration + asset counts per status
+npm run storage:cleanup  # sweep abandoned uploads and orphaned objects
+```
+
+## What Phase 18 does NOT implement
+
+Video uploads, lesson content hosting, arbitrary user file sharing, chat
+attachments, student or homework uploads, certificate generation, OCR, AI
+document analysis, biometric or face matching, an antivirus service, an image
+editor/cropper, multi-image galleries, and reviews. Also deliberately absent: a
+content-addressed store, automatic cleanup scheduling, and any promise that a
+document was scanned.

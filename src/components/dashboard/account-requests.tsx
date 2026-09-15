@@ -2,9 +2,12 @@ import Link from "next/link";
 import { Badge } from "@/components/ui";
 import { EmptyState } from "@/components/dashboard/empty-state";
 import { CancelRequestButton } from "./cancel-request-button";
+import { OpenConversationButton } from "@/components/messaging/open-conversation-button";
 import { PayButton } from "@/components/payments/pay-button";
+import { RefundRequestForm } from "./refund-request-form";
 import { listStudentRequests } from "@/server/enrollment-service";
 import { getPaymentStatusByEnrollment } from "@/server/payments/payment-service";
+import { listStudentRefundsByEnrollment } from "@/server/refund-service";
 import { paymentsEnabled } from "@/server/env";
 import {
   ENROLLMENT_STATUS_LABEL,
@@ -22,7 +25,17 @@ import {
   canRetryPayment,
   paymentStatusTone,
 } from "@/lib/payment-status";
-import { formatSom } from "@/lib/money";
+import {
+  REFUND_FAILED_RETRY_NOTE,
+  REFUND_REQUEST_ACK,
+  REFUND_PROVIDER_PENDING_NOTE,
+  REFUND_STATUS_LABEL,
+  REFUND_STATUS_NOTE,
+  isLiveRefundStatus,
+  refundEligibility,
+  refundStatusTone,
+} from "@/lib/refund";
+import { formatSom, formatTiyin } from "@/lib/money";
 import { focusRing, cn } from "@/lib/utils";
 
 /* -------------------------------------------------------------------------- */
@@ -39,6 +52,13 @@ import { focusRing, cn } from "@/lib/utils";
 /*                                                                              */
 /* HONESTY: a paid student is "to'lov qilindi", never "completed", "active" or  */
 /* "certified". Paying for a course is not finishing it.                        */
+/*                                                                              */
+/* PHASE 17 adds a THIRD, separate fact: the refund. A place can therefore be    */
+/* `accepted` + `succeeded` + "refund requested", and the card says exactly that */
+/* instead of pretending the student is stuck or that the money is already back. */
+/* Eligibility is computed with the SAME pure function the server uses           */
+/* (`refundEligibility`), so the button can never appear where the service would */
+/* refuse — and the server never trusts this render either.                      */
 /* -------------------------------------------------------------------------- */
 
 export async function AccountRequests({ userId }: { userId: string }) {
@@ -49,6 +69,18 @@ export async function AccountRequests({ userId }: { userId: string }) {
     .filter((request) => request.status === "accepted")
     .map((request) => request.id);
   const payments = await getPaymentStatusByEnrollment(acceptedIds);
+  /*
+   * One batched query for the refund projection, scoped to this student.
+   *
+   * EVERY request is included, not only the accepted ones, because a COMPLETED
+   * refund is exactly the case where the enrollment has just become `cancelled`:
+   * filtering by `accepted` here would hide "To'lov qaytarildi" from the student
+   * at the moment it finally became true.
+   */
+  const refundsByEnrollment = await listStudentRefundsByEnrollment(
+    requests.map((request) => request.id),
+    userId,
+  );
   const canPay = paymentsEnabled();
 
   return (
@@ -73,6 +105,22 @@ export async function AccountRequests({ userId }: { userId: string }) {
             const isAccepted = request.status === "accepted";
             const isFree = request.coursePriceUzs === 0;
             const isPaid = payment?.status === "succeeded";
+
+            /*
+             * The refund projection: newest row first, and a LIVE request wins
+             * over any older finished one, because that is the row the student
+             * is waiting on.
+             */
+            const refundRows = refundsByEnrollment.get(request.id) ?? [];
+            const liveRefund = refundRows.find((row) => isLiveRefundStatus(row.status)) ?? null;
+            const refundView = liveRefund ?? refundRows[0] ?? null;
+            const eligibility = refundEligibility({
+              enrollmentStatus: request.status,
+              coursePriceUzs: request.coursePriceUzs,
+              paymentStatus: payment?.status ?? null,
+              hasLiveRefund: Boolean(liveRefund),
+            });
+            const showRefundSection = Boolean(refundView) || isPaid;
 
             // A paid place cannot be self-cancelled: refunds do not exist.
             const contractAllowsCancel = allowedTransitions("student", request.status).includes(
@@ -125,6 +173,22 @@ export async function AccountRequests({ userId }: { userId: string }) {
                   {ENROLLMENT_STATUS_NOTE[request.status]}
                 </p>
 
+                {/*
+                  Phase 16 entry point — shown ONLY for an accepted place, and it
+                  posts an ENROLLMENT id: the server derives both participants.
+                  Payment state is irrelevant here (accepted + unpaid, accepted +
+                  paid and a free course all allow messaging), and a cancelled
+                  request gets no button because its thread is read-only.
+                */}
+                {isAccepted ? (
+                  <div className="border-t border-line pt-2.5">
+                    <OpenConversationButton
+                      enrollmentRequestId={request.id}
+                      label="Ustozga yozish"
+                    />
+                  </div>
+                ) : null}
+
                 {/* Payment detail for an accepted place. */}
                 {isAccepted ? (
                   isFree ? (
@@ -171,6 +235,74 @@ export async function AccountRequests({ userId }: { userId: string }) {
                       ) : null}
                     </div>
                   )
+                ) : null}
+
+                {/*
+                  Phase 17 — the refund path, rendered whenever money is on this
+                  enrollment OR there is a refund to report. A completed refund
+                  keeps the section visible even though the enrollment is now
+                  `cancelled`, because that is exactly when the student needs to
+                  read "To'lov qaytarildi" instead of watching the card vanish.
+                */}
+                {showRefundSection ? (
+                  <div className="flex flex-col gap-2 border-t border-line pt-2.5">
+                    <p className="text-sm font-semibold text-ink-900">Pulni qaytarish</p>
+
+                    {refundView ? (
+                      <>
+                        {/*
+                          A RECEIPT RENDERED BY THE SERVER, not a toast.
+                          The client island cannot be the only place a
+                          confirmation lives: the card's shape changes the moment
+                          the request exists, and a re-render would take the
+                          island's local state with it. A live `requested` row is
+                          itself the receipt, so it is rendered from the row.
+                        */}
+                        {refundView.status === "requested" ? (
+                          <p role="status" className="text-sm font-medium text-emerald-800">
+                            {REFUND_REQUEST_ACK}
+                          </p>
+                        ) : null}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant={refundStatusTone(refundView.status)}>
+                            {REFUND_STATUS_LABEL[refundView.status]}
+                          </Badge>
+                          {/* Full refund only: the payment's immutable snapshot. */}
+                          <span className="text-sm text-ink-500">
+                            {formatTiyin(refundView.amountTiyin)}
+                          </span>
+                        </div>
+                        <p className="text-sm text-ink-500">
+                          {REFUND_STATUS_NOTE[refundView.status]}
+                        </p>
+                        {refundView.adminFeedback ? (
+                          <p className="text-sm text-ink-700">
+                            Administrator izohi: {refundView.adminFeedback}
+                          </p>
+                        ) : null}
+                        {refundView.status === "awaiting_provider" ? (
+                          <p className="text-sm text-ink-500">{REFUND_PROVIDER_PENDING_NOTE}</p>
+                        ) : null}
+                        {refundView.status === "rejected" || refundView.status === "failed" ? (
+                          <p className="text-sm text-ink-500">{REFUND_FAILED_RETRY_NOTE}</p>
+                        ) : null}
+                        {refundView.systemInitiated ? (
+                          <p className="text-sm text-ink-500">
+                            Bu qaytarish provayder tomonidan amalga oshirildi.
+                          </p>
+                        ) : null}
+                      </>
+                    ) : null}
+
+                    {eligibility.eligible ? (
+                      <RefundRequestForm
+                        enrollmentRequestId={request.id}
+                        amountLabel={payment ? formatTiyin(payment.amountTiyin) : ""}
+                      />
+                    ) : refundView ? null : (
+                      <p className="text-sm text-ink-500">{eligibility.reason}</p>
+                    )}
+                  </div>
                 ) : null}
 
                 {request.status === "rejected" && request.decisionReason ? (

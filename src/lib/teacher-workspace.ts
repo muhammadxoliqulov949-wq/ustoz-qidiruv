@@ -311,7 +311,14 @@ export function hasTeacherDraft(answers: TeacherAnswers): boolean {
 export interface TeacherNavItem {
   href: string;
   label: string;
-  icon: "overview" | "courses" | "requests" | "profile" | "notifications";
+  icon:
+    | "overview"
+    | "courses"
+    | "requests"
+    | "verification"
+    | "messages"
+    | "profile"
+    | "notifications";
   description: string;
 }
 
@@ -330,10 +337,23 @@ export const TEACHER_NAV: readonly TeacherNavItem[] = [
     description: "Katalogdagi kurslaringiz, guruhlar va joylar.",
   },
   {
+    href: "/teacher/dashboard/verification",
+    label: "Tasdiqlash",
+    icon: "verification",
+    description: "Profil tasdig‘i holati va ariza yuborish.",
+  },
+  {
     href: "/teacher/dashboard/requests",
     label: "So‘rovlar",
     icon: "requests",
     description: "Kelgan yozilish so‘rovlarini qabul qilish yoki rad etish.",
+  },
+  {
+    // Phase 16. Threads exist only for enrollments this teacher accepted.
+    href: "/teacher/dashboard/messages",
+    label: "Xabarlar",
+    icon: "messages",
+    description: "Qabul qilingan o‘quvchilar bilan shaxsiy suhbatlar.",
   },
   {
     href: "/notifications",

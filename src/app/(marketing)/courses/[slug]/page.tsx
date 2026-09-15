@@ -17,11 +17,7 @@ import { SectionNav, type CourseSection } from "@/components/course-detail/secti
 import { categories } from "@/data/categories";
 import { courseFormatLabels, courseLevelLabels } from "@/data/courses";
 import { formatCount } from "@/lib/format";
-import {
-  getPublicCourseBySlug,
-  getPublicTeacherById,
-  listPublicCourseSlugs,
-} from "@/server/public-repo";
+import { getPublicCourseBySlug, getPublicTeacherById } from "@/server/public-repo";
 import { cn, focusRing } from "@/lib/utils";
 
 /* -------------------------------------------------------------------------- */
@@ -34,8 +30,13 @@ import { cn, focusRing } from "@/lib/utils";
 /* RENDERING: dynamic SSR. Group availability is derived from live enrollment  */
 /* rows, and a course can be edited or unpublished at any time, so caching a   */
 /* build-time snapshot would show stale schedules and seat counts.             */
-/* generateStaticParams still enumerates published slugs so the router knows   */
-/* the valid set; unknown slugs 404 at request time.                           */
+/*                                                                             */
+/* There is deliberately NO generateStaticParams here: this route's data is    */
+/* runtime PostgreSQL, so enumerating slugs would make every deploy depend on  */
+/* a reachable production database during `next build`. `dynamicParams` stays  */
+/* at its default (true), so every slug — including one published AFTER the    */
+/* deploy — resolves on demand, and unknown, draft and unpublished slugs 404   */
+/* at request time through the SQL predicate in getPublicCourseBySlug().       */
 /*                                                                              */
 /* Client islands are unchanged: section nav, group picker, enroll dialog.     */
 /* Group selection remains URL state (`?group=`).                              */
@@ -56,12 +57,6 @@ const SECTIONS: CourseSection[] = [
 const ANCHOR = "scroll-mt-[9.5rem] lg:scroll-mt-[8.5rem]";
 
 const categoryById = new Map(categories.map((category) => [category.id, category]));
-
-/** Known published slugs; anything else 404s at request time. */
-export async function generateStaticParams() {
-  const slugs = await listPublicCourseSlugs();
-  return slugs.map((slug) => ({ slug }));
-}
 
 export async function generateMetadata({
   params,

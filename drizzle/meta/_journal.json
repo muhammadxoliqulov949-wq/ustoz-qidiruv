@@ -36,6 +36,34 @@
       "when": 1789241894469,
       "tag": "0004_phase14_payments",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789381177586,
+      "tag": "0005_phase15_admin_control_plane",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789385031933,
+      "tag": "0006_phase16_messaging",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789388071434,
+      "tag": "0007_phase17_refunds",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789391413622,
+      "tag": "0008_phase18_media",
+      "breakpoints": true
     }
   ]
 }

@@ -70,6 +70,46 @@ const schema = z.object({
   PAYME_CHECKOUT_URL: z.string().url().default("https://checkout.paycom.uz"),
   /** Absolute base URL used to build the post-payment return link. */
   APP_BASE_URL: z.string().url().optional(),
+
+  /* -------------------------------- storage -------------------------------- */
+  /*
+   * Phase 18. Uploads are OFF unless explicitly configured, exactly like
+   * payments: a deployment without object storage must not present an upload
+   * control it cannot honour.
+   *
+   *   disabled — no upload UI, upload actions refuse with honest copy.
+   *   local    — DEVELOPMENT ONLY. Filesystem under STORAGE_LOCAL_DIR. The
+   *              factory refuses this provider when NODE_ENV=production, so a
+   *              missing credential can never fall back to a laptop directory.
+   *   s3       — S3-compatible object storage (AWS S3, Cloudflare R2, MinIO…).
+   */
+  STORAGE_PROVIDER: z.enum(["disabled", "local", "s3"]).default("disabled"),
+  /** Root for the local provider. Gitignored (`.data/`), never web-served. */
+  STORAGE_LOCAL_DIR: z.string().default(".data/storage"),
+  /**
+   * HMAC secret for LOCAL private read URLs. Optional: local is development
+   * only, and the factory supplies a documented dev value. Real private
+   * delivery in production is the provider's own signed URL.
+   */
+  STORAGE_SIGNING_SECRET: z.string().min(1).optional(),
+  /** PRIVATE bucket (verification evidence). */
+  STORAGE_S3_BUCKET: z.string().min(1).optional(),
+  /** PUBLIC bucket (profile images, course covers). Defaults to the same one. */
+  STORAGE_S3_PUBLIC_BUCKET: z.string().min(1).optional(),
+  /** Region or `auto` (Cloudflare R2). */
+  STORAGE_S3_REGION: z.string().min(1).default("auto"),
+  /** Custom endpoint for R2/MinIO. Omit for AWS S3. */
+  STORAGE_S3_ENDPOINT: z.string().url().optional(),
+  STORAGE_S3_ACCESS_KEY_ID: z.string().min(1).optional(),
+  STORAGE_S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  /** MinIO and some gateways need path-style addressing. */
+  STORAGE_S3_FORCE_PATH_STYLE: z.enum(["0", "1"]).default("0"),
+  /**
+   * Unsigned base URL of the PUBLIC namespace (CDN or bucket domain). Required
+   * for s3, because a cover with no publicly addressable URL would be invisible
+   * to the marketplace. MUST expose only the `public/` prefix.
+   */
+  STORAGE_PUBLIC_BASE_URL: z.string().url().optional(),
 });
 
 export type ServerEnv = z.infer<typeof schema>;
@@ -91,6 +131,17 @@ export function serverEnv(): ServerEnv {
     PAYME_MERCHANT_LOGIN: process.env.PAYME_MERCHANT_LOGIN,
     PAYME_CHECKOUT_URL: process.env.PAYME_CHECKOUT_URL,
     APP_BASE_URL: process.env.APP_BASE_URL,
+    STORAGE_PROVIDER: process.env.STORAGE_PROVIDER,
+    STORAGE_LOCAL_DIR: process.env.STORAGE_LOCAL_DIR,
+    STORAGE_SIGNING_SECRET: process.env.STORAGE_SIGNING_SECRET,
+    STORAGE_S3_BUCKET: process.env.STORAGE_S3_BUCKET,
+    STORAGE_S3_PUBLIC_BUCKET: process.env.STORAGE_S3_PUBLIC_BUCKET,
+    STORAGE_S3_REGION: process.env.STORAGE_S3_REGION,
+    STORAGE_S3_ENDPOINT: process.env.STORAGE_S3_ENDPOINT,
+    STORAGE_S3_ACCESS_KEY_ID: process.env.STORAGE_S3_ACCESS_KEY_ID,
+    STORAGE_S3_SECRET_ACCESS_KEY: process.env.STORAGE_S3_SECRET_ACCESS_KEY,
+    STORAGE_S3_FORCE_PATH_STYLE: process.env.STORAGE_S3_FORCE_PATH_STYLE,
+    STORAGE_PUBLIC_BASE_URL: process.env.STORAGE_PUBLIC_BASE_URL,
   });
   if (!parsed.success) {
     // Field NAMES only — never values, so a bad secret cannot be logged.
@@ -183,6 +234,19 @@ export function describeEnv(): Record<string, string | boolean> {
     paymentMode: env.PAYMENT_MODE,
     hasPaymeCredentials:
       env.PAYME_MERCHANT_ID !== undefined && env.PAYME_MERCHANT_KEY !== undefined,
+    // Storage: the provider NAME and booleans only — never a bucket key or a
+    // secret access key.
+    storageProvider: env.STORAGE_PROVIDER,
+    storageConfigured:
+      env.STORAGE_PROVIDER === "local" ||
+      (env.STORAGE_PROVIDER === "s3" &&
+        env.STORAGE_S3_BUCKET !== undefined &&
+        env.STORAGE_S3_ACCESS_KEY_ID !== undefined &&
+        env.STORAGE_S3_SECRET_ACCESS_KEY !== undefined &&
+        env.STORAGE_PUBLIC_BASE_URL !== undefined),
+    hasSignedPrivateReads:
+      env.STORAGE_PROVIDER === "s3" ||
+      (env.STORAGE_PROVIDER === "local" && env.STORAGE_SIGNING_SECRET !== undefined),
   };
 }
 

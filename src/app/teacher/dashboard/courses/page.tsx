@@ -3,6 +3,8 @@ import { DbCoursesPanel } from "@/components/teacher-dashboard/db-courses-panel"
 import { LegacyLocalDrafts } from "@/components/teacher-dashboard/legacy-local-drafts";
 import { requireRolePage } from "@/server/auth/guards";
 import { getTeacherDashboardCourses, getTeacherProfile } from "@/server/repo";
+import { getTeacherModerationStates } from "@/server/moderation-service";
+import type { CourseModerationView } from "@/components/teacher-dashboard/db-courses-panel";
 
 export const metadata: Metadata = { title: "Kurslarim" };
 
@@ -24,10 +26,24 @@ export const dynamic = "force-dynamic";
 
 export default async function TeacherCoursesPage() {
   const user = await requireRolePage("teacher", "/teacher/dashboard/courses");
-  const [{ published, drafts }, profile] = await Promise.all([
+  const [{ published, drafts }, profile, moderationStates] = await Promise.all([
     getTeacherDashboardCourses(user.id),
     getTeacherProfile(user.id),
+    getTeacherModerationStates(user.id),
   ]);
+
+  /*
+   * A serializable moderation snapshot for the panel: the live review state, the
+   * latest decided review and its feedback. Only this account's courses can be in
+   * the map — the service queries by the session user id.
+   */
+  const moderation: Record<string, CourseModerationView> = {};
+  for (const [courseId, state] of moderationStates) {
+    moderation[courseId] = {
+      reviewStatus: state.pendingReview?.status ?? state.latestDecision?.status ?? null,
+      latestFeedback: state.latestDecision?.feedback ?? null,
+    };
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -43,6 +59,7 @@ export default async function TeacherCoursesPage() {
         published={published}
         drafts={drafts}
         teacherSlug={profile?.slug ?? null}
+        moderation={moderation}
       />
       <LegacyLocalDrafts />
     </div>

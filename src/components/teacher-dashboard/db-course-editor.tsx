@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowDown, ArrowUp, Trash2 } from "lucide-react";
-import { Badge, Button, Card } from "@/components/ui";
+import Link from "next/link";
+import { Badge, Button, ButtonLink, Card } from "@/components/ui";
 import { AuthNotice } from "@/components/auth/auth-notice";
 import {
   addCourseGroupAction,
@@ -14,6 +15,17 @@ import {
   setCourseReadyAction,
   updateCourseDraftAction,
 } from "@/server/actions/course-manage";
+import { CourseCoverManager } from "@/components/teacher-dashboard/course-cover-manager";
+import {
+  COURSE_PUBLISHED_EDIT_LOCKED_NOTE,
+  COURSE_STATE_LABEL,
+  COURSE_SUBMITTED_NOTE,
+  COURSE_UNDER_REVIEW_NOTE,
+  canTeacherEdit,
+  isLockedForTeacher,
+  isUnderReview,
+} from "@/lib/course-moderation";
+import { formatUzDate } from "@/lib/uz-date";
 
 /* -------------------------------------------------------------------------- */
 /* Server-backed course editor — Phase 12.                                     */
@@ -21,8 +33,10 @@ import {
 /* Every mutation is a SERVER ACTION. The only identifiers this component sends */
 /* are the course/group/module ids it was rendered with; the server re-checks   */
 /* ownership against the session on every call, so nothing here is trusted.     */
-/* No status control is offered beyond "ready for review" — publishing is not   */
-/* a teacher-side action.                                                       */
+/* Phase 15: "ready for review" is now a REAL submission — it puts the course   */
+/* into the admin moderation queue and freezes editing until the admin decides   */
+/* or the teacher withdraws it. Publishing remains an admin action; there is no  */
+/* control here that could set `published`, and the server refuses one anyway.   */
 /*                                                                              */
 /* State lives on the server: after each action the router refreshes and the    */
 /* page re-reads the database, so a reload (or a restart) shows the same data.  */
@@ -50,7 +64,8 @@ export interface DbCourseEditorProps {
   course: {
     id: string;
     slug: string;
-    status: string;
+    /** Narrowed to the real lifecycle: the DB column is this enum. */
+    status: "draft" | "ready" | "published";
     title: string;
     categoryId: string;
     level: string;
@@ -60,11 +75,27 @@ export interface DbCourseEditorProps {
     priceUzs: number;
     summary: string;
     longDescription: string;
+    /** LEGACY seed/static cover. Managed cover wins; this stays the fallback. */
+    image: string | null;
   };
   groups: EditorGroup[];
   modules: EditorModule[];
   categories: { id: string; name: string }[];
   cities: string[];
+  /** Phase 18: managed cover state (url + whether the teacher may change it). */
+  cover: {
+    url: string | null;
+    editable: boolean;
+    lockedNote: string | null;
+    storageNote: string | null;
+  };
+  /** Phase 15: the live review / latest decision for this course, if any. */
+  moderation: {
+    reviewStatus: "pending" | "approved" | "changes_requested" | null;
+    submittedAt: Date | null;
+    latestFeedback: string | null;
+    pending: boolean;
+  };
 }
 
 const WEEKDAYS = ["Du", "Se", "Ch", "Pa", "Ju", "Sh", "Ya"];
@@ -78,6 +109,8 @@ export function DbCourseEditor({
   modules,
   categories,
   cities,
+  cover,
+  moderation,
 }: DbCourseEditorProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -102,7 +135,16 @@ export function DbCourseEditor({
     };
   }
 
-  const isPublished = course.status === "published";
+  /*
+   * The authoring freeze, computed from the same shared contract the server
+   * enforces in `course-manage.assertEditable`. This drives the UI only: every
+   * mutation re-checks it server-side, so a stale tab or a re-enabled control
+   * cannot edit a course that is in review or already published.
+   */
+  const editable = canTeacherEdit(course.status);
+  const underReview = isUnderReview(course.status);
+  const published = isLockedForTeacher(course.status);
+  const missingForSubmission = groups.length === 0 || modules.length === 0;
 
   return (
     <div className="flex flex-col gap-8">
@@ -119,16 +161,61 @@ export function DbCourseEditor({
         </p>
       ) : null}
 
-      {isPublished ? (
-        <AuthNotice title="Bu kurs katalogda">
-          O‘zgarishlar ommaviy sahifada darhol ko‘rinadi.
+      {published ? (
+        <AuthNotice title="Bu kurs katalogda e’lon qilingan">
+          {COURSE_PUBLISHED_EDIT_LOCKED_NOTE}
+        </AuthNotice>
+      ) : underReview ? (
+        <AuthNotice title="Kurs ko‘rib chiqish uchun yuborilgan">
+          {COURSE_UNDER_REVIEW_NOTE}
         </AuthNotice>
       ) : (
         <AuthNotice title="Bu kurs hali ommaviy emas">
           Qoralama serverda saqlanadi, lekin katalogda, qidiruvda va profilingizda
-          ko‘rinmaydi. To‘liq to‘ldirilgani uni avtomatik e’lon qilmaydi.
+          ko‘rinmaydi. Ko‘rib chiqishga yuborilishi ham uni avtomatik e’lon
+          qilmaydi — e’lon qilishni administrator tasdiqlaydi.
         </AuthNotice>
       )}
+
+      <CourseCoverManager
+        courseId={course.id}
+        coverUrl={cover.url ?? course.image}
+        editable={cover.editable}
+        lockedNote={cover.lockedNote}
+        storageNote={cover.storageNote}
+      />
+
+      {moderation.latestFeedback ? (
+        <div className="rounded-xl border border-line bg-surface-muted p-4">
+          <h2 className="text-base font-semibold text-ink-900">
+            Moderator izohi
+            {moderation.reviewStatus === "changes_requested" ? " — o‘zgartirish so‘ralgan" : ""}
+          </h2>
+          <p className="mt-1 max-w-prose text-base leading-relaxed text-ink-700">
+            {moderation.latestFeedback}
+          </p>
+          {moderation.reviewStatus === "changes_requested" ? (
+            <p className="mt-2 text-sm text-ink-500">
+              Tuzatib bo‘lgach kursni qayta ko‘rib chiqishga yuborishingiz mumkin.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/*
+        * ONE fieldset covers every content mutation. `disabled` on a fieldset
+        * disables its whole subtree at the platform level, so a frozen course
+        * cannot be edited by tabbing into a stray control — the server refuses
+        * the write in any case.
+        */}
+      <fieldset
+        disabled={!editable}
+        aria-describedby={!editable ? "course-lock-reason" : undefined}
+        className="flex flex-col gap-8"
+      >
+        <legend className="sr-only">
+          Kurs mazmuni{editable ? "" : " (hozir tahrirlash yopiq)"}
+        </legend>
 
       {/* ------------------------------- body -------------------------------- */}
       <Card>
@@ -396,28 +483,81 @@ export function DbCourseEditor({
         </form>
       </Card>
 
+      </fieldset>
+
       {/* ------------------------------ lifecycle ----------------------------- */}
-      {!isPublished ? (
-        <Card>
-          <h2 className="text-xl font-semibold text-ink-900">Holat</h2>
-          <p className="mt-1 text-sm text-ink-500">
-            Hozirgi holat:{" "}
-            <strong className="text-ink-900">
-              {course.status === "ready" ? "Ko‘rib chiqishga tayyor" : "Qoralama"}
-            </strong>
-            . Bu belgi kursni ommaviy qilmaydi.
-          </p>
-          <form className="mt-4" onSubmit={run(setCourseReadyAction)}>
-            <input type="hidden" name="courseId" value={course.id} />
-            <input type="hidden" name="ready" value={course.status === "ready" ? "0" : "1"} />
-            <Button type="submit" variant="outline" disabled={pending}>
-              {course.status === "ready"
-                ? "Qoralamaga qaytarish"
-                : "Ko‘rib chiqishga tayyor deb belgilash"}
-            </Button>
-          </form>
-        </Card>
-      ) : null}
+      <Card>
+        <h2 className="text-xl font-semibold text-ink-900">Holat va ko‘rib chiqish</h2>
+        <p className="mt-1 text-base text-ink-700">
+          Hozirgi holat: <strong className="text-ink-900">{COURSE_STATE_LABEL[course.status]}</strong>
+        </p>
+
+        {underReview ? (
+          <div id="course-lock-reason" className="mt-3 flex flex-col gap-2">
+            <p className="text-base leading-relaxed text-ink-700">{COURSE_SUBMITTED_NOTE}</p>
+            {moderation.submittedAt ? (
+              <p className="text-sm text-ink-500">
+                Yuborilgan sana:{" "}
+                <time dateTime={moderation.submittedAt.toISOString()}>
+                  {formatUzDate(moderation.submittedAt)}
+                </time>
+              </p>
+            ) : null}
+            <form onSubmit={run(setCourseReadyAction)}>
+              <input type="hidden" name="courseId" value={course.id} />
+              {/* "0" is a WITHDRAWAL of an undecided request, not a decision. */}
+              <input type="hidden" name="ready" value="0" />
+              <Button type="submit" variant="outline" disabled={pending}>
+                Arizani qaytarib olish
+              </Button>
+            </form>
+          </div>
+        ) : published ? (
+          <div id="course-lock-reason" className="mt-3 flex flex-col gap-3">
+            <p className="text-base leading-relaxed text-ink-700">
+              {COURSE_PUBLISHED_EDIT_LOCKED_NOTE}
+            </p>
+            <div>
+              <ButtonLink href={`/courses/${course.slug}`} variant="outline" size="sm">
+                Ommaviy sahifani ko‘rish
+              </ButtonLink>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-3 flex flex-col gap-3">
+            <p className="max-w-prose text-base leading-relaxed text-ink-700">
+              Ko‘rib chiqishga yuborilganda kurs administrator navbatiga tushadi.
+              U tasdiqlaguncha kurs ommaviy saytda ko‘rinmaydi, tahrirlash esa
+              vaqtincha yopiladi.
+            </p>
+            {missingForSubmission ? (
+              <p className="rounded-lg border border-line bg-surface-muted px-4 py-3 text-sm leading-relaxed text-ink-700">
+                <span className="font-medium text-ink-900">Hozir yuborib bo‘lmaydi. </span>
+                {groups.length === 0
+                  ? "Kamida bitta guruh qo‘shing — guruhsiz kursni ko‘rib chiqishga yuborib bo‘lmaydi."
+                  : "Kamida bitta o‘quv dasturi modulini qo‘shing."}
+              </p>
+            ) : null}
+            <form onSubmit={run(setCourseReadyAction)}>
+              <input type="hidden" name="courseId" value={course.id} />
+              <input type="hidden" name="ready" value="1" />
+              <Button type="submit" disabled={pending || missingForSubmission}>
+                Ko‘rib chiqishga yuborish
+              </Button>
+            </form>
+            <p className="text-sm text-ink-500">
+              E’lon qilishni faqat administrator amalga oshiradi.{" "}
+              <Link
+                href="/teacher/dashboard/verification"
+                className="font-medium text-accent-700 underline underline-offset-2"
+              >
+                Profil tasdig‘i holati
+              </Link>{" "}
+              ham e’lon qilish shartlaridan biri.
+            </p>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

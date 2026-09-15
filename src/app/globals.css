@@ -183,6 +183,24 @@
     @apply bg-canvas font-sans text-ink-900 antialiased;
   }
 
+  /*
+   * Phase 17 a11y. The OS "reduce motion" setting is honoured globally, not
+   * only for the anchor scrolling above: approving or rejecting a refund is a
+   * financial decision and must not slide, fade or bounce for a user who asked
+   * their system for calm. 0s (not a tiny duration) is deliberate — "reduced"
+   * means no motion, and it keeps the computed style trivially assertable.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0s !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0s !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
   ::selection {
     background-color: color-mix(in oklab, var(--color-accent-600) 18%, white);
   }

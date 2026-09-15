@@ -13,6 +13,13 @@ import {
   syllabusModuleSchema,
   type ActionResult,
 } from "../validation";
+import { ensureModerationReview } from "../moderation-service";
+import {
+  COURSE_PUBLISHED_EDIT_LOCKED_NOTE,
+  COURSE_UNDER_REVIEW_NOTE,
+  isLockedForTeacher,
+  isUnderReview,
+} from "@/lib/course-moderation";
 
 /* -------------------------------------------------------------------------- */
 /* Server-side course management — Phase 12.                                   */
@@ -73,6 +80,32 @@ async function requireOwnedCourse(courseId: string, teacherUserId: string) {
   return rows[0] ?? null;
 }
 
+/**
+ * Phase 15 edit lock — the ONE place the authoring freeze is expressed.
+ *
+ * A course is frozen for two different reasons, and they produce different
+ * messages because the teacher can only act on one of them:
+ *   • `ready`     — an admin has it open. An edit now would make the decision
+ *                   describe a version of the course that no longer exists, so
+ *                   the teacher must withdraw the submission first.
+ *   • `published` — it is a live listing. Editing live marketplace content is
+ *                   not part of this phase (see README), and there is no
+ *                   unpublish action to fall back on.
+ *
+ * Returns a refusal ActionResult when the write must not proceed, else null.
+ * Every content mutation below calls this, so the rule cannot be applied in one
+ * route and forgotten in another.
+ */
+function assertEditable(owned: { status: "draft" | "ready" | "published" }): ActionResult | null {
+  if (isUnderReview(owned.status)) {
+    return { ok: false, code: "invalid_input", message: COURSE_UNDER_REVIEW_NOTE };
+  }
+  if (isLockedForTeacher(owned.status)) {
+    return { ok: false, code: "invalid_input", message: COURSE_PUBLISHED_EDIT_LOCKED_NOTE };
+  }
+  return null;
+}
+
 /* ------------------------------ course body ------------------------------- */
 
 /**
@@ -88,6 +121,8 @@ export async function updateCourseDraftAction(form: FormData): Promise<ActionRes
     const courseId = String(form.get("courseId") ?? "");
     const owned = await requireOwnedCourse(courseId, user.id);
     if (!owned) return { ok: false, code: "not_found", message: "Kurs topilmadi." };
+    const locked = assertEditable(owned);
+    if (locked) return locked;
 
     const format = String(form.get("format") ?? "");
     const cityRaw = String(form.get("city") ?? "");
@@ -139,31 +174,144 @@ export async function updateCourseDraftAction(form: FormData): Promise<ActionRes
 }
 
 /**
- * draft ⇄ ready. `ready` means "the teacher considers this finished"; it does
- * NOT make the course public, and the public queries ignore it entirely.
+ * Submit an owned course for moderation, or withdraw a pending submission.
+ *
+ * `ready` is a REQUEST, not an outcome: it moves the course into the admin
+ * moderation queue and creates exactly one live review. The course stays
+ * private and no copy anywhere calls it "published".
+ *
+ * SUBMISSION REQUIREMENTS are validated HERE, under the course row lock — the
+ * disabled button in the editor is convenience, this is the control:
+ *   • the course is a draft (a published course can never re-enter review);
+ *   • it has at least one group (a course with no schedule cannot be enrolled
+ *     in, and the public detail page requires one);
+ *   • it has at least one syllabus module (the detail page renders the program).
+ *
+ * IDEMPOTENT: submitting twice reuses the existing live review instead of
+ * queueing a second one, so a double click cannot duplicate admin work.
+ *
+ * WITHDRAWAL (`ready → draft`) removes the still-undecided request. It is not a
+ * decision, so it writes no audit row and no notification — the admin audit log
+ * records admin actions only — and the partial unique index then permits a
+ * fresh submission.
  */
 export async function setCourseReadyAction(form: FormData): Promise<ActionResult> {
   try {
     const user = await requireRole("teacher");
     const courseId = String(form.get("courseId") ?? "");
-    const next = String(form.get("ready") ?? "") === "1" ? "ready" : "draft";
+    const submitting = String(form.get("ready") ?? "") === "1";
     const owned = await requireOwnedCourse(courseId, user.id);
     if (!owned) return { ok: false, code: "not_found", message: "Kurs topilmadi." };
-    if (owned.status === "published") {
-      // Unpublishing is not part of Phase 12; refuse rather than pretend.
-      return invalid("E’lon qilingan kursning holatini bu yerdan o‘zgartirib bo‘lmaydi.");
+
+    if (isLockedForTeacher(owned.status)) {
+      return invalid(COURSE_PUBLISHED_EDIT_LOCKED_NOTE);
     }
 
     const db = getDb();
-    await db
-      .update(schema.courses)
-      .set({ status: next, updatedAt: new Date() })
-      .where(and(eq(schema.courses.id, courseId), eq(schema.courses.teacherUserId, user.id)));
+
+    /* ------------------------------- withdraw ------------------------------- */
+    if (!submitting) {
+      if (!isUnderReview(owned.status)) {
+        // Already a draft: nothing to do, and not an error.
+        return { ok: true };
+      }
+      await db.transaction(async (tx) => {
+        await tx.execute(
+          sql`SELECT id FROM courses WHERE id = ${courseId} AND teacher_user_id = ${user.id} FOR UPDATE`,
+        );
+        await tx
+          .update(schema.courses)
+          .set({ status: "draft", updatedAt: new Date() })
+          .where(and(eq(schema.courses.id, courseId), eq(schema.courses.teacherUserId, user.id)));
+        // Only the undecided request is removed; decided reviews are history.
+        await tx
+          .delete(schema.courseModerationReviews)
+          .where(
+            and(
+              eq(schema.courseModerationReviews.courseId, courseId),
+              eq(schema.courseModerationReviews.status, "pending"),
+            ),
+          );
+      });
+      revalidateCourse(owned.slug);
+      revalidateModerationSurfaces(courseId);
+      return { ok: true };
+    }
+
+    /* -------------------------------- submit -------------------------------- */
+    const result = await db.transaction(async (tx) => {
+      // Serialisation point: a concurrent submit waits, then sees the review.
+      await tx.execute(
+        sql`SELECT id FROM courses WHERE id = ${courseId} AND teacher_user_id = ${user.id} FOR UPDATE`,
+      );
+
+      const currentRows = await tx
+        .select({ status: schema.courses.status })
+        .from(schema.courses)
+        .where(and(eq(schema.courses.id, courseId), eq(schema.courses.teacherUserId, user.id)))
+        .limit(1);
+      const current = currentRows[0];
+      if (!current) return { ok: false as const, code: "not_found" as const };
+
+      if (current.status === "published") return { ok: false as const, code: "published" as const };
+
+      const [groupRows, moduleRows] = await Promise.all([
+        tx
+          .select({ id: schema.courseGroups.id })
+          .from(schema.courseGroups)
+          .where(eq(schema.courseGroups.courseId, courseId))
+          .limit(1),
+        tx
+          .select({ id: schema.syllabusModules.id })
+          .from(schema.syllabusModules)
+          .where(eq(schema.syllabusModules.courseId, courseId))
+          .limit(1),
+      ]);
+      if (groupRows.length === 0) return { ok: false as const, code: "no_groups" as const };
+      if (moduleRows.length === 0) return { ok: false as const, code: "no_modules" as const };
+
+      await tx
+        .update(schema.courses)
+        .set({ status: "ready", updatedAt: new Date() })
+        .where(and(eq(schema.courses.id, courseId), eq(schema.courses.teacherUserId, user.id)));
+
+      // Exactly one live review, created in the same transaction as `ready`.
+      await ensureModerationReview(tx, { courseId, teacherUserId: user.id });
+
+      return { ok: true as const, code: "submitted" as const };
+    });
+
+    if (!result.ok) {
+      if (result.code === "not_found") {
+        return { ok: false, code: "not_found", message: "Kurs topilmadi." };
+      }
+      if (result.code === "published") {
+        return invalid(COURSE_PUBLISHED_EDIT_LOCKED_NOTE);
+      }
+      if (result.code === "no_groups") {
+        return invalid("Kamida bitta guruh qo‘shing — guruhsiz kursni ko‘rib chiqishga yuborib bo‘lmaydi.");
+      }
+      return invalid("Kamida bitta o‘quv dasturi modulini qo‘shing.");
+    }
+
     revalidateCourse(owned.slug);
+    revalidateModerationSurfaces(courseId);
     return { ok: true };
   } catch (error) {
     return failure("setCourseReadyAction", error);
   }
+}
+
+/**
+ * Refresh the surfaces that observe the moderation queue. Kept in this module
+ * (rather than an inline list per action) so a submission and a withdrawal
+ * cannot revalidate different sets of pages.
+ */
+function revalidateModerationSurfaces(courseId: string): void {
+  revalidatePath("/admin");
+  revalidatePath("/admin/courses");
+  if (courseId) revalidatePath(`/admin/courses/${courseId}`);
+  revalidatePath("/teacher/dashboard/courses");
 }
 
 /* --------------------------------- groups --------------------------------- */
@@ -190,6 +338,8 @@ export async function addCourseGroupAction(form: FormData): Promise<ActionResult
     }
     const owned = await requireOwnedCourse(parsed.data.courseId, user.id);
     if (!owned) return { ok: false, code: "not_found", message: "Kurs topilmadi." };
+    const locked = assertEditable(owned);
+    if (locked) return locked;
 
     const db = getDb();
     await db.insert(schema.courseGroups).values({
@@ -223,13 +373,19 @@ export async function deleteCourseGroupAction(form: FormData): Promise<ActionRes
 
     const db = getDb();
     const rows = await db
-      .select({ id: schema.courseGroups.id, slug: schema.courses.slug })
+      .select({
+        id: schema.courseGroups.id,
+        slug: schema.courses.slug,
+        status: schema.courses.status,
+      })
       .from(schema.courseGroups)
       .innerJoin(schema.courses, eq(schema.courses.id, schema.courseGroups.courseId))
       .where(and(eq(schema.courseGroups.id, groupId), eq(schema.courses.teacherUserId, user.id)))
       .limit(1);
     const found = rows[0];
     if (!found) return { ok: false, code: "not_found", message: "Guruh topilmadi." };
+    const lockedGroup = assertEditable(found);
+    if (lockedGroup) return lockedGroup;
 
     const used = await db
       .select({ id: schema.enrollmentRequests.id })
@@ -279,6 +435,8 @@ export async function addSyllabusModuleAction(form: FormData): Promise<ActionRes
     }
     const owned = await requireOwnedCourse(parsed.data.courseId, user.id);
     if (!owned) return { ok: false, code: "not_found", message: "Kurs topilmadi." };
+    const locked = assertEditable(owned);
+    if (locked) return locked;
 
     const db = getDb();
     await db.transaction(async (tx) => {
@@ -327,6 +485,7 @@ export async function moveSyllabusModuleAction(form: FormData): Promise<ActionRe
         id: schema.syllabusModules.id,
         courseId: schema.syllabusModules.courseId,
         slug: schema.courses.slug,
+        status: schema.courses.status,
       })
       .from(schema.syllabusModules)
       .innerJoin(schema.courses, eq(schema.courses.id, schema.syllabusModules.courseId))
@@ -334,6 +493,8 @@ export async function moveSyllabusModuleAction(form: FormData): Promise<ActionRe
       .limit(1);
     const found = rows[0];
     if (!found) return { ok: false, code: "not_found", message: "Modul topilmadi." };
+    const lockedMove = assertEditable(found);
+    if (lockedMove) return lockedMove;
 
     await db.transaction(async (tx) => {
       const ordered = await tx
@@ -388,6 +549,7 @@ export async function deleteSyllabusModuleAction(form: FormData): Promise<Action
         courseId: schema.syllabusModules.courseId,
         position: schema.syllabusModules.position,
         slug: schema.courses.slug,
+        status: schema.courses.status,
       })
       .from(schema.syllabusModules)
       .innerJoin(schema.courses, eq(schema.courses.id, schema.syllabusModules.courseId))
@@ -395,6 +557,8 @@ export async function deleteSyllabusModuleAction(form: FormData): Promise<Action
       .limit(1);
     const found = rows[0];
     if (!found) return { ok: false, code: "not_found", message: "Modul topilmadi." };
+    const lockedDelete = assertEditable(found);
+    if (lockedDelete) return lockedDelete;
 
     await db.transaction(async (tx) => {
       await tx.delete(schema.syllabusModules).where(eq(schema.syllabusModules.id, moduleId));

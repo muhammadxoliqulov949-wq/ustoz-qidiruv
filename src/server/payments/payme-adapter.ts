@@ -17,6 +17,7 @@ import {
   readTransactionId,
   type PaymeRpcResponse,
 } from "./payme-protocol";
+import { reconcileProviderRefund } from "../refund-service";
 import {
   createProviderTransaction,
   findActiveTransactionForPayment,
@@ -251,12 +252,59 @@ async function cancelTransaction({ id, params }: Rpc): Promise<PaymeRpcResponse>
   const existing = await findProviderTransaction(transactionId);
   if (!existing) return paymeError(id, PAYME_ERROR.TRANSACTION_NOT_FOUND);
 
-  const result = await markCancelled(transactionId, Date.now(), reason);
+  const cancelledAtMs = Date.now();
+
+  /*
+   * PHASE 17 — PROVIDER EVENT → DOMAIN EVENT.
+   *
+   *   Payme `CancelTransaction` on a transaction that was already performed
+   *     → domain event `provider_refund_confirmed`
+   *
+   * That is the ONLY signal in this application that is allowed to complete a
+   * refund, and it is trustworthy precisely because this call has already passed
+   * HTTP Basic authentication against the merchant key and the transaction id is
+   * matched to a payment we created.
+   *
+   * The hook runs inside the cancellation transaction, so the protocol state
+   * (-2), the refund record and the enrollment cancellation commit together.
+   * A future CLICK adapter emits the same domain event; nothing outside the
+   * provider modules needs to change.
+   */
+  const result = await markCancelled(transactionId, cancelledAtMs, reason, {
+    onCancelledAfterPerform: async (tx, info) => {
+      await reconcileProviderRefund(
+        {
+          providerTransactionId: info.providerTransactionId,
+          reasonCode: info.reasonCode,
+          cancelledAtMs: info.cancelledAtMs,
+        },
+        tx,
+      );
+    },
+  });
   if (!result.ok) {
     if (result.code === "not_found") {
       return paymeError(id, PAYME_ERROR.TRANSACTION_NOT_FOUND);
     }
     return paymeError(id, PAYME_ERROR.INTERNAL);
+  }
+
+  /*
+   * IDEMPOTENT RETRY. Payme repeats CancelTransaction after a lost response.
+   * Nothing was written this time, but if the transaction had been performed the
+   * reconciliation is re-attempted: it is a no-op when the refund record already
+   * exists and self-healing if a previous attempt died between the two writes.
+   * Either way the response below is byte-identical to the first one.
+   */
+  if (
+    result.alreadyCancelled &&
+    result.transaction.state === PAYME_STATE.CANCELLED_AFTER_PERFORM
+  ) {
+    await reconcileProviderRefund({
+      providerTransactionId: transactionId,
+      reasonCode: reason,
+      cancelledAtMs: Number(result.transaction.cancelledAt ?? cancelledAtMs),
+    });
   }
 
   return paymeResult(id, {

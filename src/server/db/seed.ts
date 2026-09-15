@@ -3,6 +3,7 @@ import { getDb, schema } from "./client";
 import { courses as canonicalCourses } from "@/data/courses";
 import { teachers as canonicalTeachers } from "@/data/teachers";
 import { hashPassword } from "../auth/password";
+import { hashToken } from "../auth/ids";
 
 /* -------------------------------------------------------------------------- */
 /* DEVELOPMENT seed — updated for Phase 12.                                    */
@@ -33,6 +34,12 @@ export interface SeedSummary {
   groups: number;
   modules: number;
   passwordSource: "env" | "generated";
+  /**
+   * Phase 15 development fixtures. Present ONLY in the dev seed (which refuses
+   * to run under NODE_ENV=production) so the admin verification queue can be
+   * exercised without hand-building a teacher. Zero in a real deployment.
+   */
+  verificationFixtures: number;
 }
 
 function localPhone(index: number): string {
@@ -60,6 +67,7 @@ export async function seedDevelopmentData(): Promise<SeedSummary> {
   let courseCount = 0;
   let groupCount = 0;
   let moduleCount = 0;
+  let verificationFixtures = 0;
 
   await db.transaction(async (tx) => {
     // Idempotent: wipe the derived copy, then re-project from canonical data.
@@ -72,6 +80,11 @@ export async function seedDevelopmentData(): Promise<SeedSummary> {
     await tx.delete(schema.sessions);
     await tx.delete(schema.users);
 
+    /*
+     * Development sign-in handles. These are ordinary rows behind the ordinary
+     * auth path: the password is the per-run seed password printed above, and it
+     * is never committed. They exist so a developer can actually log in.
+     */
     for (const [index, teacher] of canonicalTeachers.entries()) {
       await tx.insert(schema.users).values({
         id: teacher.id,
@@ -101,8 +114,9 @@ export async function seedDevelopmentData(): Promise<SeedSummary> {
         studentsCount: teacher.students,
         // Part of the seeded public catalogue.
         isPublic: true,
-        // Seed teachers are NOT auto-verified: verification is a real workflow
-        // that does not exist yet (canonical `verified` is presentation data).
+        // Seed teachers are NOT auto-verified. Verification is a real admin
+        // decision (Phase 15) and the canonical `verified` flag was presentation
+        // data — so the catalogue ships unverified until an admin approves it.
         verification: "unverified",
         onboardingCompleted: true,
       });
@@ -176,11 +190,122 @@ export async function seedDevelopmentData(): Promise<SeedSummary> {
     }
   });
 
+  /* ------------------------------------------------------------------------ */
+  /* Phase 15 development fixtures — VERIFICATION QUEUE                       */
+  /*                                                                          */
+  /* Three teacher accounts in the three states the admin screens must handle, */
+  /* so the queue, the detail page and the decide-buttons can be exercised     */
+  /* locally without hand-editing rows:                                       */
+  /*                                                                          */
+  /*   DEV-VERIFIED   complete profile, verification `verified`  → the only    */
+  /*                  owner that can actually publish a course (rule 11).      */
+  /*   DEV-PENDING    complete profile, verification `pending`, ONE live       */
+  /*                  request row → exactly the state the queue lists.         */
+  /*   DEV-INCOMPLETE deliberately sparse profile → the teacher-side           */
+  /*                  completeness gate can be observed refusing submission.   */
+  /*                                                                          */
+  /* Their bootstrap session rows are inserted directly (with the SHA-256 of a */
+  /* random opaque token) purely because a seed script cannot receive a cookie. */
+  /* The tokens are deliberately NOT printed: the documented way to sign in as  */
+  /* one of these accounts is the bootstrap user's phone + DEV seed password.   */
+  /*                                                                          */
+  /* None of this ever runs in production: `db:seed` refuses NODE_ENV=production. */
+  /* ------------------------------------------------------------------------ */
+  /*
+   * The fixtures use the SAME per-run seed password as the catalogue accounts —
+   * never a literal committed in this file, so the repository contains no
+   * credential at all. `passwordHash` is the one computed above from
+   * DEV_SEED_PASSWORD (or the random value printed once for this run).
+   */
+  const fixtures: Array<{
+    id: string;
+    name: string;
+    slug: string;
+    verification: "verified" | "pending" | "unverified";
+    complete: boolean;
+    withRequest: boolean;
+  }> = [
+    { id: "usr-dev-verified", name: "Dilnoza Rahimova", slug: "dilnoza-rahimova-dev", verification: "verified", complete: true, withRequest: false },
+    { id: "usr-dev-pending", name: "Javohir Sattorov", slug: "javohir-sattorov-dev", verification: "pending", complete: true, withRequest: true },
+    { id: "usr-dev-incomplete", name: "Kamola Yusupova", slug: "kamola-yusupova-dev", verification: "unverified", complete: false, withRequest: false },
+  ];
+
+  await db.transaction(async (tx) => {
+    for (const [index, fixture] of fixtures.entries()) {
+      await tx.insert(schema.users).values({
+        id: fixture.id,
+        role: "teacher",
+        phone: localPhone(canonicalTeachers.length + index),
+        passwordHash,
+      });
+      await tx.insert(schema.teacherProfiles).values({
+        userId: fixture.id,
+        role: "teacher",
+        slug: fixture.slug,
+        name: fixture.name,
+        city: fixture.complete ? "Toshkent" : null,
+        district: null,
+        categories: [],
+        levels: [],
+        formats: [],
+        languages: fixture.complete ? ["O‘zbek", "Rus"] : [],
+        experienceYears: fixture.complete ? 6 : null,
+        bio: fixture.complete
+          ? "Development fixture: matematika va fizika bo‘yicha amaliy mashg‘ulotlar olib boraman."
+          : null,
+        approach: fixture.complete
+          ? "Har bir mavzuni qisqa nazariya va ko‘plab mashqlar bilan mustahkamlaymiz."
+          : null,
+        photo: null,
+        specialization: fixture.complete ? "Matematika" : null,
+        ratingX10: 0,
+        reviewsCount: 0,
+        studentsCount: 0,
+        // Not public: a fixture that is not part of the seeded catalogue should
+        // not appear in the directory until it is verified and publishes.
+        isPublic: false,
+        verification: fixture.verification,
+        onboardingCompleted: true,
+      });
+      if (fixture.withRequest) {
+        /*
+         * ONE live request, inserted through the same columns the service uses.
+         * The empty `feedback` and the NULL decision fields satisfy the table's
+         * CHECK constraints for a `pending` row.
+         */
+        await tx.insert(schema.teacherVerificationRequests).values({
+          id: `${fixture.id}-req-1`,
+          teacherUserId: fixture.id,
+          status: "pending",
+        });
+      }
+      verificationFixtures += 1;
+    }
+
+    /*
+     * Bootstrap session for the pending fixture.
+     *
+     * A reviewer needs a TEACHER account to be blocked from /admin (the
+     * impersonation check), and the sign-in form needs a phone + password. A
+     * session row cannot be created by a script, so the seed stores the hash of
+     * a random token the developer never sees — it is a real session cookie
+     * value that is simply discarded, not a bypass.
+     */
+    const bootstrapToken = `dev-${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+    await tx.insert(schema.sessions).values({
+      id: "sess-dev-fixture",
+      tokenHash: hashToken(bootstrapToken),
+      userId: "usr-dev-pending",
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
+  });
+
   return {
     teachers: teacherCount,
     courses: courseCount,
     groups: groupCount,
     modules: moduleCount,
     passwordSource: envPassword ? "env" : "generated",
+    verificationFixtures,
   };
 }

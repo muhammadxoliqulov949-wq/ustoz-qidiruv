@@ -3,6 +3,7 @@ import { RequestsManager } from "@/components/teacher-dashboard/requests-manager
 import { requireRolePage } from "@/server/auth/guards";
 import { getTeacherRequestCounts, listTeacherRequests } from "@/server/enrollment-service";
 import { getPaymentStatusByEnrollment } from "@/server/payments/payment-service";
+import { getTeacherRefundStates } from "@/server/refund-service";
 import type { EnrollmentStatus } from "@/lib/enrollment-status";
 
 export const metadata: Metadata = { title: "So‘rovlar" };
@@ -41,9 +42,19 @@ export default async function TeacherRequestsPage({
   const payments = await getPaymentStatusByEnrollment(
     requests.filter((request) => request.status === "accepted").map((request) => request.id),
   );
+  /*
+   * Phase 17 — the refund projection, batched and scoped to THIS teacher's
+   * courses (the service joins `courses.teacher_user_id`), so a guessed
+   * enrollment id returns nothing. Read-only: a teacher cannot decide a refund.
+   */
+  const refunds = await getTeacherRefundStates(
+    requests.map((request) => request.id),
+    user.id,
+  );
   const rows = requests.map((request) => ({
     ...request,
     paymentStatus: payments.get(request.id)?.status ?? null,
+    refundStatus: refunds.get(request.id) ?? null,
   }));
 
   return (

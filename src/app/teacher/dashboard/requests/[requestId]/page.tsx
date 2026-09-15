@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import { Badge, Card } from "@/components/ui";
 import { RequestDecisionForm } from "@/components/teacher-dashboard/request-decision-form";
+import { OpenConversationButton } from "@/components/messaging/open-conversation-button";
 import { requireRolePage } from "@/server/auth/guards";
 import { getTeacherRequestDetail } from "@/server/enrollment-service";
 import {
@@ -76,6 +77,14 @@ export default async function RequestDetailPage({
           <span className="text-sm text-ink-500">
             Yuborilgan: {formatDate(request.createdAt)}
           </span>
+          {/*
+            Phase 16 entry point. The payload carries the ENROLLMENT id, never a
+            student id, and the conversation is created only for an accepted
+            place. A cancelled request shows nothing here: its thread is history.
+          */}
+          {request.status === "accepted" ? (
+            <OpenConversationButton enrollmentRequestId={request.id} label="O‘quvchiga yozish" />
+          ) : null}
         </div>
       </header>
 

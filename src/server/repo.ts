@@ -1,6 +1,7 @@
 import "server-only";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "./db/client";
+import { publicMediaIndex } from "./file-service";
 
 /* -------------------------------------------------------------------------- */
 /* Read repositories — Phase 11.                                               */
@@ -169,9 +170,28 @@ export async function getTeacherDashboardCourses(teacherUserId: string) {
   }
 
   const withGroups = rows.map((row) => ({ ...row, groups: byCourse.get(row.id) ?? [] }));
+
+  /*
+   * PHASE 18: a managed cover wins, the seeded `/media/...` path stays the
+   * fallback — the teacher's own list must show exactly what the marketplace
+   * will show for a published course.
+   */
+  let withMedia = withGroups;
+  try {
+    const index = await publicMediaIndex({ courseIds: ids });
+    if (index.courseCovers.size > 0) {
+      withMedia = withGroups.map((row) => {
+        const managed = index.courseCovers.get(row.id);
+        return managed ? { ...row, image: managed } : row;
+      });
+    }
+  } catch {
+    withMedia = withGroups;
+  }
+
   return {
-    published: withGroups.filter((row) => row.status === "published"),
-    drafts: withGroups.filter((row) => row.status !== "published"),
+    published: withMedia.filter((row) => row.status === "published"),
+    drafts: withMedia.filter((row) => row.status !== "published"),
   };
 }
 
