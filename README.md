@@ -1778,3 +1778,231 @@ refund adapter, an outbound provider refund call (**none exists**), SMS/email/pu
 delivery, chat changes, LMS or lesson-completion tracking, admin revenue
 analytics, an automatic refund-eligibility rule for the `-31007`
 service-fulfilment case, and Phase 18.
+
+# Phase 18 — secure uploads, verification documents and course media
+
+Phase 18 adds the first byte-level feature to the product: images and documents
+that a teacher uploads. Everything here is built around one rule — **the caller
+never decides what a file is, who may read it, or whether it is done**.
+
+## Two visibility classes, and nothing in between
+
+| Purpose | Visibility | Written by | Read by |
+| --- | --- | --- | --- |
+| `teacher_verification_document` | **private** | the teacher (own account) | the owner, and an admin reviewing a **submitted** application |
+| `teacher_profile_image` | public | the teacher (own account) | anyone (public profile projection) |
+| `course_cover_image` | public | the teacher who **owns the course** | anyone (marketplace projection) |
+
+`visibility` is a **function of purpose**, not a parameter. There is no API that
+accepts a visibility, no upload takes a caller-supplied type, and `file_assets`
+carries CHECK constraints (`file_assets_visibility_matches_purpose`,
+`file_assets_key_namespace`) so a row that contradicts its purpose is refused by
+PostgreSQL — not by the service that happens to be running.
+
+## The storage contract
+
+The application talks to one small interface (`src/server/storage/types.ts`):
+
+```
+putObject · headObject · deleteObject · getPublicUrl · createPrivateReadUrl
+```
+
+Provider internals never leak: no page, action or service imports an SDK, builds
+an S3 hostname, or knows that a bucket exists. `src/server/storage/index.ts` is
+the only factory, and it reads the environment once:
+
+| Variable | Meaning |
+| --- | --- |
+| `STORAGE_PROVIDER` | `disabled` (default) · `local` (development) · `s3` |
+| `STORAGE_LOCAL_DIR` | object root for the local provider (gitignored, default `.data/storage`) |
+| `STORAGE_SIGNING_SECRET` | HMAC secret for private read capabilities |
+| `STORAGE_S3_BUCKET`, `STORAGE_S3_PUBLIC_BUCKET` | private and public buckets |
+| `STORAGE_S3_REGION`, `STORAGE_S3_ENDPOINT`, `STORAGE_S3_ACCESS_KEY_ID`, `STORAGE_S3_SECRET_ACCESS_KEY`, `STORAGE_S3_FORCE_PATH_STYLE` | S3-compatible credentials (AWS, R2, MinIO) |
+| `STORAGE_PUBLIC_BASE_URL` | CDN/base URL public objects are addressed with |
+
+Rules the factory enforces:
+
+* `local` **refuses to run in production** — a filesystem is not durable storage,
+  and a silent production fallback is exactly the failure mode this design
+  avoids. `s3` refuses to start with an incomplete configuration, and the error
+  names the missing **variable names**, never a value.
+* Credentials are server-only. Nothing is prefixed `NEXT_PUBLIC`, nothing is
+  committed, and nothing is ever returned to the browser.
+* The test double (`memory-provider.ts`) implements the **same** contract, so the
+  suite proves contract behaviour rather than the quirks of a mock.
+
+## Upload lifecycle
+
+```
+prepare → object written → provider head-verifies (size + content type)
+        → row activated                    ← only now is the file real
+```
+
+* **Safe ordering.** Upload writes the object, verifies it, and only then flips
+  the `file_assets` row to `active`. Replacement writes the new asset first,
+  swaps the active row second, and leaves the previous object for the cleanup
+  command. Deletion marks the row first and deletes bytes best-effort, so a
+  failed delete leaks bytes instead of breaking a reference.
+* **Layered validation** (`src/lib/media.ts`): size limit per purpose, real
+  magic-byte detection, extension derived from the detected type, loose geometry
+  (a 1×1 avatar is refused), ownership and state re-checked in SQL. The
+  browser's `File.type`, `File.size` and "success" are all treated as claims.
+* **Keys** are server-generated: `<visibility>/<namespace>/<owner-scope>/<id>.<ext>`.
+  The uploaded filename is stored separately, sanitized for display, and is never
+  part of a path.
+* **Statuses**: `pending → active → superseded | deleted`. `superseded` is what a
+  replaced asset becomes; `deleted` is what a removed or abandoned one becomes.
+  Nothing is ever hard-deleted while a verification request still points at it.
+* **Checksums** are optional metadata (integrity aid), not a content-addressed
+  store.
+
+## Verification documents
+
+A verification application is now **document-backed**. Two document types exist,
+and only one is required:
+
+* `identity_document` — required;
+* `qualification_evidence` — optional (a diploma, a certificate).
+
+The trust decision is unchanged and still Phase 15's: an admin approves, rejects
+or returns the application, the database refuses any other transition, and the
+profile column remains a *current state*. What Phase 18 adds is evidence:
+
+* A submission needs a complete profile **and** the active required document
+  (`missing_documents` is the honest refusal otherwise).
+* Submission **freezes** the evidence: while a request is pending the teacher
+  cannot add or remove a document, because the reviewer is reading exactly that
+  set.
+* Historical requests keep their own evidence forever (`file_asset_id` with
+  `ON DELETE RESTRICT`), so a later approval can never make an earlier decision
+  unreadable.
+
+### Honesty rules for this feature
+
+* This is **platform trust verification**, not state certification. No copy
+  implies `Davlat tomonidan tasdiqlangan`, and no invented legal/KYC rules were
+  added: the documents are only ever described as what they are.
+* The teacher-facing screen states the real limit:
+  `Tasdiqlash hujjatlari ommaviy profilga chiqarilmaydi va faqat tekshiruv uchun
+  vakolatli administratorlarga ko‘rsatiladi.` There is no absolute-privacy
+  promise, because no system can make one.
+* **No malware scanning is claimed.** Nothing in the UI says a file was scanned.
+  The seam exists (`MEDIA_SCAN_BOUNDARY_NOTE`, and every activation flows through
+  one function that could call a scanner) but no scanner is wired in, and the
+  product says so.
+
+## Private access: short-lived, purpose-scoped capabilities
+
+Private objects have **no public address**. There is no permanent URL, no CDN
+path, and no guessable endpoint. Reading evidence means one of two things:
+
+1. an **authorized proxy** call that checks the session, ownership and the
+   request attachment; or
+2. a **short-lived signed URL** (10 minutes, hard-capped at 15) minted on demand.
+
+The authorization rule is purpose-scoped, not role-scoped:
+
+* the **owner** may read their own document at any time;
+* an **admin** may read a document **only** when it is attached to a submitted
+  application — an unattached draft document is the teacher's own business;
+* everyone else (another teacher, a student, an anonymous visitor) receives
+  `not_found`, which leaks nothing about existence.
+
+Nothing is stored: the URL is minted per render, `expiresAt` is checked after the
+signature, and the signature covers the key **and** the expiry, so extending
+`e=` invalidates the link instead of prolonging it. Private responses are served
+`Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff`, a sandbox
+CSP and a sanitized `Content-Disposition`.
+
+### The development delivery route
+
+`/api/media/[...key]` exists **only** so the local provider can be exercised on a
+laptop. It refuses to serve anything unless the active provider is the local one,
+which is why a "temporary dev helper" can never become an unauthenticated file
+server in production. In production the store serves the bytes: a public URL from
+the CDN for public objects, a presigned URL for private ones.
+
+## Profile image and course cover
+
+* The teacher's managed photo wins; the seeded `/media/...` path stays the
+  fallback, so **no fixture was migrated** and published seed courses keep
+  working. The same overlay applies to the public marketplace, the teacher
+  dashboard, the course editor and the moderation queue.
+* A course cover can only be set by the teacher who **owns the course**, only
+  while it is a `draft`. A course under review or published is locked (Phase 15's
+  rule), and the extra lock is applied a second time inside the DB transaction —
+  a crafted request from a frozen course changes nothing.
+* Replacing an image never rewrites live published media silently.
+
+## Cleanup
+
+`npm run storage:cleanup` (with `--dry-run`, `--hours`, `--limit`) removes two
+classes of garbage: abandoned `pending` rows with their bytes, and objects left
+behind by `superseded`/`deleted` rows. The database is updated first, so a failed
+object delete is an orphaned byte rather than a broken reference. Scheduling is
+**not** implemented; the intended shape on a real deployment is a nightly cron
+entry (for example `0 3 * * *  cd /srv/app && npm run storage:cleanup`). Frozen
+evidence is never touched. `npm run storage:status` reports the provider, whether
+it is configured, and the asset counts per status — never a key or a credential.
+
+## Security limits (stated, not implied)
+
+* A signed URL is a **bearer capability**: whoever holds the link during its ten
+  minutes can read the object. That is why it is minted per render and never
+  written into a cached page, a log or a database column.
+* A file that passes validation is not proven to be *innocuous* content — a valid
+  PDF can still be a PDF nobody wants. The type, size, namespace and ownership
+  rules are enforced; content scanning is deliberately out of scope (see above).
+* Duplicate uploads are allowed: there is no content-addressed store, so an
+  identical image uploaded twice is stored twice. That is a cost decision, not a
+  security one.
+* Storage failures are reported honestly. No upload reports success that did not
+  become an active, head-verified object.
+
+## Building with no database or storage
+
+Phase 18 keeps the build independent of both: `.data/` deleted, `DB_*` unset and
+`STORAGE_*` unset must still `npm run build`. Nothing reads storage at build
+time, every page that touches media is dynamic, and the media route is
+`force-dynamic`. `next.config.ts` derives `images.remotePatterns` from
+`STORAGE_PUBLIC_BASE_URL` only (never `*`), so an arbitrary external image URL
+cannot become an editable input.
+
+## Operations
+
+* **Buckets.** Two policies are expected: a public bucket readable by anyone (or
+  fronted by a CDN) and a private bucket readable by **no one but the app's
+  credentials**. No `s3:ListBucket` for anonymous callers; no public ACL on the
+  private bucket; block public access on it.
+* **CORS.** Only needed if the browser uploads directly to the store. This
+  implementation uploads through a server action, so no CORS rule is required;
+  if that changes, allow `PUT`/`GET` from the app origin only.
+* **Signed-URL TTL.** 600 seconds for private reads, capped at 900. Public
+  objects are immutable-by-key: a replacement is a new key, which is what makes
+  `Cache-Control: immutable` honest.
+* **Limits and types.** Profile image ≤ 5 MB, course cover ≤ 8 MB, document ≤ 10
+  MB, ≤ 4 documents and ≤ 30 MB per submission; JPEG/PNG/WEBP for images,
+  plus PDF for documents. SVG, HTML, XML and archives (ZIP/DOCX) are refused by
+  content, not by name.
+* **Production migration order.** (1) apply migrations; (2) create the two
+  buckets and the credentials; (3) set the `STORAGE_*` variables; (4) set
+  `STORAGE_PUBLIC_BASE_URL` to the CDN origin; (5) verify with
+  `npm run storage:status`; (6) run `npm run storage:cleanup -- --dry-run`
+  before trusting the first real sweep.
+
+## Commands
+
+```
+npm run test:media       # 159 assertions: privacy + abuse matrices, lifecycle, route, cleanup
+npm run storage:status   # provider + configuration + asset counts per status
+npm run storage:cleanup  # sweep abandoned uploads and orphaned objects
+```
+
+## What Phase 18 does NOT implement
+
+Video uploads, lesson content hosting, arbitrary user file sharing, chat
+attachments, student or homework uploads, certificate generation, OCR, AI
+document analysis, biometric or face matching, an antivirus service, an image
+editor/cropper, multi-image galleries, and reviews. Also deliberately absent: a
+content-addressed store, automatic cleanup scheduling, and any promise that a
+document was scanned.

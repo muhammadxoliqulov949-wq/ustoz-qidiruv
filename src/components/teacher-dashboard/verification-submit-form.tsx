@@ -6,6 +6,7 @@ import { Send } from "lucide-react";
 import { Button } from "@/components/ui";
 import { submitTeacherVerificationAction } from "@/server/actions/teacher-verification";
 import { VERIFICATION_SUBMIT_NOTE } from "@/lib/teacher-verification";
+import { MEDIA_DOCUMENTS_REQUIRED_NOTE } from "@/lib/media";
 
 /* -------------------------------------------------------------------------- */
 /* "Send for verification" — Phase 15.                                         */
@@ -19,9 +20,16 @@ import { VERIFICATION_SUBMIT_NOTE } from "@/lib/teacher-verification";
 export function VerificationSubmitForm({
   eligible,
   missingCount,
+  documentsReady,
 }: {
   eligible: boolean;
   missingCount: number;
+  /**
+   * PHASE 18. The server is the authority for this too: the action refuses a
+   * submission without the required evidence, and this flag only makes the
+   * refusal visible BEFORE the click instead of after it.
+   */
+  documentsReady: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -49,6 +57,13 @@ export function VerificationSubmitForm({
     <div className="flex flex-col gap-3">
       <p className="max-w-prose text-base leading-relaxed text-ink-700">{VERIFICATION_SUBMIT_NOTE}</p>
 
+      {eligible && !documentsReady ? (
+        <p className="rounded-lg border border-line bg-surface-muted px-4 py-3 text-sm leading-relaxed text-ink-700">
+          <span className="font-medium text-ink-900">Hozir yuborib bo‘lmaydi. </span>
+          {MEDIA_DOCUMENTS_REQUIRED_NOTE}
+        </p>
+      ) : null}
+
       {!eligible ? (
         <p className="rounded-lg border border-line bg-surface-muted px-4 py-3 text-sm leading-relaxed text-ink-700">
           <span className="font-medium text-ink-900">Hozir yuborib bo‘lmaydi. </span>
@@ -58,7 +73,7 @@ export function VerificationSubmitForm({
       ) : null}
 
       <div>
-        <Button type="button" onClick={submit} disabled={pending || !eligible}>
+        <Button type="button" onClick={submit} disabled={pending || !eligible || !documentsReady}>
           <Send aria-hidden="true" className="size-4" />
           Tasdiqlash uchun yuborish
         </Button>

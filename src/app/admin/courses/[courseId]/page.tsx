@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { requireAdminPage } from "@/server/auth/guards";
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ButtonLink } from "@/components/ui";
@@ -39,6 +41,15 @@ export default async function AdminCourseDetailPage({
 }: {
   params: Promise<{ courseId: string }>;
 }) {
+  /*
+   * DEFENCE IN DEPTH (Phase 18). The layout renders the refusal screen for a
+   * non-admin session, but this page must never PRODUCE data for one: Next
+   * serialises page segments for the client router, and a signed evidence URL
+   * or a document name must not reach a browser that is not an admin's.
+   */
+  const admin = await requireAdminPage("/admin/courses");
+  if (!admin) return null;
+
   const { courseId } = await params;
   const detail = await getCourseReviewDetail(courseId);
   if (!detail) notFound();
@@ -82,6 +93,34 @@ export default async function AdminCourseDetailPage({
           {course.publishedAt ? ` · ${course.publishedAt} dan beri e’lon qilingan` : ""}
         </p>
       </div>
+
+      {/*
+        PHASE 18: the moderator sees the SAME cover the marketplace will serve.
+        No storage key, no bucket URL and no permanent private address is shown —
+        only the resolved public image (or the honest "no cover" state).
+      */}
+      <AdminPanel
+        title="Muqova"
+        description={
+          course.coverUrl
+            ? "Kurs kartochkasida shu rasm ko‘rinadi."
+            : "Bu kursda muqova rasmi yo‘q — kartochkada joy egallovchi fon ko‘rinadi."
+        }
+      >
+        {course.coverUrl ? (
+          <div className="relative h-40 w-full max-w-md overflow-hidden rounded-lg border border-line bg-surface-muted">
+            <Image
+              src={course.coverUrl}
+              alt=""
+              fill
+              sizes="(max-width: 768px) 100vw, 448px"
+              className="object-cover"
+            />
+          </div>
+        ) : (
+          <p className="text-sm text-ink-500">Muqova yuklanmagan.</p>
+        )}
+      </AdminPanel>
 
       {/* ------------------------------- decision ------------------------------ */}
       <AdminPanel

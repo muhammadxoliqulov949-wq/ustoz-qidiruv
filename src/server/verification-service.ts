@@ -5,11 +5,18 @@ import { newId } from "./auth/ids";
 import { recordAdminEvent } from "./audit-service";
 import {
   DOCUMENT_REVIEW_NOTICE,
+  VERIFICATION_DOCUMENTS_REQUIRED_NOTE,
   isVerificationEligible,
   missingVerificationRequirements,
   type VerificationRequestState,
   type VerificationState,
 } from "@/lib/teacher-verification";
+import {
+  attachDocumentsToRequest,
+  listVerificationRequestDocuments,
+  verificationDocumentsReadyInTx,
+  type VerificationDocumentView,
+} from "./file-service";
 
 /* -------------------------------------------------------------------------- */
 /* Teacher verification service — Phase 15.                                     */
@@ -37,6 +44,8 @@ export type VerificationErrorCode =
   | "invalid_transition"
   | "already_pending"
   | "ineligible"
+  /** Phase 18: the required evidence is missing, so there is nothing to review. */
+  | "missing_documents"
   /** The caller's identity is not an admin account (defence in depth). */
   | "forbidden"
   | "server_error";
@@ -231,12 +240,47 @@ export async function submitVerificationRequest(
         };
       }
 
+      /*
+       * PHASE 18 EVIDENCE REQUIREMENT. Readiness is evaluated INSIDE this
+       * transaction against the teacher's own ACTIVE documents, so the rows the
+       * decision is made on are the rows that will be frozen a few lines later.
+       * Nothing here trusts a client-supplied asset id: the set is derived from
+       * `owner_user_id = session user`.
+       */
+      const readiness = await verificationDocumentsReadyInTx(tx, teacherUserId);
+      if (!readiness.ready) {
+        return {
+          ok: false as const,
+          code: "missing_documents" as const,
+          message: VERIFICATION_DOCUMENTS_REQUIRED_NOTE,
+        };
+      }
+
       const requestId = newId("vrf");
       await tx.insert(schema.teacherVerificationRequests).values({
         id: requestId,
         teacherUserId,
         status: "pending",
       });
+
+      /*
+       * FREEZE THE EVIDENCE. From here the documents belong to this application,
+       * a `delete` of the asset is refused by the FK and by the file service, and
+       * the reviewer's record can never be edited after the fact.
+       */
+      const attached = await attachDocumentsToRequest(tx, {
+        teacherUserId,
+        verificationRequestId: requestId,
+      });
+      if (attached.missing.length > 0) {
+        // Defensive: the readiness check above already covers this on the same
+        // transaction, and a rollback here would be a bug, not a policy.
+        return {
+          ok: false as const,
+          code: "missing_documents" as const,
+          message: VERIFICATION_DOCUMENTS_REQUIRED_NOTE,
+        };
+      }
 
       // The profile column reflects current state. `verified` is never set here.
       await tx
@@ -356,6 +400,10 @@ export interface TeacherReviewDetail {
   history: VerificationRequestView[];
   /** Owned courses, minimal projection (title + lifecycle state). */
   courses: { id: string; title: string; status: string }[];
+  /** Evidence of the LIVE application (frozen at submission). */
+  documents: VerificationDocumentView[];
+  /** Evidence of EVERY application, keyed by request id — history included. */
+  documentsByRequest: Map<string, VerificationDocumentView[]>;
   documentReviewNotice: string;
 }
 
@@ -409,6 +457,17 @@ export async function getTeacherReviewDetail(
 
   const history = requestRows.map(toRequestView);
 
+  /*
+   * PHASE 18. Documents come from the FROZEN join table, so an admin reviewing a
+   * request from months ago sees the evidence that was submitted WITH it — not
+   * whatever the teacher happens to have uploaded since.
+   */
+  const pending = history.find((request) => request.status === "pending") ?? null;
+  const documentsByRequest = new Map<string, VerificationDocumentView[]>();
+  for (const request of history) {
+    documentsByRequest.set(request.id, await listVerificationRequestDocuments(request.id));
+  }
+
   return {
     teacherUserId: teacher.userId,
     slug: teacher.slug,
@@ -422,8 +481,10 @@ export async function getTeacherReviewDetail(
     approach: teacher.approach,
     verification: teacher.verification,
     isPublic: teacher.isPublic,
-    pending: history.find((request) => request.status === "pending") ?? null,
+    pending,
     history,
+    documents: pending ? (documentsByRequest.get(pending.id) ?? []) : [],
+    documentsByRequest,
     courses: courseRows,
     documentReviewNotice: DOCUMENT_REVIEW_NOTICE,
   };

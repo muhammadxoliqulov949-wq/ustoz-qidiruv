@@ -5,6 +5,17 @@ import { EmptyState } from "@/components/dashboard/empty-state";
 import { VerificationSubmitForm } from "@/components/teacher-dashboard/verification-submit-form";
 import { requireRolePage } from "@/server/auth/guards";
 import { getTeacherVerificationState } from "@/server/verification-service";
+import { VerificationDocuments } from "@/components/teacher-dashboard/verification-documents";
+import {
+  createVerificationDocumentReadUrl,
+  listOwnVerificationDocuments,
+} from "@/server/file-service";
+import { storageStatus } from "@/server/storage";
+import {
+  MEDIA_STORAGE_DISABLED_NOTE,
+  REQUIRED_VERIFICATION_DOCUMENT_TYPES,
+  VERIFICATION_DOCUMENT_TYPE_LABEL,
+} from "@/lib/media";
 import {
   DOCUMENT_REVIEW_NOTICE,
   VERIFICATION_ALREADY_PENDING_NOTE,
@@ -55,6 +66,37 @@ export default async function TeacherVerificationPage() {
   const user = await requireRolePage("teacher", "/teacher/dashboard/verification");
   const state = await getTeacherVerificationState(user.id);
 
+  /*
+   * PHASE 18 EVIDENCE. The list is owner-scoped in SQL, and each entry gets its
+   * OWN short-lived signed URL minted for this render — the browser never learns
+   * a permanent address for evidence, and no URL is stored anywhere.
+   */
+  const storage = storageStatus();
+  const storageNote = storage.enabled ? null : MEDIA_STORAGE_DISABLED_NOTE;
+  const ownDocuments = await listOwnVerificationDocuments(user.id);
+  const documents = await Promise.all(
+    ownDocuments.map(async (document) => {
+      const signed = await createVerificationDocumentReadUrl({
+        assetId: document.id,
+        viewerUserId: user.id,
+        viewerIsAdmin: false,
+      });
+      return { ...document, previewUrl: signed.ok ? signed.data.url : null };
+    }),
+  );
+  const presentTypes = new Set(documents.map((document) => document.documentType));
+  const missingRequired = REQUIRED_VERIFICATION_DOCUMENT_TYPES.filter(
+    (type) => !presentTypes.has(type),
+  );
+  const documentsReady = missingRequired.length === 0;
+  const blockedNote =
+    documentsReady
+      ? null
+      : `Yuborishdan oldin quyidagi hujjatni yuklang: ${missingRequired
+          .map((type) => VERIFICATION_DOCUMENT_TYPE_LABEL[type])
+          .join(", ")}.`;
+  const frozen = state.state === "pending";
+
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
@@ -89,6 +131,13 @@ export default async function TeacherVerificationPage() {
         </p>
       </section>
 
+      <VerificationDocuments
+        documents={documents}
+        frozen={frozen}
+        storageNote={storageNote}
+        blockedNote={blockedNote}
+      />
+
       <section className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-xl font-semibold text-ink-900">Ariza</h2>
         {state.state === "pending" ? (
@@ -108,7 +157,11 @@ export default async function TeacherVerificationPage() {
             Profilingiz tasdiqlangan — qayta ariza yuborish shart emas.
           </p>
         ) : (
-          <VerificationSubmitForm eligible={state.eligible} missingCount={state.missing.length} />
+          <VerificationSubmitForm
+            eligible={state.eligible}
+            missingCount={state.missing.length}
+            documentsReady={documentsReady}
+          />
         )}
 
         {!state.eligible && state.state !== "verified" && state.state !== "pending" ? (

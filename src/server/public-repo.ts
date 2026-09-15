@@ -1,6 +1,7 @@
 import "server-only";
 import { and, asc, count, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { getDb, schema } from "./db/client";
+import { publicMediaIndex, teacherPhotoUrl } from "./file-service";
 import { getAcceptedCounts } from "./enrollment-service";
 import { categories } from "@/data/categories";
 import type {
@@ -44,6 +45,51 @@ import type { CourseBrowseParams } from "@/lib/course-search";
 /* changes after deploy. Unknown, draft and unpublished slugs 404 at request    */
 /* time through the `status = 'published'` predicate below.                     */
 /* -------------------------------------------------------------------------- */
+
+/* -------------------------------------------------------------------------- */
+/* PHASE 18: managed media overlays.                                           */
+/*                                                                              */
+/* A teacher's profile image and a course cover may now come from the media      */
+/* store. The rule is "managed asset WINS, legacy seed/static path remains the   */
+/* fallback", so nothing breaks for the thousands of rows that still carry a     */
+/* `/media/...` path — and no fixture had to be migrated into object storage.     */
+/*                                                                              */
+/* Both overlays are BATCHED (one query per page) and read only ACTIVE PUBLIC    */
+/* assets, so a private verification document structurally cannot appear in a    */
+/* marketplace projection.                                                      */
+/* -------------------------------------------------------------------------- */
+
+async function withCourseCovers(items: Course[]): Promise<Course[]> {
+  if (items.length === 0) return items;
+  try {
+    const index = await publicMediaIndex({ courseIds: items.map((item) => item.id) });
+    if (index.courseCovers.size === 0) return items;
+    return items.map((item) => {
+      const managed = index.courseCovers.get(item.id);
+      return managed ? { ...item, image: managed } : item;
+    });
+  } catch {
+    // A storage misconfiguration must not take the marketplace down: the
+    // legacy image is already a valid value.
+    return items;
+  }
+}
+
+async function withTeacherPhotos(rows: TeacherRow[]): Promise<TeacherRow[]> {
+  if (rows.length === 0) return rows;
+  try {
+    const index = await publicMediaIndex({
+      teacherUserIds: rows.map((row) => row.teacher.id),
+    });
+    if (index.teacherPhotos.size === 0) return rows;
+    return rows.map((row) => {
+      const managed = index.teacherPhotos.get(row.teacher.id);
+      return managed ? { ...row, teacher: { ...row.teacher, photo: managed } } : row;
+    });
+  } catch {
+    return rows;
+  }
+}
 
 const categoryById = new Map(categories.map((category) => [category.id, category]));
 
@@ -227,17 +273,19 @@ export async function listPublicCourses(
     else groupsByCourse.set(group.courseId, [projected]);
   }
 
-  return rows.map((row) =>
-    toCourse(
-      row.course,
-      {
-        id: row.teacher.userId,
-        name: row.teacher.name,
-        verified: row.teacher.verification === "verified",
-      },
-      groupsByCourse.get(row.course.id) ?? [],
-      // The listing never renders the syllabus — don't fetch it.
-      [],
+  return withCourseCovers(
+    rows.map((row) =>
+      toCourse(
+        row.course,
+        {
+          id: row.teacher.userId,
+          name: row.teacher.name,
+          verified: row.teacher.verification === "verified",
+        },
+        groupsByCourse.get(row.course.id) ?? [],
+        // The listing never renders the syllabus — don't fetch it.
+        [],
+      ),
     ),
   );
 }
@@ -273,18 +321,21 @@ export async function getPublicCourseBySlug(slug: string): Promise<Course | null
 
   const seats = await liveSeats(groupRows.map((group) => group.id));
 
-  return toCourse(
-    found.course,
-    {
-      id: found.teacher.userId,
-      name: found.teacher.name,
-      verified: found.teacher.verification === "verified",
-    },
-    groupRows.map((group) =>
-      toGroup(group, Math.max(0, group.capacity - (seats.get(group.id) ?? 0))),
+  const [course] = await withCourseCovers([
+    toCourse(
+      found.course,
+      {
+        id: found.teacher.userId,
+        name: found.teacher.name,
+        verified: found.teacher.verification === "verified",
+      },
+      groupRows.map((group) =>
+        toGroup(group, Math.max(0, group.capacity - (seats.get(group.id) ?? 0))),
+      ),
+      moduleRows.map(toModule),
     ),
-    moduleRows.map(toModule),
-  );
+  ]);
+  return course;
 }
 
 /* ------------------------------ teacher reads ----------------------------- */
@@ -352,7 +403,7 @@ export async function listPublicTeachers(): Promise<TeacherRow[]> {
     });
   }
 
-  return rows;
+  return withTeacherPhotos(rows);
 }
 
 export async function getPublicTeacherBySlug(
@@ -400,12 +451,14 @@ export async function getPublicTeacherBySlug(
   }
 
   const publicTeacher = toTeacher(teacher, courseRows.length);
-  const courses = courseRows.map((row) =>
-    toCourse(
-      row.course,
-      { id: publicTeacher.id, name: publicTeacher.name, verified: publicTeacher.verified },
-      groupsByCourse.get(row.course.id) ?? [],
-      [],
+  const courses = await withCourseCovers(
+    courseRows.map((row) =>
+      toCourse(
+        row.course,
+        { id: publicTeacher.id, name: publicTeacher.name, verified: publicTeacher.verified },
+        groupsByCourse.get(row.course.id) ?? [],
+        [],
+      ),
     ),
   );
 
@@ -423,8 +476,21 @@ export async function getPublicTeacherBySlug(
     minPrice = minPrice === null ? course.priceUzs : Math.min(minPrice, course.priceUzs);
   }
 
+  const [resolvedRow] = await withTeacherPhotos([
+    {
+      teacher: publicTeacher,
+      courseIds,
+      categorySlugs: categoryIds.map((id) => categoryById.get(id)?.slug ?? id),
+      categoryNames: categoryIds.map((id) => categoryById.get(id)?.name ?? ""),
+      cities,
+      formats: FORMAT_ORDER.filter((format) => formats.has(format)),
+      minPriceUzs: minPrice,
+      hasFreeCourse: hasFree,
+    },
+  ]);
+
   return {
-    row: {
+    row: resolvedRow ?? {
       teacher: publicTeacher,
       courseIds,
       categorySlugs: categoryIds.map((id) => categoryById.get(id)?.slug ?? id),
@@ -499,5 +565,12 @@ export async function getPublicTeacherById(userId: string): Promise<Teacher | nu
     .where(
       and(eq(schema.courses.teacherUserId, userId), eq(schema.courses.status, PUBLIC_STATUS)),
     );
-  return toTeacher(teacher, Number(owned[0]?.total ?? 0));
+  const projected = toTeacher(teacher, Number(owned[0]?.total ?? 0));
+  // Managed image wins; the legacy `/media/...` path stays the fallback.
+  try {
+    const managed = await teacherPhotoUrl(userId);
+    return managed ? { ...projected, photo: managed } : projected;
+  } catch {
+    return projected;
+  }
 }

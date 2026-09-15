@@ -15,6 +15,7 @@ import {
   setCourseReadyAction,
   updateCourseDraftAction,
 } from "@/server/actions/course-manage";
+import { CourseCoverManager } from "@/components/teacher-dashboard/course-cover-manager";
 import {
   COURSE_PUBLISHED_EDIT_LOCKED_NOTE,
   COURSE_STATE_LABEL,
@@ -24,6 +25,7 @@ import {
   isLockedForTeacher,
   isUnderReview,
 } from "@/lib/course-moderation";
+import { formatUzDate } from "@/lib/uz-date";
 
 /* -------------------------------------------------------------------------- */
 /* Server-backed course editor — Phase 12.                                     */
@@ -73,11 +75,20 @@ export interface DbCourseEditorProps {
     priceUzs: number;
     summary: string;
     longDescription: string;
+    /** LEGACY seed/static cover. Managed cover wins; this stays the fallback. */
+    image: string | null;
   };
   groups: EditorGroup[];
   modules: EditorModule[];
   categories: { id: string; name: string }[];
   cities: string[];
+  /** Phase 18: managed cover state (url + whether the teacher may change it). */
+  cover: {
+    url: string | null;
+    editable: boolean;
+    lockedNote: string | null;
+    storageNote: string | null;
+  };
   /** Phase 15: the live review / latest decision for this course, if any. */
   moderation: {
     reviewStatus: "pending" | "approved" | "changes_requested" | null;
@@ -98,6 +109,7 @@ export function DbCourseEditor({
   modules,
   categories,
   cities,
+  cover,
   moderation,
 }: DbCourseEditorProps) {
   const router = useRouter();
@@ -164,6 +176,14 @@ export function DbCourseEditor({
           qilmaydi — e’lon qilishni administrator tasdiqlaydi.
         </AuthNotice>
       )}
+
+      <CourseCoverManager
+        courseId={course.id}
+        coverUrl={cover.url ?? course.image}
+        editable={cover.editable}
+        lockedNote={cover.lockedNote}
+        storageNote={cover.storageNote}
+      />
 
       {moderation.latestFeedback ? (
         <div className="rounded-xl border border-line bg-surface-muted p-4">
@@ -479,12 +499,7 @@ export function DbCourseEditor({
               <p className="text-sm text-ink-500">
                 Yuborilgan sana:{" "}
                 <time dateTime={moderation.submittedAt.toISOString()}>
-                  {new Intl.DateTimeFormat("uz-UZ", {
-                    day: "2-digit",
-                    month: "short",
-                    year: "numeric",
-                    timeZone: "Asia/Tashkent",
-                  }).format(moderation.submittedAt)}
+                  {formatUzDate(moderation.submittedAt)}
                 </time>
               </p>
             ) : null}

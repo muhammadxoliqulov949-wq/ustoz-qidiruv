@@ -4,6 +4,7 @@ import { getDb, schema } from "./db/client";
 import { newId } from "./auth/ids";
 import { recordAdminEvent } from "./audit-service";
 import type { CourseState, ModerationReviewState } from "@/lib/course-moderation";
+import { courseCoverUrl } from "./file-service";
 
 /* -------------------------------------------------------------------------- */
 /* Course moderation service — Phase 15.                                       */
@@ -263,6 +264,18 @@ export async function getModerationCounts(): Promise<{
   };
 }
 
+/**
+ * Managed cover, or the legacy path. Storage trouble must never take the
+ * moderation queue down: the seeded image is already a valid value.
+ */
+async function resolveCoverQuietly(courseId: string, legacy: string | null): Promise<string | null> {
+  try {
+    return (await courseCoverUrl(courseId)) ?? legacy;
+  } catch {
+    return legacy;
+  }
+}
+
 export interface CourseReviewDetail {
   review: ModerationReviewView | null;
   course: {
@@ -285,6 +298,10 @@ export interface CourseReviewDetail {
     status: CourseState;
     publishedAt: string | null;
     createdAt: Date;
+    /** LEGACY seed/static cover path (fallback). */
+    image: string | null;
+    /** PHASE 18: managed cover when one exists, else the legacy path. */
+    coverUrl: string | null;
   };
   teacher: {
     userId: string;
@@ -402,6 +419,14 @@ export async function getCourseReviewDetail(
       status: course.status,
       publishedAt: course.publishedAt,
       createdAt: course.createdAt,
+      image: course.image,
+      /*
+       * PHASE 18: the moderator reviews the SAME image the marketplace will show.
+       * Managed cover wins; the seeded path remains the fallback. A failure to
+       * resolve storage must not break the queue, so this degrades to the legacy
+       * value instead of throwing.
+       */
+      coverUrl: await resolveCoverQuietly(course.id, course.image),
     },
     teacher: {
       userId: teacher.userId,

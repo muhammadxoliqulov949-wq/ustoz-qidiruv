@@ -1239,7 +1239,205 @@ export const refundEvents = pgTable(
   ],
 );
 
+/* ------------------------------ Phase 18: media --------------------------- */
+
+/**
+ * Storage visibility. TWO classes, and only two.
+ *
+ *   public  — teacher profile images and course covers. Served from the public
+ *             storage namespace / CDN, cacheable, no signature.
+ *   private — teacher verification evidence. Reachable ONLY through a
+ *             short-lived signed URL minted for a specific authorized viewer.
+ *
+ * A client never supplies this: it is derived from the asset's PURPOSE in
+ * `src/lib/media.ts`, and the CHECK below re-derives it in the database.
+ */
+export const fileVisibility = pgEnum("file_visibility", ["public", "private"]);
+
+/** What an asset is FOR. Purpose — not a client flag — decides visibility. */
+export const filePurpose = pgEnum("file_purpose", [
+  "teacher_verification_document",
+  "teacher_profile_image",
+  "course_cover_image",
+]);
+
+/**
+ * Asset lifecycle.
+ *
+ *   pending    — row exists, the object has NOT been verified yet. Never
+ *                served, never referenced by a public projection.
+ *   active     — the object was confirmed by the storage provider and this row
+ *                is the current one for its purpose.
+ *   superseded — replaced by a newer asset. Kept so history (and cleanup) knows
+ *                exactly which object to remove.
+ *   deleted    — no longer referenced; the object is (or will be) removed by the
+ *                cleanup command. A failed upload lands here immediately.
+ */
+export const fileStatus = pgEnum("file_status", ["pending", "active", "superseded", "deleted"]);
+
+/** Minimal evidence taxonomy. Trust review, not state KYC. */
+export const verificationDocumentType = pgEnum("verification_document_type", [
+  "identity_document",
+  "qualification_evidence",
+]);
+
+/**
+ * One stored object. The SINGLE source of truth for what exists in storage.
+ *
+ * SECURITY PROPERTIES THAT ARE ENFORCED HERE, not in a service:
+ *   • `visibility` must agree with `purpose` (a verification document cannot be
+ *     public, and a public asset cannot be marked private);
+ *   • `storage_key` must live under the namespace of its visibility, so a
+ *     private object can never be addressed as a public one;
+ *   • `course_id` is set IF AND ONLY IF the purpose is a course cover;
+ *   • at most ONE active profile image per teacher and ONE active cover per
+ *     course, which is what makes replacement safe under concurrency;
+ *   • a `deleted` row must carry `deletedAt`, and `pending` rows must never look
+ *     activated.
+ */
+export const fileAssets = pgTable(
+  "file_assets",
+  {
+    id: text("id").primaryKey(),
+    /** The uploader. Every asset has an owner, including course covers. */
+    ownerUserId: text("owner_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Set for course covers only — see `file_assets_course_scope`. */
+    courseId: text("course_id").references(() => courses.id, { onDelete: "cascade" }),
+    purpose: filePurpose("purpose").notNull(),
+    visibility: fileVisibility("visibility").notNull(),
+    /** Which provider wrote the object (`s3`, `local`, `memory`). */
+    storageProvider: text("storage_provider").notNull(),
+    /**
+     * SERVER-GENERATED key: `<visibility>/<purpose-namespace>/<owner-scope>/<id>.<ext>`.
+     * The uploaded filename is stored separately for display and is never part
+     * of the path, so no user input can influence where an object lands.
+     */
+    storageKey: text("storage_key").notNull(),
+    /** Display-only original name, sanitized when rendered. */
+    originalFileName: text("original_file_name").notNull(),
+    /** Detected from CONTENT (magic bytes), not from the browser. */
+    mimeType: text("mime_type").notNull(),
+    byteSize: bigint("byte_size", { mode: "bigint" }).notNull(),
+    /** Integrity/duplicate aid. Optional: the provider's metadata is authority. */
+    checksumSha256: text("checksum_sha256"),
+    /** Verification documents only — required for them, forbidden otherwise. */
+    documentType: verificationDocumentType("document_type"),
+    status: fileStatus("status").notNull().default("pending"),
+    activatedAt: timestamp("activated_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("file_assets_provider_key_unique").on(table.storageProvider, table.storageKey),
+    index("file_assets_owner_idx").on(table.ownerUserId, table.purpose, table.status),
+    index("file_assets_course_idx").on(table.courseId, table.status),
+    // The cleanup command scans by status, oldest first.
+    index("file_assets_status_idx").on(table.status, table.createdAt),
+    /*
+     * ONE CURRENT ASSET PER SLOT. Partial unique indexes, so replacing an image
+     * is atomic even if two requests race: the database refuses a second active
+     * row rather than leaving a course with two covers.
+     */
+    uniqueIndex("file_assets_one_active_profile_image")
+      .on(table.ownerUserId)
+      .where(sql`purpose = 'teacher_profile_image' AND status = 'active'`),
+    uniqueIndex("file_assets_one_active_course_cover")
+      .on(table.courseId)
+      .where(sql`purpose = 'course_cover_image' AND status = 'active'`),
+    check("file_assets_byte_size_positive", sql`${table.byteSize} > 0`),
+    check(
+      "file_assets_checksum_hex",
+      sql`${table.checksumSha256} IS NULL OR ${table.checksumSha256} ~ '^[0-9a-f]{64}$'`,
+    ),
+    /* Visibility is a function of purpose. Nothing else may decide it. */
+    check(
+      "file_assets_visibility_matches_purpose",
+      sql`(${table.purpose} = 'teacher_verification_document') = (${table.visibility} = 'private')`,
+    ),
+    /* A private object can never be addressed through the public namespace. */
+    check(
+      "file_assets_key_namespace",
+      sql`(${table.visibility} = 'private' AND ${table.storageKey} LIKE 'private/%')
+          OR (${table.visibility} = 'public' AND ${table.storageKey} LIKE 'public/%')`,
+    ),
+    check(
+      "file_assets_course_scope",
+      sql`(${table.purpose} = 'course_cover_image') = (${table.courseId} IS NOT NULL)`,
+    ),
+    check(
+      "file_assets_document_type_scope",
+      sql`(${table.purpose} = 'teacher_verification_document') = (${table.documentType} IS NOT NULL)`,
+    ),
+    check(
+      "file_assets_activation_consistency",
+      sql`(${table.status} <> 'pending' OR ${table.activatedAt} IS NULL)
+          AND (${table.status} NOT IN ('active', 'superseded') OR ${table.activatedAt} IS NOT NULL)`,
+    ),
+    check(
+      "file_assets_deleted_at_consistency",
+      sql`(${table.status} = 'deleted') = (${table.deletedAt} IS NOT NULL)`,
+    ),
+    check(
+      "file_assets_original_name_len",
+      sql`length(${table.originalFileName}) BETWEEN 1 AND 255`,
+    ),
+  ],
+);
+
+/**
+ * FROZEN EVIDENCE: which assets a SUBMITTED verification request was reviewed
+ * with.
+ *
+ * The relationship is only created at submission, inside the same transaction
+ * that flips the profile to `pending`, so a reviewer always sees exactly what
+ * the teacher submitted. `ON DELETE RESTRICT` on the asset is the mechanism that
+ * makes that evidence undeletable while a request references it — a reviewer's
+ * record cannot be quietly emptied afterwards.
+ */
+export const teacherVerificationDocuments = pgTable(
+  "teacher_verification_documents",
+  {
+    id: text("id").primaryKey(),
+    verificationRequestId: text("verification_request_id")
+      .notNull()
+      .references(() => teacherVerificationRequests.id, { onDelete: "cascade" }),
+    fileAssetId: text("file_asset_id")
+      .notNull()
+      .references(() => fileAssets.id, { onDelete: "restrict" }),
+    documentType: verificationDocumentType("document_type").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("tvd_request_asset_unique").on(table.verificationRequestId, table.fileAssetId),
+    index("tvd_request_idx").on(table.verificationRequestId, table.createdAt),
+    index("tvd_asset_idx").on(table.fileAssetId),
+  ],
+);
+
 /* -------------------------------- relations -------------------------------- */
+
+export const fileAssetsRelations = relations(fileAssets, ({ one, many }) => ({
+  owner: one(users, { fields: [fileAssets.ownerUserId], references: [users.id] }),
+  course: one(courses, { fields: [fileAssets.courseId], references: [courses.id] }),
+  verificationDocuments: many(teacherVerificationDocuments),
+}));
+
+export const teacherVerificationDocumentsRelations = relations(
+  teacherVerificationDocuments,
+  ({ one }) => ({
+    request: one(teacherVerificationRequests, {
+      fields: [teacherVerificationDocuments.verificationRequestId],
+      references: [teacherVerificationRequests.id],
+    }),
+    asset: one(fileAssets, {
+      fields: [teacherVerificationDocuments.fileAssetId],
+      references: [fileAssets.id],
+    }),
+  }),
+);
 
 export const usersRelations = relations(users, ({ one, many }) => ({
   studentProfile: one(studentProfiles, {

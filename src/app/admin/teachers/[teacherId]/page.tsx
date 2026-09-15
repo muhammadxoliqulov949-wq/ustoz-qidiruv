@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { requireAdminPage } from "@/server/auth/guards";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ButtonLink } from "@/components/ui";
@@ -14,6 +15,12 @@ import {
 import { EmptyState } from "@/components/dashboard/empty-state";
 import { VerificationDecisionForm } from "@/components/admin/verification-decision-form";
 import { getTeacherReviewDetail } from "@/server/verification-service";
+import { createVerificationDocumentReadUrl } from "@/server/file-service";
+import {
+  MEDIA_VIEW_URL_NOTE,
+  VERIFICATION_DOCUMENT_TYPE_LABEL,
+  formatBytes,
+} from "@/lib/media";
 import { countTeacherCoursesByState } from "@/server/admin-service";
 import {
   DOCUMENT_REVIEW_NOTICE,
@@ -43,6 +50,15 @@ export default async function AdminTeacherDetailPage({
 }: {
   params: Promise<{ teacherId: string }>;
 }) {
+  /*
+   * DEFENCE IN DEPTH (Phase 18). The layout renders the refusal screen for a
+   * non-admin session, but this page must never PRODUCE data for one: Next
+   * serialises page segments for the client router, and a signed evidence URL
+   * or a document name must not reach a browser that is not an admin's.
+   */
+  const admin = await requireAdminPage("/admin/teachers");
+  if (!admin) return null;
+
   const { teacherId } = await params;
   const detail = await getTeacherReviewDetail(teacherId);
   if (!detail) notFound();
@@ -55,6 +71,30 @@ export default async function AdminTeacherDetailPage({
    * form whether the action is still open — never the other way round.
    */
   const targetRequest = detail.pending ?? detail.history[0] ?? null;
+
+  /*
+   * PHASE 18 — SECURE EVIDENCE ACCESS.
+   *
+   * A signed URL is minted HERE, per render, for the ADMIN viewer only, and it
+   * expires in ten minutes. Nothing is stored: the page (and any screenshot or
+   * browser history) never contains a durable address for a private document,
+   * and a student or another teacher has no code path that can mint one.
+   *
+   * The list itself is bounded: evidence sets are small (≤4 documents per
+   * application), and only the most recent applications can have any.
+   */
+  const documentLinks = new Map<string, string>();
+  for (const request of detail.history.slice(0, 5)) {
+    for (const document of detail.documentsByRequest.get(request.id) ?? []) {
+      if (documentLinks.size >= 20) break;
+      const signed = await createVerificationDocumentReadUrl({
+        assetId: document.id,
+        viewerUserId: detail.teacherUserId,
+        viewerIsAdmin: true,
+      });
+      if (signed.ok) documentLinks.set(document.id, signed.data.url);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -113,6 +153,116 @@ export default async function AdminTeacherDetailPage({
           {VERIFICATION_MEANS_NOTE} {DOCUMENT_REVIEW_NOTICE}
         </p>
       </AdminPanel>
+
+      {/* ------------------------------- evidence ------------------------------ */}
+      <AdminPanel
+        title="Tasdiqlash hujjatlari"
+        description={
+          (detail.documentsByRequest.get(targetRequest?.id ?? "") ?? []).length > 0
+            ? "Hujjatlar ariza yuborilganda muzlatilgan — keyin o‘zgartirib bo‘lmaydi."
+            : "Bu arizada hujjat yo‘q."
+        }
+      >
+        {targetRequest ? (
+          (detail.documentsByRequest.get(targetRequest.id) ?? []).length > 0 ? (
+            <ul className="flex flex-col gap-3">
+              {(detail.documentsByRequest.get(targetRequest.id) ?? []).map((document) => {
+                const url = documentLinks.get(document.id) ?? null;
+                return (
+                  <li
+                    key={document.id}
+                    className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-line bg-surface-muted px-3 py-2"
+                  >
+                    <span className="text-sm font-medium text-ink-900">
+                      {VERIFICATION_DOCUMENT_TYPE_LABEL[document.documentType]}
+                    </span>
+                    <span className="min-w-0 flex-1 break-all text-sm text-ink-700">
+                      {document.originalFileName}
+                    </span>
+                    <span className="text-xs text-ink-500">
+                      {formatBytes(document.byteSize)} ·{" "}
+                      {formatAdminDateTime(document.createdAt)}
+                    </span>
+                    {url ? (
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-medium text-accent-700 underline underline-offset-2"
+                      >
+                        Ko‘rish
+                      </a>
+                    ) : (
+                      <span className="text-sm text-ink-400">Havola yaratilmadi</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-sm text-ink-500">
+              Ustoz bu arizada hujjat yuklamagan (Phase 15 arizasi).
+            </p>
+          )
+        ) : (
+          <p className="text-sm text-ink-500">Hujjatlar ariza bilan birga keladi.</p>
+        )}
+        <p className="border-t border-line pt-3 text-xs text-ink-500">{MEDIA_VIEW_URL_NOTE}</p>
+      </AdminPanel>
+
+      {/* ----------------------- earlier applications -------------------------- */}
+      {detail.history.length > 1 ? (
+        <AdminPanel
+          title="Oldingi arizalar hujjatlari"
+          description="Har bir ariza o‘z hujjatlari bilan saqlanadi — tarix o‘zgarmaydi."
+        >
+          <ul className="flex flex-col gap-4">
+            {detail.history
+              .filter((request) => request.id !== targetRequest?.id)
+              .slice(0, 4)
+              .map((request) => {
+                const documents = detail.documentsByRequest.get(request.id) ?? [];
+                return (
+                  <li key={request.id} className="flex flex-col gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <RequestStateBadge state={request.status} />
+                      <span className="text-sm text-ink-500">
+                        {formatAdminDateTime(request.submittedAt)}
+                      </span>
+                    </div>
+                    {documents.length === 0 ? (
+                      <p className="text-sm text-ink-500">Hujjat yuklanmagan.</p>
+                    ) : (
+                      <ul className="flex flex-col gap-1">
+                        {documents.map((document) => {
+                          const url = documentLinks.get(document.id) ?? null;
+                          return (
+                            <li key={document.id} className="flex flex-wrap items-center gap-2">
+                              <span className="text-sm text-ink-700">
+                                {VERIFICATION_DOCUMENT_TYPE_LABEL[document.documentType]} ·{" "}
+                                <span className="break-all">{document.originalFileName}</span>
+                              </span>
+                              {url ? (
+                                <a
+                                  href={url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-sm font-medium text-accent-700 underline underline-offset-2"
+                                >
+                                  Ko‘rish
+                                </a>
+                              ) : null}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </li>
+                );
+              })}
+          </ul>
+        </AdminPanel>
+      ) : null}
 
       {/* -------------------------------- profile ------------------------------ */}
       <AdminPanel title="Profil ma’lumotlari">

@@ -156,13 +156,21 @@ export const VERIFICATION_REQUEST_STATE_TONE: Record<
 /* ------------------------------ honest copy -------------------------------- */
 
 /**
- * Shown next to the submission form and on the admin review screen. Uploads do
- * not exist, so no screen may imply a document was inspected.
+ * Shown next to the submission form and on the admin review screen.
+ *
+ * PHASE 18: documents ARE part of the review now, so this says what the review
+ * actually is — a human looking at the profile AND the uploaded evidence — and
+ * stops short of claiming a legal identity check the platform cannot perform.
  */
-export const DOCUMENT_REVIEW_NOTICE = "Hujjat orqali tekshirish keyingi bosqichda ulanadi.";
+export const DOCUMENT_REVIEW_NOTICE =
+  "Ariza profil ma’lumotlari va yuklangan hujjatlar asosida ko‘rib chiqiladi. Bu platforma ishonch tekshiruvi: davlat organi tomonidan shaxsni tasdiqlash emas.";
 
 export const VERIFICATION_MEANS_NOTE =
-  "Tasdiqlash profildagi ma’lumotlar asosida amalga oshiriladi: ism, yo‘nalish, shahar, tillar, tajriba, tavsif va dars uslubi.";
+  "Tasdiqlash profildagi ma’lumotlar (ism, yo‘nalish, shahar, tillar, tajriba, tavsif, dars uslubi) va siz yuklagan hujjatlar asosida amalga oshiriladi.";
+
+/** Phase 18: a submission needs evidence before it can be reviewed at all. */
+export const VERIFICATION_DOCUMENTS_REQUIRED_NOTE =
+  "Ariza yuborish uchun kamida shaxsni tasdiqlovchi hujjat yuklang.";
 
 /** What pressing the button actually does — no upload, no instant badge. */
 export const VERIFICATION_SUBMIT_NOTE =

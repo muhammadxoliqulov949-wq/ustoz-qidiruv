@@ -17,6 +17,15 @@ const DATA_DIR = mkdtempSync(path.join(tmpdir(), "ustoz-admin-"));
 process.env.DB_DRIVER = "pglite";
 process.env.PGLITE_DATA_DIR = DATA_DIR;
 (process.env as Record<string, string>).NODE_ENV = "test";
+/*
+ * PHASE 18. A verification application is now document-backed, so this suite
+ * needs a storage provider to attach the required evidence. The LOCAL provider
+ * writes to a throwaway directory inside the suite's own temp dir: no network,
+ * no cloud credentials, and everything is deleted at the end.
+ */
+process.env.STORAGE_PROVIDER = "local";
+process.env.STORAGE_LOCAL_DIR = path.join(DATA_DIR, "storage");
+process.env.STORAGE_SIGNING_SECRET = "admin-suite-signing-secret-0123456789";
 
 let pass = 0;
 let fail = 0;
@@ -269,8 +278,32 @@ async function main(): Promise<void> {
     (await db.select().from(schema.teacherVerificationRequests)
       .where(eq(schema.teacherVerificationRequests.teacherUserId, teacherB))).length === 0);
 
+  /* ---------------------------------------------------------------------- */
+  /* PHASE 18: evidence is required. A complete PROFILE is no longer enough. */
+  /* ---------------------------------------------------------------------- */
+  const noEvidence = await verification.submitVerificationRequest(teacherA);
+  check("a complete profile WITHOUT the required document cannot submit",
+    !noEvidence.ok && noEvidence.code === "missing_documents");
+  check("the refused submission writes NO request row",
+    (await db.select().from(schema.teacherVerificationRequests)
+      .where(eq(schema.teacherVerificationRequests.teacherUserId, teacherA))).length === 0);
+
+  const storage = await import("../src/server/storage");
+  const { LocalStorageProvider } = await import("../src/server/storage/local-provider");
+  storage.__setStorageProviderForTesting(new LocalStorageProvider({
+    directory: process.env.STORAGE_LOCAL_DIR!,
+    signingSecret: process.env.STORAGE_SIGNING_SECRET!,
+    publicPathPrefix: "/api/media",
+  }));
+  const files = await import("../src/server/file-service");
+  const identityUpload = await files.uploadVerificationDocument(teacherA, "identity_document", {
+    bytes: new TextEncoder().encode("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF"),
+    fileName: "identity.pdf",
+  });
+  check("the required identity document uploads", identityUpload.ok);
+
   const submitA = await verification.submitVerificationRequest(teacherA);
-  check("a complete profile can submit", submitA.ok);
+  check("a complete profile WITH the required document can submit", submitA.ok);
 
   const profileAfterSubmit = (
     await db.select().from(schema.teacherProfiles)
@@ -285,6 +318,7 @@ async function main(): Promise<void> {
     .where(eq(schema.teacherVerificationRequests.teacherUserId, teacherA));
   check("exactly one application row exists", requestsA.length === 1);
   const requestA = requestsA[0];
+  if (!requestA) throw new Error("fixture failure: the application row is missing");
 
   const again = await verification.submitVerificationRequest(teacherA);
   check("a second submission is refused (already_pending)",
@@ -372,12 +406,25 @@ async function main(): Promise<void> {
     specialization: "Fizika",
   }).where(eq(schema.teacherProfiles.userId, teacherB));
 
+  // Phase 18: the completed profile still needs its own evidence.
+  const submitBNoEvidence = await verification.submitVerificationRequest(teacherB);
+  check("a completed profile without evidence is refused with the reason",
+    !submitBNoEvidence.ok && submitBNoEvidence.code === "missing_documents");
+  const teacherBDocument = await files.uploadVerificationDocument(teacherB, "identity_document", {
+    bytes: new TextEncoder().encode("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF"),
+    fileName: "b-identity.pdf",
+  });
+  check("the second teacher's own evidence uploads", teacherBDocument.ok);
+  check("evidence is owner-scoped: A's document is not counted for B",
+    (await files.listOwnVerificationDocuments(teacherB)).length === 1);
+
   const submitB2 = await verification.submitVerificationRequest(teacherB);
-  check("a completed profile can submit", submitB2.ok);
+  check("a completed profile with its own evidence can submit", submitB2.ok);
   const requestB = (
     await db.select().from(schema.teacherVerificationRequests)
       .where(eq(schema.teacherVerificationRequests.teacherUserId, teacherB))
   )[0];
+  if (!requestB) throw new Error("fixture failure: teacher B's application row is missing");
 
   const reject = await verification.rejectVerification(
     requestB.id,
@@ -681,11 +728,17 @@ async function main(): Promise<void> {
   console.log("\n# CONCURRENCY — racing admins produce exactly ONE decision");
 
   const raceTeacher = await makeTeacher("Ustoz Poyga", "+998902220005", true);
+  // Phase 18: the racing application is document-backed like any other.
+  await files.uploadVerificationDocument(raceTeacher, "identity_document", {
+    bytes: new TextEncoder().encode("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF"),
+    fileName: "race-identity.pdf",
+  });
   await verification.submitVerificationRequest(raceTeacher);
   const raceRequest = (
     await db.select().from(schema.teacherVerificationRequests)
       .where(eq(schema.teacherVerificationRequests.teacherUserId, raceTeacher))
   )[0];
+  if (!raceRequest) throw new Error("fixture failure: the racing application row is missing");
 
   const raceOutcomes = await Promise.all([
     verification.approveVerification(raceRequest.id, adminA),

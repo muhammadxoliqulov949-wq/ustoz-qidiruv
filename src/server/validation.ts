@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { VERIFICATION_DOCUMENT_TYPES } from "@/lib/media";
 import { categories } from "@/data/categories";
 import {
   extractUzPhoneDigits,
@@ -418,6 +419,33 @@ export const refundRejectionSchema = z
 
 /** Admin records the outcome of the provider operation. Same shape as rejection. */
 export const refundFailureSchema = refundRejectionSchema;
+
+/* ---------------------------------- media ---------------------------------- */
+/*
+ * PHASE 18 upload schemas.
+ *
+ * Each action has its OWN schema and its own purpose, and the FILE is taken from
+ * the FormData separately — never parsed by Zod, never trusted. `.strict()` is
+ * what makes "post `visibility: public`" a validation ERROR rather than a
+ * silently ignored field, so no caller can even express an override.
+ */
+
+/** Verification document upload: the document TYPE is the only client input. */
+export const verificationDocumentUploadSchema = z
+  .object({ documentType: z.enum(VERIFICATION_DOCUMENT_TYPES) })
+  .strict();
+
+/** Profile image upload: NO fields at all. The owner is the session user. */
+export const profileImageUploadSchema = z.object({}).strict();
+
+/** Course cover upload: the course is chosen, nothing else. */
+export const courseCoverUploadSchema = z.object({ courseId: idSchema }).strict();
+
+/** Remove one own, not-yet-attached verification document. */
+export const verificationDocumentRemovalSchema = z.object({ assetId: idSchema }).strict();
+
+/** Remove an own course cover (draft only — enforced server-side). */
+export const courseCoverRemovalSchema = z.object({ courseId: idSchema }).strict();
 
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;

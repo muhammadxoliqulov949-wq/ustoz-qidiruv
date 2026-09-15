@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { requireAdminPage } from "@/server/auth/guards";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
@@ -82,6 +83,15 @@ export default async function AdminRefundDetailPage({
 }: {
   params: Promise<{ refundId: string }>;
 }) {
+  /*
+   * DEFENCE IN DEPTH (Phase 18). The layout renders the refusal screen for a
+   * non-admin session, but this page must never PRODUCE data for one: Next
+   * serialises page segments for the client router, and a signed evidence URL
+   * or a document name must not reach a browser that is not an admin's.
+   */
+  const admin = await requireAdminPage("/admin/refunds");
+  if (!admin) return null;
+
   const { refundId } = await params;
   const detail = await getRefundForAdmin(refundId);
   if (!detail) notFound();

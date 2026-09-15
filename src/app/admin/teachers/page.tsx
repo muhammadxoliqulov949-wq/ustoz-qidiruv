@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { requireAdminPage } from "@/server/auth/guards";
 import Link from "next/link";
 import { ButtonLink } from "@/components/ui";
 import {
@@ -50,6 +51,16 @@ export default async function AdminTeachersPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  /*
+   * DEFENCE IN DEPTH (Phase 18). The admin layout renders the refusal
+   * screen for a non-admin session, but a page must never PRODUCE data for
+   * one: Next serialises page segments for the client router, so "the
+   * layout did not render me" is not a guarantee. Returning null here
+   * means a non-admin gets the refusal screen and an empty payload.
+   */
+  const admin = await requireAdminPage("/admin/teachers");
+  if (!admin) return null;
+
   const params = await searchParams;
   const status = parseStatus(params.status);
   const [rows, counts] = await Promise.all([

@@ -5,11 +5,15 @@ import { teacherWorkspaceOptions } from "@/data/teacher-dashboard";
 import { CourseEditor } from "@/components/teacher-dashboard/course-editor";
 import { DbCourseEditor } from "@/components/teacher-dashboard/db-course-editor";
 import { isLocalDraftId } from "@/lib/course-draft";
+import { COURSE_PUBLISHED_EDIT_LOCKED_NOTE, COURSE_UNDER_REVIEW_NOTE } from "@/lib/course-moderation";
 import { categories } from "@/data/categories";
 import { onboardingCities } from "@/lib/onboarding";
 import { requireRolePage } from "@/server/auth/guards";
 import { getOwnedCourseDetail } from "@/server/repo";
 import { getTeacherModerationStates } from "@/server/moderation-service";
+import { courseCoverUrl } from "@/server/file-service";
+import { storageStatus } from "@/server/storage";
+import { MEDIA_STORAGE_DISABLED_NOTE } from "@/lib/media";
 
 export const metadata: Metadata = { title: "Kurs qoralamasi" };
 
@@ -55,6 +59,15 @@ export default async function EditCoursePage({
 
     const state = moderationStates.get(detail.course.id) ?? null;
 
+    /*
+     * PHASE 18: the managed cover (if any) is resolved server-side, and the
+     * lifecycle decides whether the teacher may change it. These are DISPLAY
+     * decisions — the upload action re-checks ownership and status in SQL.
+     */
+    const managedCover = await courseCoverUrl(detail.course.id);
+    const storage = storageStatus();
+    const coverLocked = detail.course.status !== "draft";
+
     return (
       <div className="flex flex-col gap-6">
         <header className="flex flex-col gap-2">
@@ -79,6 +92,7 @@ export default async function EditCoursePage({
             priceUzs: detail.course.priceUzs,
             summary: detail.course.summary,
             longDescription: detail.course.longDescription ?? "",
+            image: detail.course.image,
           }}
           groups={detail.groups.map((group) => ({
             id: group.id,
@@ -98,6 +112,16 @@ export default async function EditCoursePage({
           }))}
           categories={categories.map(({ id, name }) => ({ id, name }))}
           cities={[...onboardingCities]}
+          cover={{
+            url: managedCover,
+            editable: !coverLocked,
+            lockedNote: coverLocked
+              ? detail.course.status === "published"
+                ? COURSE_PUBLISHED_EDIT_LOCKED_NOTE
+                : COURSE_UNDER_REVIEW_NOTE
+              : null,
+            storageNote: storage.enabled ? null : MEDIA_STORAGE_DISABLED_NOTE,
+          }}
           moderation={{
             reviewStatus: state?.latestDecision?.status ?? state?.pendingReview?.status ?? null,
             submittedAt: state?.pendingReview?.submittedAt ?? null,
