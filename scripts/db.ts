@@ -8,6 +8,10 @@
 /* Migration and seed are strictly separate steps: schema changes are           */
 /* deterministic SQL files, seeding is an explicit dev action that refuses to   */
 /* run against NODE_ENV=production.                                             */
+/*                                                                              */
+/* Production accepts ONE configuration: DB_DRIVER=pg + DATABASE_URL. The       */
+/* embedded PGlite driver is refused whenever NODE_ENV=production, so a         */
+/* production shell can never migrate a throwaway local directory by accident.  */
 /* -------------------------------------------------------------------------- */
 import { mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
@@ -19,6 +23,20 @@ type Sql = (query: string) => Promise<unknown>;
 
 async function connect(): Promise<{ exec: Sql; close: () => Promise<void> }> {
   const driver = process.env.DB_DRIVER ?? "pglite";
+  /*
+   * The same rule the application enforces at runtime, applied to the CLI so a
+   * production shell can never migrate/seed a throwaway `.data/pglite` file
+   * while believing it talked to the real server. An operator running
+   * `db:migrate` against production normally has NODE_ENV unset, so this fires
+   * exactly when a production environment is declared and no real driver was
+   * configured — where an implicit PGlite default would do the most damage.
+   */
+  if (process.env.NODE_ENV === "production" && driver !== "pg") {
+    throw new Error(
+      "refusing to use the embedded PGlite driver with NODE_ENV=production: " +
+        "set DB_DRIVER=pg and DATABASE_URL, or unset NODE_ENV for local development",
+    );
+  }
   if (driver === "pg") {
     const { Pool } = await import("pg");
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });

@@ -364,8 +364,8 @@ mobile bottom navigation.
 |---|---|---|
 | Database | **PostgreSQL** | Real `CHECK` / composite `FOREIGN KEY` / partial `UNIQUE` constraints, transactions, enums. The data-integrity rules of this product belong in the database, not only in application code. |
 | ORM | **Drizzle ORM + drizzle-kit** | TypeScript schema that generates **plain committed SQL** migrations you can read and review. No hidden runtime migration engine, no proprietary platform lock-in, and the driver can be swapped without touching queries. |
-| Dev/CI driver | **PGlite** (`@electric-sql/pglite`) | Genuine PostgreSQL 18 compiled to WebAssembly — not a mock and not SQLite. Identical constraint semantics with zero install, which matters because the same migrations must be provable in CI. |
-| Prod driver | **`pg`** (node-postgres) | The standard pooled client for a real Postgres server. Selected with `DB_DRIVER=pg`. |
+| Dev/CI driver | **PGlite** (`@electric-sql/pglite`) | Genuine PostgreSQL 18 compiled to WebAssembly — not a mock and not SQLite. Identical constraint semantics with zero install, which matters because the same migrations must be provable in CI. **Development/test only** — see the production rule below. |
+| Prod driver | **`pg`** (node-postgres) | The standard pooled client for a real Postgres server. The only driver production accepts, selected with `DB_DRIVER=pg`. |
 | Password hashing | **argon2id** via `@node-rs/argon2` | Current password-hashing recommendation (memory-hard). `m=19456, t=2, p=1`. No custom crypto anywhere. |
 | Sessions | **Opaque DB-backed tokens in an HttpOnly cookie** | Revocable server-side on logout (a JWT is not). No token ever touches `localStorage`. |
 | Validation | **Zod** | One `.strict()` schema per mutation, so over-posting is a hard error. |
@@ -392,10 +392,18 @@ the database under `.data/pglite` (git-ignored).
 access, so no DB env var is needed to produce a successful `npm run build`.
 
 The **runtime** needs a real PostgreSQL server — the embedded driver is a
-development tool and cannot serve a serverless deployment:
+development/test tool and cannot serve a serverless deployment:
 
 - `DB_DRIVER=pg` — required in production (`pglite` writes to a local
-  filesystem that serverless platforms do not persist).
+  filesystem that serverless platforms do not persist). This is enforced, not
+  merely documented: the first runtime database access in a production process
+  whose driver is not `pg` throws an explicit configuration error naming
+  `DB_DRIVER` and `DATABASE_URL`. Production can therefore never silently fall
+  back to PGlite, and never touches `.data/pglite`. The check is deliberately
+  in the database client rather than in the shared env validator, so it fires
+  only when a request actually reads the database — never during `next build`,
+  and never on the routes (`/`, `/categories`, `/login`, `/register`) that need
+  no database.
 - `DATABASE_URL` — a **pooled** connection string (Neon pooler, Supabase
   pgbouncer, Vercel Postgres pooled) with TLS parameters such as
   `?sslmode=require`; there is no separate `ssl` option in the pool. Startup
@@ -417,7 +425,10 @@ DB_DRIVER=pg DATABASE_URL=<production-url> npm run db:migrate
 `db:seed` / `db:reset` refuse to run when `NODE_ENV=production`: the canonical
 datasets are development fixtures (they create accounts and a demo password),
 not production content. A migrated but empty database is a supported state —
-listings render their empty state and detail slugs 404 honestly.
+listings render their empty state and detail slugs 404 honestly. The CLI
+applies the same production rule as the runtime: with `NODE_ENV=production` and
+no `DB_DRIVER=pg`, `scripts/db.ts` refuses rather than silently creating a
+throwaway `.data/pglite` cluster.
 
 ## Environment variables
 
