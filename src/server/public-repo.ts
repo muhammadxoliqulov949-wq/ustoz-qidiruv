@@ -21,6 +21,11 @@ import type { CourseBrowseParams } from "@/lib/course-search";
 /* Pages and components receive plain, already-projected model objects and stay */
 /* completely ignorant of Drizzle, SQL and column names.                        */
 /*                                                                              */
+/* CONSUMERS — /courses, /categories, /categories/[slug], /teachers,            */
+/* /teachers/[slug], the course detail page AND the homepage recommendation     */
+/* rows. Every public surface reads through here, so no page can hold a second, */
+/* static copy of marketplace inventory that the database disagrees with.       */
+/*                                                                              */
 /* PROJECTION STRATEGY                                                          */
 /* Rows are projected into the SAME `Course` / `Teacher` / `TeacherRow` types   */
 /* the approved Phase 3-5 UI already consumes. That is deliberate: the UI       */
@@ -44,6 +49,11 @@ import type { CourseBrowseParams } from "@/lib/course-search";
 /* deployment depend on a reachable database and would freeze a path set that   */
 /* changes after deploy. Unknown, draft and unpublished slugs 404 at request    */
 /* time through the `status = 'published'` predicate below.                     */
+/*                                                                              */
+/* Every route that renders these reads therefore declares                      */
+/* `export const dynamic = "force-dynamic"` — the browse routes, the detail      */
+/* routes and the homepage alike — so `next build` never executes a query and    */
+/* still succeeds with no database configured.                                  */
 /* -------------------------------------------------------------------------- */
 
 /* -------------------------------------------------------------------------- */
@@ -209,10 +219,16 @@ async function liveSeats(groupIds: string[]): Promise<Map<string, number>> {
  * latin/cyrillic variants and searches a composed haystack that includes the
  * category NAME. Reimplementing that in SQL would risk changing approved
  * search behaviour, which is explicitly out of scope.
+ *
+ * `options.limit` caps the result IN SQL, for surfaces that render a fixed
+ * number of picks (the homepage rows). It is a row cap only — it never widens
+ * visibility, because the `status = 'published'` predicate below is applied
+ * first and unconditionally. Browse surfaces omit it and keep the full result
+ * set.
  */
 export async function listPublicCourses(
   params: CourseBrowseParams,
-  options: { categoryId?: string | null } = {},
+  options: { categoryId?: string | null; limit?: number | null } = {},
 ): Promise<Course[]> {
   const db = getDb();
   const where = [eq(schema.courses.status, PUBLIC_STATUS)];
@@ -243,7 +259,7 @@ export async function listPublicCourses(
             : // "recommended" preserves catalogue order (stable by id).
               [asc(schema.courses.id)];
 
-  const rows = await db
+  const listing = db
     .select({ course: schema.courses, teacher: schema.teacherProfiles })
     .from(schema.courses)
     .innerJoin(
@@ -252,6 +268,11 @@ export async function listPublicCourses(
     )
     .where(and(...where))
     .orderBy(...order);
+
+  // Applied AFTER the visibility predicate and the ordering, so a capped
+  // surface gets the top N published rows — never a different population.
+  const limit = options.limit ?? null;
+  const rows = limit !== null && limit > 0 ? await listing.limit(limit) : await listing;
 
   if (rows.length === 0) return [];
 
@@ -513,7 +534,7 @@ export async function getPublicFacets(): Promise<{
   categoryCounts: Map<string, number>;
 }> {
   const db = getDb();
-  const [cityRows, langRows, categoryRows] = await Promise.all([
+  const [cityRows, langRows, categoryCounts] = await Promise.all([
     db
       .selectDistinct({ city: schema.courses.city })
       .from(schema.courses)
@@ -522,11 +543,7 @@ export async function getPublicFacets(): Promise<{
       .select({ languages: schema.teacherProfiles.languages })
       .from(schema.teacherProfiles)
       .where(eq(schema.teacherProfiles.isPublic, true)),
-    db
-      .select({ categoryId: schema.courses.categoryId, total: count(schema.courses.id) })
-      .from(schema.courses)
-      .where(eq(schema.courses.status, PUBLIC_STATUS))
-      .groupBy(schema.courses.categoryId),
+    getCategoryCourseCounts(),
   ]);
 
   const languageSet = new Set<string>();
@@ -536,13 +553,33 @@ export async function getPublicFacets(): Promise<{
     cities: cityRows.map((row) => row.city).filter((city): city is string => city !== null),
     // Keep the approved display order rather than DB order.
     languages: ["UZ", "EN", "RU", "AR"].filter((tag) => languageSet.has(tag)),
-    categoryCounts: new Map(categoryRows.map((row) => [row.categoryId, Number(row.total)])),
+    categoryCounts,
   };
 }
 
-/** Counts for the categories index page. */
+/**
+ * Published-course count per category id — the number rendered beside each
+ * category tile on the homepage and on /categories.
+ *
+ * WHICH CATEGORIES EXIST is static product taxonomy (`@/data/categories`:
+ * id, slug, name, icon — the same vocabulary the authoring form, the URL
+ * whitelist and `categoryId` validation use). HOW MANY COURSES each one holds
+ * is marketplace inventory, so it is counted here and nowhere else: one
+ * `GROUP BY` over `status = 'published'` rows.
+ *
+ * A category with nothing published is simply ABSENT from the map (a `GROUP BY`
+ * returns no row for it) and callers render that as 0. No category is ever
+ * given a placeholder number, because a tile that promises courses the
+ * catalogue does not have is the same lie as a card linking to a 404.
+ */
 export async function getCategoryCourseCounts(): Promise<Map<string, number>> {
-  return (await getPublicFacets()).categoryCounts;
+  const db = getDb();
+  const rows = await db
+    .select({ categoryId: schema.courses.categoryId, total: count(schema.courses.id) })
+    .from(schema.courses)
+    .where(eq(schema.courses.status, PUBLIC_STATUS))
+    .groupBy(schema.courses.categoryId);
+  return new Map(rows.map((row) => [row.categoryId, Number(row.total)]));
 }
 
 /**

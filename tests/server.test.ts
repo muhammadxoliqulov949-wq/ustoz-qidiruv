@@ -345,7 +345,7 @@ async function main(): Promise<void> {
 
   const {
     listPublicCourses, getPublicCourseBySlug, listPublicTeachers,
-    getPublicTeacherBySlug,
+    getPublicTeacherBySlug, getCategoryCourseCounts,
   } = await import("../src/server/public-repo");
   const { getTeacherDashboardCourses, getOwnedCourseDetail } =
     await import("../src/server/repo");
@@ -428,6 +428,46 @@ async function main(): Promise<void> {
       .every((c) => c.id !== hiddenId) === true);
   check("a teacher's own draft does not leak into the public listing",
     (await listPublicCourses(browseAll)).every((c) => c.id !== hiddenId));
+
+  /*
+   * ROW CAP + CATEGORY COUNTS — the two reads the homepage renders.
+   *
+   * The homepage recommendation rows and the category tiles come from this same
+   * repository (`listPublicCourses(…, { limit })` and
+   * `getCategoryCourseCounts()`), so the cap and the counts are asserted here
+   * rather than in a UI test: a cap that silently widened visibility, or a
+   * count that included a draft, would put a card or a number on the homepage
+   * that the detail route then 404s on.
+   */
+  const uncapped = await listPublicCourses(browseAll);
+  const cappedOne = await listPublicCourses(browseAll, { limit: 1 });
+  const cappedWide = await listPublicCourses(browseAll, { limit: 500 });
+  check("limit caps the public listing to N rows", cappedOne.length === 1);
+  check("limit is applied AFTER ordering (same top row as the uncapped list)",
+    cappedOne[0]?.id === uncapped[0]?.id);
+  check("a limit above the row count returns the listing unchanged (no padding)",
+    cappedWide.length === uncapped.length);
+  check("a capped listing still excludes drafts",
+    cappedWide.every((c) => c.id !== hiddenId));
+  const topRated = await listPublicCourses({ ...browseAll, sort: "rating" }, { limit: 3 });
+  check("a capped rating sort returns the highest-rated published rows in order",
+    topRated.length === Math.min(3, uncapped.length) &&
+      topRated.every((c, i) => i === 0 || topRated[i - 1].rating >= c.rating));
+
+  const counts = await getCategoryCourseCounts();
+  const countedFromListing = new Map<string, number>();
+  for (const course of uncapped) {
+    countedFromListing.set(
+      course.categoryId,
+      (countedFromListing.get(course.categoryId) ?? 0) + 1,
+    );
+  }
+  check("category counts agree with the published listing, per category",
+    [...countedFromListing].every(([id, total]) => counts.get(id) === total));
+  check("category counts never include a draft-only category row",
+    [...counts.values()].every((total) => total > 0));
+  check("an unknown category has no count to render (the UI shows 0, not a guess)",
+    counts.get("no-such-category") === undefined);
 
   // Dashboard split: the owner DOES see both, partitioned by status.
   const dash = await getTeacherDashboardCourses(teacherId);

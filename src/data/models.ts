@@ -26,13 +26,20 @@ export type CategoryIconKey =
   | "scroll"
   | "pen";
 
+/**
+ * Static product taxonomy entry (see data/categories.ts).
+ *
+ * Deliberately carries NO inventory figure: how many published courses a
+ * category holds is marketplace data and is counted at request time by
+ * `getCategoryCourseCounts()` in src/server/public-repo.ts, then handed to
+ * `CategoryCard` as a prop. A count stored next to the taxonomy would be a
+ * statistic nothing keeps true.
+ */
 export interface Category {
   id: string;
   slug: string;
   name: string;
   icon: CategoryIconKey;
-  /** Mock: number of published courses in the category. */
-  courseCount: number;
 }
 
 /** Minimal teacher projection embedded in a course (list-page shape). */

@@ -97,14 +97,38 @@ App shell: `navigation/header.tsx`, `navigation/logo.tsx`,
 `hero → popular-categories → recommended-courses → format-editorial →
 top-teachers → how-it-works → trust-promises → teacher-cta → footer`
 
-All sections are server-rendered from the typed mock layer
-(`src/data/models.ts` + `categories.ts` / `courses.ts` / `teachers.ts`).
-Icons resolve through `src/components/icons.tsx` (data stores string keys →
-lucide components; models stay serializable for the future API). Display
-numbers/prices format via `src/lib/format.ts` (SSR-deterministic, no Intl).
-Card cover photography and teacher portraits are placeholder mock assets in
-`public/media/`. The hero quick-filter row and the header/menu searches
-navigate into the Phase 3 results engine (URL is the contract).
+All sections are server-rendered. Icons resolve through
+`src/components/icons.tsx` (data stores string keys → lucide components; models
+stay serializable for the future API). Display numbers/prices format via
+`src/lib/format.ts` (SSR-deterministic, no Intl). The hero quick-filter row and
+the header/menu searches navigate into the Phase 3 results engine (URL is the
+contract).
+
+**The marketplace sections read PostgreSQL, exactly like the browse routes.**
+There is no mock/runtime split on this page:
+
+| Section | Source |
+|---|---|
+| `recommended-courses` | `listPublicCourses(…{sort:"rating"}, { limit: 6 })` — published rows only, capped in SQL |
+| `top-teachers` | `listPublicTeachers()` ranked by the same pure sorter as `/teachers?sort=rating`, first 4 |
+| `popular-categories` (the *count* on each tile) | `getCategoryCourseCounts()` — `GROUP BY category_id` over published rows |
+| hero, quick filters, format duet, how-it-works, trust promises, teacher CTA, category *taxonomy* | static copy/vocabulary (`site.ts`, `categories.ts`) |
+
+Consequences, all deliberate:
+
+* every homepage card is a row the database returned, so its
+  `/courses/[slug]` or `/teachers/[slug]` link resolves — the detail routes
+  apply the identical `status = 'published'` / `is_public` predicates;
+* a category tile can never promise “212 ta kurs” to a catalogue that has none
+  (the count is inventory; only *which* categories exist is taxonomy);
+* with an empty database the two rows render an honest empty state (the same
+  `Card variant="quiet"` language as the `/courses` results empty state) and
+  the tiles read “0 ta kurs”. No fixture card, no placeholder portrait, no
+  invented number — and no `try/catch` that would quietly substitute one;
+* the page is `export const dynamic = "force-dynamic"`, so the queries run per
+  request and `next build` still runs with no database at all. A course
+  published after the deploy appears on the homepage immediately, with no
+  rebuild and no `revalidatePath("/")` needed.
 
 ## Browse & search (Phase 3)
 
@@ -478,8 +502,9 @@ They are separate on purpose.
 ## Which source is canonical (important)
 
 **As of Phase 12 the database is the runtime source of truth for the public
-marketplace.** `/courses`, `/courses/[slug]`, `/teachers`, `/teachers/[slug]`
-and `/categories/[slug]` read PostgreSQL through `src/server/public-repo.ts`.
+marketplace.** `/courses`, `/courses/[slug]`, `/teachers`, `/teachers/[slug]`,
+`/categories/[slug]`, the `/categories` tile counts and the **homepage
+recommendation rows** read PostgreSQL through `src/server/public-repo.ts`.
 There is exactly one active public source; `src/data/*` is now **seed input,
 fixture data and static site copy only**.
 
@@ -487,9 +512,9 @@ fixture data and static site copy only**.
 
 | Module | Role after Phase 12 |
 |---|---|
-| `courses.ts`, `teachers.ts` | **Seed-only** for the course/teacher records. The exported *label maps* (`courseFormatLabels`, `courseLevelLabels`, `cityLabel`) remain runtime presentation helpers — they are static vocabulary, not marketplace data. |
-| `teacher-rows.ts`, `course-details.ts` | **Seed/reference only.** The equivalent read model is now derived in SQL by `listPublicTeachers()`. |
-| `categories.ts` | **Runtime, static taxonomy.** Six fixed categories used for routing, labels and the authoring form. Not marketplace inventory. |
+| `courses.ts`, `teachers.ts` | **Seed-only** for the course/teacher records. The exported *label maps* (`courseFormatLabels`, `courseLevelLabels`, `cityLabel`) remain runtime presentation helpers — they are static vocabulary, not marketplace data. The former home-facing exports `recommendedCourses` and `topTeachers` are **deleted**: they were slices of this fixture array, and a card built from them links to a `/courses/[slug]` the database-backed detail route 404s on. |
+| `teacher-rows.ts`, `course-details.ts` | **Seed/reference only.** The equivalent read model is now derived in SQL by `listPublicTeachers()`. (Their derived *facet vocabularies* — `teacherCities`, `teacherLanguages` — still whitelist URL params; see the note under the matrix.) |
+| `categories.ts` | **Runtime, static taxonomy.** Six fixed categories used for routing, labels and the authoring form. Not marketplace inventory, and it carries **no `courseCount` any more**: how many published courses a category holds is counted by `getCategoryCourseCounts()` and passed to `CategoryCard` as a prop (the card renders no count line when it is not given one). |
 | `reviews.ts` | **Runtime read-only fixtures**, joined to DB courses by stable course id. See "Reviews and FAQ" below. |
 | `course-faq.ts`, `teacher-faq.ts` | **Runtime pure functions.** They take a `Course`/`TeacherRow` (now DB-projected) and compute FAQ text. They hold no records. |
 | `site.ts` | **Runtime static copy** (page titles, intros, footer). |
@@ -498,6 +523,18 @@ fixture data and static site copy only**.
 
 The rule that matters: **no public marketplace page imports a canonical
 `courses`/`teachers` array at runtime.**
+
+*Known remainder, flagged for honesty:* the **facet vocabularies**
+`courseCities` (`courses.ts`) and `teacherCities` / `teacherLanguages`
+(`teacher-rows.ts`) are still derived from the fixture arrays and act as URL
+whitelists inside `lib/course-search.ts` / `lib/teacher-search.ts`. They render
+no records and produce no dead links — a facet value the catalogue does not
+contain simply lands on the honest empty state — but a city that production
+*does* have and the fixture does not would be rejected as an unknown param.
+`getPublicFacets()` already returns the live city and language lists (`/teachers`
+uses them for its filter options); moving the whitelists onto them changes
+approved browse behaviour, so it is tracked separately rather than folded into
+the data-source fix.
 
 ## Course lifecycle and visibility
 
@@ -534,9 +571,11 @@ teacher records.
 
 | Route | Mode | Why |
 |---|---|---|
+| `/` (homepage) | Dynamic SSR | Its recommendation rows and category counts are live marketplace reads; a prerendered homepage would freeze them at build time and would also execute those queries during `next build`. |
 | `/courses`, `/categories/[slug]` | Dynamic SSR | Results depend on the URL *and* live DB state; a build-time snapshot would go stale the moment a course changes. |
 | `/courses/[slug]` | Dynamic SSR | Seat availability is derived from live enrollment rows. **No `generateStaticParams`:** slugs are resolved at request time, so unknown, draft and unpublished slugs 404 then — and a course published *after* the deploy works without a rebuild. |
 | `/teachers`, `/teachers/[slug]` | Dynamic SSR | The roster and each profile's course set change at runtime. **No `generateStaticParams`**, same reasoning. |
+| `/categories` | Dynamic SSR | The taxonomy is static; the count on each tile is a live `GROUP BY` over published rows, so it must match the homepage tile and the category's own results screen. |
 | All `/dashboard` and `/teacher/dashboard` routes | Dynamic | Account-sensitive; never prerendered. |
 
 **`npm run build` does not require a database.** No route in the app enumerates
@@ -548,7 +587,9 @@ where every marketplace read is a request-time query through
 
 Writes call `revalidatePath()` for the affected surfaces (`/courses`,
 `/teachers`, the course's public page and the teacher dashboard), so data is not
-served stale after an edit.
+served stale after an edit. The homepage and `/categories` need no entry in
+those lists: both are `force-dynamic`, so they re-read on the next request
+whatever happens.
 
 ## Seat availability is derived, never stored
 
@@ -1361,6 +1402,10 @@ What makes it true:
 * no `generateStaticParams` on any database-backed route (it would enumerate
   slugs at build time) and no slug-listing helper exists to reintroduce it;
 * the marketplace detail pages are `force-dynamic`;
+* **every route that renders a marketplace read is `force-dynamic`** — the
+  browse routes, the detail routes, the homepage and `/categories`. Without the
+  flag Next prerenders the page and *executes its queries* during `next build`,
+  which is the same trap the admin layout hit below;
 * **the admin layout declares `export const dynamic = "force-dynamic"`**, which
   covers every nested admin route. Without it Next would try to prerender those
   pages, and because the pages themselves do not read cookies Next would
