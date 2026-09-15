@@ -4,7 +4,10 @@ import { teacherProfilesById } from "./teacher-profiles";
 
 /* -------------------------------------------------------------------------- */
 /* Teacher registry — Phase 2 record set, completed by Phase 5.                  */
-/* MOCK data only; all profiles are neutral fictional persons.                   */
+/* SEED FIXTURE only (development `npm run db:seed`); all profiles are neutral    */
+/* fictional persons. Since Phase 12 no public page renders this array —         */
+/* /teachers and /teachers/[slug] read PostgreSQL through                        */
+/* src/server/public-repo.ts.                                                    */
 /*                                                                                 */
 /* Integrity rules (enforced at build time):                                       */
 /*  • every course.teacher.id must exist here (no phantom course authors);        */
@@ -232,12 +235,9 @@ export const teachers: Teacher[] = teacherSeeds.map((seed) => {
 
 export const teacherById = new Map(teachers.map((teacher) => [teacher.id, teacher]));
 
-/** Home selection — the four most-active profiles (Phase 2 curation). */
-export const topTeachers: Teacher[] = [
-  "t-dilshod-rahimov",
-  "t-nodira-yusupova",
-  "t-sardor-qodirov",
-  "t-malika-ergasheva",
-]
-  .map((id) => teacherById.get(id))
-  .filter((teacher): teacher is Teacher => teacher !== undefined);
+/* There is deliberately no `topTeachers` export here any more. The homepage    */
+/* “Eng yaxshi ustozlar” row is read from PostgreSQL at request time            */
+/* (listPublicTeachers in src/server/public-repo.ts, ranked by the same pure    */
+/* sorter as /teachers?sort=rating); a hand-picked slice of this fixture array  */
+/* would render portraits whose /teachers/[slug] route 404s. This file is seed  */
+/* input only.                                                                  */

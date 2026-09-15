@@ -6,12 +6,17 @@ import type {
 } from "./models";
 
 /**
- * MOCK data only — the full browse catalog behind /courses and
- * /categories/[slug] (Phase 3). 15 illustrative listings with fictional
- * instructors; nothing here is a real listing or statistic. Future API
- * responses must satisfy `Course` (see models.ts).
+ * SEED FIXTURE — 15 illustrative listings with fictional instructors.
  *
- * Browse-data rules:
+ * Since Phase 12 this array is NOT the browse catalogue: /courses,
+ * /categories/[slug] and the detail routes read PostgreSQL through
+ * src/server/public-repo.ts, and `npm run db:seed` (development only — it
+ * refuses to run in production) projects these rows into the database. No
+ * public page renders this array, so nothing here is a real listing or
+ * statistic. The label maps at the bottom of the file ARE runtime helpers:
+ * static vocabulary, not marketplace data.
+ *
+ * Seed-data rules:
  *  • array order IS the “Tavsiya etilgan” (recommended) sort — curated
  *    picks first; keep it stable;
  *  • every field used by a URL filter must be present on every entry
@@ -327,8 +332,12 @@ export const courses: Course[] = courseSeeds.map((seed) => {
   return { ...seed, detail };
 });
 
-/** Home shortcut: the first N entries act as the curated “recommended” row. */
-export const recommendedCourses: Course[] = courses.slice(0, 6);
+/* There is deliberately no `recommendedCourses` export here any more. The     */
+/* homepage recommendation row is read from PostgreSQL at request time          */
+/* (listPublicCourses in src/server/public-repo.ts); a curated slice of this    */
+/* fixture array would render cards whose /courses/[slug] route 404s, because   */
+/* that route resolves against the database. This file is seed input + static   */
+/* label vocabulary only.                                                       */
 
 /** Display labels for the format facet — shared by cards and filters. */
 export const courseFormatLabels: Record<CourseFormat, string> = {
