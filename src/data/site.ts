@@ -16,7 +16,7 @@ export const primaryNav: NavItem[] = [
 
 export const loginNav: NavItem = {
   label: "Kirish",
-  href: "/login", // Phase 6: auth UI exists (backend handoff pending)
+  href: "/login",
 };
 
 export const becomeTeacherNav: NavItem = {
@@ -47,9 +47,9 @@ export const hero = {
   eyebrow: "Onlayn va offlayn ustozlar bazasi",
   title: "Sizga mos ustozni toping.",
   subtitle:
-    "Minglab kurslar va ustozlar bir joyda — onlayn yoki shahringizda offlayn. " +
-    "Yo‘nalish, format va byudjet bo‘yicha filtrlab, o‘zingizga mos o‘qituvchini " +
-    "bir necha daqiqada toping.",
+    "Kurslar va ustozlarni bir joyda toping — onlayn yoki shahringizda " +
+    "offlayn. Yo‘nalish, format va byudjet bo‘yicha filtrlab, o‘zingizga mos " +
+    "o‘qituvchini bir necha daqiqada toping.",
   searchLabel: "Kurs yoki ustoz qidirish",
   searchPlaceholder: "Nima o‘rganmoqchisiz?",
 } as const;
@@ -150,8 +150,10 @@ export const categoriesPage = {
   coursesWord: "kurs topildi",
 } as const;
 
-/** Footer link groups (Phase 2 homepage footer). Routes marked
- *  prefetch:false are future phases; built routes omit the flag. */
+/** Footer link groups (Phase 2 homepage footer). Every link resolves to a built
+ *  route — the informational pages landed in Phase 20, so no prefetch:false
+ *  flags remain. (Convention, kept for the future: unbuilt links must never
+ *  prefetch — set prefetch:false until the route exists.) */
 export const footerGroups: { title: string; links: NavItem[] }[] = [
   {
     title: "O‘rganish",
@@ -171,16 +173,16 @@ export const footerGroups: { title: string; links: NavItem[] }[] = [
   {
     title: "USTOZ",
     links: [
-      { label: "Biz haqimizda", href: "/about", prefetch: false },
-      { label: "Yordam", href: "/help", prefetch: false },
-      { label: "Aloqa", href: "/contacts", prefetch: false },
+      { label: "Biz haqimizda", href: "/about" },
+      { label: "Yordam", href: "/help" },
+      { label: "Aloqa", href: "/contacts" },
     ],
   },
   {
     title: "Huquqiy",
     links: [
-      { label: "Maxfiylik siyosati", href: "/privacy", prefetch: false },
-      { label: "Foydalanish shartlari", href: "/terms", prefetch: false },
+      { label: "Maxfiylik siyosati", href: "/privacy" },
+      { label: "Foydalanish shartlari", href: "/terms" },
     ],
   },
 ];

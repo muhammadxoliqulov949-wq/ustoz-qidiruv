@@ -45,12 +45,12 @@ export function WorkspaceGate({
         <h2 id="tw-gate" className="text-xl font-semibold text-ink-900">
           {heading}
         </h2>
-        <AuthNotice title="Katalog ma’lumotlari bu panelga hali ulanmagan">
-          Ommaviy katalogdagi kurslar hozircha alohida manbadan o‘qiladi va
-          hisobingizga bog‘lanmagan — bu ulanish keyingi bosqichda bajariladi.
-          Shu sababli bu bo‘limda avvalgi “ish maydonini tanlash” boshqaruvi
-          olib tashlandi: u hech qachon hisob bo‘lmagan va endi chalkashtirmasligi
-          kerak. Hisobingizdagi haqiqiy ma’lumotlar yuqorida ko‘rsatiladi.
+        <AuthNotice title="Bu bo‘lim endi ko‘rsatilmaydi">
+          Panel hisobingizga bog‘langan: kurslaringiz, so‘rovlar va profil
+          holati yuqorida hamda “Kurslarim” bo‘limida haqiqiy ma’lumotlardan
+          ko‘rsatiladi. Avvalgi “ish maydonini tanlash” boshqaruvi olib
+          tashlandi — u hech qachon hisob bo‘lmagan va endi
+          chalkashtirmasligi kerak.
           <p className="mt-3">
             <Link
               href="/teachers"
@@ -86,11 +86,10 @@ export function WorkspaceGate({
             hech bir ustozga mos kelmadi. Yon menyudan qaytadan tanlang.
           </AuthNotice>
         ) : null}
-        <EmptyState title="Ish maydoni tanlanmagan" as="h2">
-          Haqiqiy ustoz hisobi hali yo‘q, shuning uchun panel sizni avtomatik
-          tanib olmaydi. Ko‘rish uchun yon menyudagi ro‘yxatdan katalogdagi
-          ustozni tanlang — barcha ma’lumot o‘sha ustozning haqiqiy kurslaridan
-          olinadi.
+        <EmptyState title="Demo ko‘rinishi tanlanmagan" as="h2">
+          Bu — ishlab chiquvchilar uchun demo ko‘rinishi: hisobingizdagi
+          haqiqiy ma’lumotlar yuqorida ko‘rsatiladi. Demo katalogidan ustoz
+          tanlansa, uning kurslari shu yerda ko‘rinadi.
           <p className="mt-3">
             <Link
               href="/teachers"

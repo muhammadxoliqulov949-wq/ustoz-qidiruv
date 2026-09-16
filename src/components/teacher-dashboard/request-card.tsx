@@ -3,12 +3,12 @@ import { Badge, ButtonLink, Card } from "@/components/ui";
 import type { TeacherRequestView } from "@/lib/teacher-workspace";
 
 /* -------------------------------------------------------------------------- */
-/* TeacherRequestCard — the teacher-side read of the ONE Phase 7 local draft.   */
-/* Honest by construction: the status wording is limited to "Tugallanmagan      */
-/* qoralama" / "So'rov tayyor", always paired with the "mahalliy prototip       */
-/* ma'lumoti / backend ulanmagan" reason. There is intentionally NO approve,    */
-/* reject, confirm-payment or message control — not even disabled ones — since  */
-/* none of those operations exist anywhere in the product.                       */
+/* TeacherRequestCard — DEMO-ONLY: the teacher-side read of the one local       */
+/* enrollment draft, shown only inside the dev demo inspector. Honest by        */
+/* construction: the status wording is limited to "Tugallanmagan qoralama" /    */
+/* "So'rov tayyor", always paired with the demo reason line. There is           */
+/* intentionally NO approve / reject / message control here — real decisions    */
+/* live in the “So‘rovlar” section, rendered from real rows.                    */
 /* Server component: pure projection.                                            */
 /* -------------------------------------------------------------------------- */
 
@@ -46,7 +46,7 @@ export function TeacherRequestCard({ request }: { request: TeacherRequestView })
             {request.statusLabel}
           </Badge>
           <Badge variant="neutral" size="md">
-            Mahalliy prototip ma’lumoti
+            Demo ko‘rinishi
           </Badge>
         </div>
       </div>

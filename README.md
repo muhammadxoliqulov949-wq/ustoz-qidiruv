@@ -1,15 +1,17 @@
-# USTOZ — Frontend
+# USTOZ
 
-Marketplace for finding courses and teachers (Uzbekistan). This repository
-implements the approved USTOZ Master Frontend Specification phase by phase:
-**Phase 1** foundation (tokens, primitives, header, hero), **Phase 2** the
-full homepage, **Phase 3** browse & search (`/courses` results engine +
-`/categories` routes), **Phase 4** course detail pages
-(`/courses/[slug]`), and **Phase 5** teacher discovery + profiles
-(`/teachers`, `/teachers/[slug]`), Phases 6–10 the auth UI, enrollment flow
-and both dashboards, and **Phase 11** the real backend: PostgreSQL, migrations,
-phone+password authentication, server-side authorization and the enrollment
-foundation.
+Marketplace for finding courses and teachers (Uzbekistan) — full-stack
+Next.js: approved UI phases (1–10), then the real backend (Phase 11+):
+PostgreSQL runtime source of truth, phone+password auth with server-side
+authorization, enrollments, Payme payments, refunds, messaging, media,
+admin moderation and real reviews.
+
+> **Reading guide.** The Phase 1–10 sections below describe the original UI
+> build, when pages rendered from TypeScript datasets. The backend phases
+> (11–20) moved every runtime surface onto PostgreSQL; the early sections are
+> history, not current architecture. **Current truth:** “Which source is
+> canonical” (Phase 11 section, updated in Phase 20), the per-phase backend
+> sections, and “Phase 20” at the end.
 
 ## Stack
 
@@ -32,7 +34,16 @@ npm run db:migrate  # apply committed SQL migrations
 npm run db:seed     # dev-only: project canonical data into the database
 npm run db:reset    # dev-only: drop + migrate + seed
 npm run db:generate # regenerate a migration after editing the schema
-npm run test:server # backend/auth/authorization/constraint test suite
+
+npm run test:server      # backend/auth/authorization/constraint suite
+npm run test:enrollment  # enrollment request lifecycle suite
+npm run test:payments    # Payme protocol + payment state suite
+npm run test:refunds     # refund lifecycle suite
+npm run test:media       # uploads + verification documents + covers suite
+npm run test:messaging   # private conversation suite
+npm run test:admin       # admin moderation/verification/refund suite
+npm run test:reviews     # reviews + reputation suite
+npm run test:data-consistency # Phase 20 data-consistency regression suite
 ```
 
 ## Design system (Phase 1)
@@ -159,10 +170,12 @@ focus trap + return, scroll lock, live “N ta kursni ko‘rsatish” CTA),
 param). Everything else is server-rendered. No modal library, no new
 interaction systems, CourseCard reused unchanged.
 
-Data: 15 mock courses (`courses.ts`; order = recommended sort) cover every
-facet value (5 cities, 3 levels, 3 schedules, free/paid, ratings across
-4.0/4.5); cities + labels derive from the data; `publishedAt` (ISO,
-lexicographically sortable — SSR-deterministic) powers “Eng yangi”.
+Data (history — superseded by Phases 12 and 20): the browse UI was built
+against 15 fixture courses (`courses.ts`). Since Phase 12 the results come
+from PostgreSQL (`listPublicCourses`, published rows only); the fixture array
+is dev-seed input. Since Phase 20 the city facet options AND the URL
+whitelist come from live rows (`getPublicFacets` + `parseCourseBrowseParams`
+with a runtime allow-list) — no facet derives from the fixture any more.
 `notFound()` guards unknown slugs; metadata is per-route with the quoted
 query in the title.
 
@@ -174,8 +187,10 @@ sections — Kurs haqida, Dastur (flat numbered syllabus), Jadval va
 guruhlar, Ustoz, Fikrlar, Savol-javob — reached through a restrained
 sticky section nav (anchors, IntersectionObserver active state, no tabs).
 
-**Groups are the core interaction.** `CourseGroup` records live in
-`course-details.ts`; selection is a URL param (`?group=`) replaced with
+**Groups are the core interaction.** `CourseGroup` records lived in
+`course-details.ts` during the UI phases; since Phase 12 they are database
+rows (`getPublicCourseBySlug`, seats derived from accepted requests).
+Selection is a URL param (`?group=`) replaced with
 `router.replace` (same contract as Phase 3 facets: no back-stack spam,
 shareable, reload-safe). The enrollment card’s summary/availability and
 the schedule section are two projections of the same server-resolved
@@ -192,15 +207,14 @@ bottom clearance.
 Data model: detail content is grouped under `Course.detail`
 (`summary`, `longDescription`, `audience`, `learningOutcomes`,
 `teachingLanguages`, `pricePeriod`, `groups`, `syllabus`) so list views
-keep consuming the light row shape; `courseDetailsById` covers every
-course and the merge in `courses.ts` throws at build time if one is
-missing. FAQ answers are *generated* from listing fields
-(`course-faq.ts`) — venue, seat caps and price wording cannot contradict
-the card. Reviews are a deliberately small store (`reviews.ts`); courses
-without entries get an honest empty state, and the section never inflates
-the listing aggregates. Teachers gained full records (photo, `bio`) in
-`teachers.ts`; `/teachers/[slug]` remains a deferred seam (link with
-`prefetch={false}`).
+keep consuming the light row shape. During the UI phases `courseDetailsById`
+covered every fixture course; since Phase 12 the detail page reads
+PostgreSQL and the fixture is dev-seed input only. FAQ answers are
+*generated* from listing fields (`course-faq.ts`) — venue, seat caps and
+price wording cannot contradict the card. Reviews were a small fixture
+store during the UI phases; since Phase 19 they are real `course_reviews`
+rows with moderation, and courses without published reviews get an honest
+empty state — the section never inflates the listing aggregates.
 
 ## Teacher marketplace (Phase 5)
 
@@ -214,57 +228,54 @@ chips, deterministic sorts (tie-breaks on reviews/`id`). A price-range
 facet is deliberately absent: teachers have no price of their own — only
 their courses do.
 
-Teacher browse data is **derived, never duplicated**
-(`src/data/teacher-rows.ts`): every teacher row computes its courses,
-covered categories/cities/formats and cheapest course price from
-`courses.ts`, so a card or profile can never contradict the catalog.
-`activeCourses` is derived the same way — it is no longer hand-written.
-The registry also validates itself at build time: every `course.teacher.id`
-must exist and every teacher needs a `TeacherProfile`
-(`teacher-profiles.ts`) — a missing record fails `next build`.
+Teacher browse data was **derived, never duplicated** during the UI phases
+(`src/data/teacher-rows.ts` computed rows from `courses.ts`). Since Phase 12
+the equivalent read model is derived in SQL (`listPublicTeachers` — public
+profiles owning at least one published course); the fixture module survives
+as dev-seed input, the dev-demo inspector source and the `TeacherRow` type
+the repository projects into. `activeCourses` stays derived — never
+hand-written — on both sides.
 
 `/teachers/[slug]` is fully server-rendered: hero (portrait, verification,
 formats, languages, derived location, trust numbers as displayed on cards),
-“Ustoz haqida” + teaching approach, the teacher’s real courses as standard
-`CourseCard`s (deep-link back into Phase 4 detail pages), reviews composed
-from the SAME course review store (honest empty state otherwise), and a
-FAQ generated only from supported facts. The profile’s CTA scrolls to the
-course list — there is deliberately no messaging/booking affordance until
-those phases ship. Unknown slugs 404.
+“Ustoz haqida” + teaching approach, the teacher’s published courses as
+standard `CourseCard`s, real moderated reviews (Phase 19, honest empty state
+otherwise), and a FAQ generated only from supported facts. Unknown slugs 404.
 
 ## Auth + onboarding UI (Phase 6)
 
-`/login`, `/register` and `/onboarding` are a **frontend foundation only**:
-there is no auth backend, so no state in this phase ever pretends to be an
-authenticated account. `src/lib/onboarding.ts` is the single pure contract —
+`/login`, `/register` and `/onboarding` began as a **frontend foundation
+only**; Phase 11 wired the real backend (phone+password auth, sessions,
+profile persistence) behind these same screens. `src/lib/onboarding.ts` is
+the single pure contract —
 Uzbek +998 phone normalize/format/validate, the versioned `OnboardingDraft`
 codec (defensively re-parsed on every read: whitelist enums, drop unknown
 keys, keep only fixed-point phone strings), per-step validators and the
 completion CTAs, which reuse the existing browse URL contracts
 (`/courses?city=&format=`, `/teachers?city=&format=&lang=`,
 `/categories/[slug]`) instead of inventing fake “recommended for you”
-results. City/language/category/level option lists are all derived from the
-existing catalog data — no second taxonomy.
+results. City/language/category/level option lists are the static product
+taxonomy — since Phase 20 nothing derives them from fixture inventory.
 
-The only persistence is one namespaced localStorage key
+The draft persists in one namespaced localStorage key
 (`ustoz.onboarding.draft.v1`) behind
-`useSyncExternalStore` (`components/onboarding/draft-store.tsx`) — a
-prototype UI state, not a session: passwords are excluded from the draft
-type, a real backend replaces the whole module wholesale, and every auth
-screen carries the “Prototip interfeys” notice. Login validates locally,
-shows a busy submit state, then the honest “auth service not connected”
-notice (no cookies, no redirect pretending to sign in); password recovery
+`useSyncExternalStore` (`components/onboarding/draft-store.tsx`) as
+unsaved-form recovery; an explicit save writes the answers to the real
+profile row. Passwords are excluded from the draft type. Login and register
+are real server actions behind these screens (Phase 11); password recovery
 is a clearly-labeled deferred panel.
 
 Registration is role-first (two radio cards, never a dropdown) + name +
 phone + password only — teacher professional detail lives in
 `/onboarding` exclusively. The wizard (student: 3 steps + skippable;
-teacher: 5 required steps incl. a “verification arrives later” honesty
-screen + honesty declaration) keeps visible progress, Back/Continue,
+teacher: 5 required steps incl. a verification notice + honesty
+declaration) keeps visible progress, Back/Continue,
 Enter-submit, focus-on-step announcements and refresh-resume via the
 draft’s furthest step. Completion screens are labeled UI previews; the
 teacher one previews the profile from what was typed, with a pending
-“Tekshiruv kutilmoqda” badge — never a fake verified state.
+“Tekshiruv kutilmoqda” badge — never a fake verified state. Verification
+itself is a real admin-decided flow (Phase 15), applied for from the
+teacher panel.
 
 All previously dead entry points now resolve to these routes (header,
 mobile menu, footer, home CTA → `/login` / `/register?role=teacher`; the
@@ -275,22 +286,25 @@ Phase 4 enrollment dialog keeps its architecture and only drops the
 ## Enrollment flow (Phase 7)
 
 `/enroll/[courseSlug]?group=<id>` hosts the enrollment wizard: course/group →
-student info → schedule confirmation → review → **honest prototype
-submission**. The route is server-resolved like the detail pages: unknown
+student info → schedule confirmation → review → **submission**. The route is
+server-resolved like the detail pages: unknown
 course 404s; a `?group=` pointing at an unknown or full group never gets
 silently replaced — it downgrades to an explicit selection state with a
 notice. Selection changes `router.replace` the query (shareable, canonical,
 no back-stack spam), so back/forward moves between pages, not steps; the
 step itself lives in the client flow and the furthest step resumes on
-refresh.
+refresh. A signed-in student's submission writes a real
+`enrollment_requests` row (Phase 11+); anonymous visitors keep the honest
+local-only result.
 
 `src/lib/enroll.ts` is the pure contract behind it all (EnrollCourseLite
 serialization, `resolveEnrollGroup`, the versioned/defensively-parsed
 `ustoz.enroll.draft.v1` codec, per-step validators, the single review
 projection, canonical href builders) — components stay presentational. The
 enrollment draft is deliberately SEPARATE from the Phase 6 onboarding
-draft; it prefills name/phone from it (labeled “Prototip prefill”, never
-account data) and structurally cannot hold passwords, tokens or session ids
+draft; it prefills name/phone from the signed-in account when available,
+else from the browser form draft (labeled for what it is) and
+structurally cannot hold passwords, tokens or session ids
 — QA asserts the raw JSON has none. Auth handoff: Kirish/Ro‘yxatdan links
 everywhere carry `?next=`, validated by `lib/safe-next.ts` (internal paths
 only — protocol-relative, schemes, backslashes and oversized values are
@@ -300,11 +314,13 @@ the flow (the dialog now leads with “Yozilish shaklini to‘ldirish”
 carrying the selected group); nothing else about that surface changed.
 
 Submission semantics: the review CTA flips a UI flag after a short busy
-state and shows “So‘rov tayyor.” plus “Backend hali ulanmaganligi sababli
-so‘rov ustozga yuborilmadi” — no “yuborildi”, no receipt, no fake seat
-hold. Price rows state the payment deferral; free courses show “Bepul” with
-no payment step at all. Full groups (seatsRemaining 0) are unselectable with
-a text “Joy qolmagan” state, never color-only.
+state. For a signed-in student it also writes the real request row, and the
+completion screen summarizes it; anonymous visitors see “So‘rov tayyor.”
+plus an explicit notice that nothing was sent to the teacher — never
+“yuborildi”, never a receipt, never a fake seat hold. Price rows state the
+payment deferral; free courses show “Bepul” with no payment step at all.
+Full groups (seatsRemaining 0) are unselectable with a text “Joy qolmagan”
+state, never color-only.
 
 ## Student dashboard (Phase 8)
 
@@ -318,14 +334,17 @@ so every screen reads the SAME Phase 6 draft. The marketing header/footer are
 untouched. `dashboard/[...segments]` + `dashboard/not-found.tsx` keep unknown
 nested URLs a real 404 rendered inside the shell.
 
-Data flow is derive-only. `src/data/dashboard-catalog.ts` builds one
-serializable projection (`DashCatalog`: ids + display strings + the Phase 7
-group lite shape) from the canonical `courses`/`teachers`/`categories`
-arrays; client islands never import the datasets, so a saved list does not
-drag the catalog into the bundle. `src/lib/dashboard.ts` is the pure model
-(`toDashRequest`, `savedCourses/savedTeachers`, `profileCompleteness`,
-`STUDENT_NAV`, `isActiveNav`) and `components/dashboard/use-student-state.ts`
-is the single hook that joins the three prototype stores against it.
+Data flow was derive-only during the UI phases. Since Phases 11–13 the
+account requests read the database (`listStudentRequests` — owner id from
+the session), while the overview/saved/browser-draft joins use
+`getDashboardCatalog` (published rows only), rendering the real
+`submitted → accepted / rejected / cancelled` lifecycle; Phase 20 removed
+the `dashboard-catalog.ts` fixture join, so a signed-in student with no
+rows gets the honest “Hozircha so‘rovingiz yo‘q” empty state instead of
+demonstration rows. Client islands never import the datasets.
+`src/lib/dashboard.ts` stays the pure model (`STUDENT_NAV`, `isActiveNav`,
+status vocabulary) and the saved/profile panels below keep their Phase 8
+shape against real account data.
 
 Saved state gained its canonical home: `src/lib/saved.ts` (versioned model,
 `parseSavedState`, pure `toggleSaved`) + `components/saved/saved-store.ts`
@@ -334,18 +353,18 @@ Saved state gained its canonical home: `src/lib/saved.ts` (versioned model,
 existing `SaveButton` now reads/writes it (`kind` + `entityId` props), so
 there is exactly one saved store app-wide instead of the old per-button
 `useState`. Ids that no longer exist in the catalog silently drop out.
+Saved state is still browser-local (Phase 12 storage key “C — deferred”);
+the saved panel labels it as a browser list.
 
-Honesty rules: nothing claims a session. The identity area shows the
-onboarding draft's name or "Mehmon (profil to‘ldirilmagan)"; a draft with no
-role — or the `teacher` role — gets an explicit notice (Phase 9 owns the
-teacher panel). Request statuses are only `draft` ("Tugallanmagan qoralama")
-and `prepared` ("So‘rov tayyor" + "Backend ulanmagan"); the union has no
-accepted/confirmed/paid member. The overview shows counts of real things
+Honesty rules: the shell is session-backed — the identity area shows the
+signed-in account's name or “Mehmon (profil to‘ldirilmagan)”, and the wrong
+role gets an explicit notice. Request states are the real `submitted /
+accepted / rejected / cancelled` union from the database (Phase 13). The
+overview shows counts of real things
 (requests, saved items, filled profile fields) and one derived next action —
 no hours, streaks, progress rings, certificates or charts. Profile is an
 editor over the SAME `StudentAnswers` schema, option taxonomies and
-validators as Phase 6, writing through the same draft store (storage format
-unchanged; nothing is migrated).
+validators as Phase 6, persisted to the real profile row.
 
 ## Conventions
 
@@ -358,24 +377,24 @@ unchanged; nothing is migrated).
 - Navigation data (labels, routes, hero copy) is centralized in
   `src/data/site.ts`.
 - Icons: lucide only, never inline SVG.
-- Per-link prefetch is declared in nav data (`site.ts`): unbuilt routes set
-  `prefetch: false`; built routes omit the flag (/courses, /courses/[slug]
-  and /teachers routes since Phase 3–5; /login, /register and
-  /onboarding since Phase 6; /enroll/[courseSlug] since Phase 7).
+- Per-link prefetch is declared in nav data (`site.ts`): any unbuilt route
+  must set `prefetch: false` until its page exists; built routes omit the
+  flag. As of Phase 20 every footer link resolves to a built route
+  (/about, /help, /contacts, /privacy, /terms included), so no
+  `prefetch: false` remains.
 
-## Deliberately deferred
+## Deliberately deferred (as of Phase 10 — many shipped since)
 
-Auth backend wiring (accounts, sessions, OTP, password recovery — the
-Phase 6 screens are UI-only), real enrollment submission (the Phase 7 flow
-stops at the honest “request prepared” state; teacher-side request handling,
-seat holds and notifications come with the backend), payment integration
-(never simulated), the teacher dashboard (Phase 9), real onboarding
-persistence (the Phase 8 profile editor still writes the browser-local
-prototype draft), cross-device saved state, enrollment request history
-(the Phase 7 store holds one draft at a time), course creation (teacher flow deliberately does not collect
-it), pagination (catalogs fit one page), messaging, save persistence, real
-API, premium motion pass, dark mode evaluation, i18n (`/uz`, `/ru`…),
-mobile bottom navigation.
+Shipped by the backend phases: auth backend (accounts, sessions — Phase 11),
+teacher-side enrollment handling (Phase 13), payment integration (Payme,
+Phase 14), the teacher dashboard (server-backed since Phase 12), real
+onboarding persistence, full enrollment request history, course creation
+(Phase 12), messaging (Phase 16), refunds (Phase 17), uploads (Phase 18)
+and real reviews (Phase 19).
+
+Still deferred: OTP, password recovery, cross-device + server-side saved
+state, pagination (catalogs fit one page), premium motion pass, dark mode
+evaluation, i18n (`/uz`, `/ru`…), mobile bottom navigation.
 
 
 ---
@@ -426,8 +445,8 @@ development/test tool and cannot serve a serverless deployment:
   back to PGlite, and never touches `.data/pglite`. The check is deliberately
   in the database client rather than in the shared env validator, so it fires
   only when a request actually reads the database — never during `next build`,
-  and never on the routes (`/`, `/categories`, `/login`, `/register`) that need
-  no database.
+  and never on routes that need no database (e.g. `/login`, `/register` —
+  `/` and `/categories` DO read live marketplace rows).
 - `DATABASE_URL` — a **pooled** connection string (Neon pooler, Supabase
   pgbouncer, Vercel Postgres pooled) with TLS parameters such as
   `?sslmode=require`; there is no separate `ssl` option in the pool. Startup
@@ -513,33 +532,34 @@ recommendation rows** read PostgreSQL through `src/server/public-repo.ts`.
 There is exactly one active public source; `src/data/*` is now **seed input,
 fixture data and static site copy only**.
 
-### `src/data/*` runtime matrix
+### `src/data/*` runtime matrix (updated in Phase 20)
 
-| Module | Role after Phase 12 |
+| Module | Role today |
 |---|---|
-| `courses.ts`, `teachers.ts` | **Seed-only** for the course/teacher records. The exported *label maps* (`courseFormatLabels`, `courseLevelLabels`, `cityLabel`) remain runtime presentation helpers — they are static vocabulary, not marketplace data. The former home-facing exports `recommendedCourses` and `topTeachers` are **deleted**: they were slices of this fixture array, and a card built from them links to a `/courses/[slug]` the database-backed detail route 404s on. |
-| `teacher-rows.ts`, `course-details.ts` | **Seed/reference only.** The equivalent read model is now derived in SQL by `listPublicTeachers()`. (Their derived *facet vocabularies* — `teacherCities`, `teacherLanguages` — still whitelist URL params; see the note under the matrix.) |
+| `courses.ts`, `teachers.ts` | **Seed-only** for the course/teacher records. The exported *label maps* (`courseFormatLabels`, `courseLevelLabels`, `cityLabel`) remain runtime presentation helpers — they are static vocabulary, not marketplace data. The former home-facing exports `recommendedCourses` and `topTeachers` are **deleted** (Phase 12); the derived `courseCities` inventory list is **deleted** (Phase 20) — the city facet whitelist now comes from live rows (see “Facet vocabularies” below). |
+| `teacher-rows.ts`, `course-details.ts` | **Seed/reference only.** The equivalent read model is derived in SQL by `listPublicTeachers()`. (Phase 20 deleted the derived *facet vocabularies* `teacherCities` / `teacherLanguages`; see below.) |
 | `categories.ts` | **Runtime, static taxonomy.** Six fixed categories used for routing, labels and the authoring form. Not marketplace inventory, and it carries **no `courseCount` any more**: how many published courses a category holds is counted by `getCategoryCourseCounts()` and passed to `CategoryCard` as a prop (the card renders no count line when it is not given one). |
 | ~~`reviews.ts`~~ | **DELETED in Phase 19.** Written reviews are real rows in `course_reviews`, read through `public-repo.ts`. There is no fixture left to fall back to. See "Reviews and FAQ" below. |
 | `course-faq.ts`, `teacher-faq.ts` | **Runtime pure functions.** They take a `Course`/`TeacherRow` (now DB-projected) and compute FAQ text. They hold no records. |
 | `site.ts` | **Runtime static copy** (page titles, intros, footer). |
-| `dashboard-catalog.ts`, `teacher-dashboard.ts`, `teacher-profiles.ts`, `course-authoring.ts` | **Legacy prototype projections.** No longer used by the primary teacher dashboard, which reads the database. Retained for the legacy local-draft editor and option lists. |
+| ~~`dashboard-catalog.ts`~~ | **DELETED in Phase 20.** The student dashboard reads the database; the last consumer was the demo fallback, which is gone with it. |
+| `teacher-dashboard.ts`, `teacher-profiles.ts`, `course-authoring.ts` | **Legacy prototype projections / option lists.** The primary teacher dashboard reads the database; these survive for the legacy local-draft editor, the dev-demo inspector and form option lists. |
 | `models.ts` | **Runtime types.** The repository projects DB rows into these exact types. |
 
 The rule that matters: **no public marketplace page imports a canonical
 `courses`/`teachers` array at runtime.**
 
-*Known remainder, flagged for honesty:* the **facet vocabularies**
-`courseCities` (`courses.ts`) and `teacherCities` / `teacherLanguages`
-(`teacher-rows.ts`) are still derived from the fixture arrays and act as URL
-whitelists inside `lib/course-search.ts` / `lib/teacher-search.ts`. They render
-no records and produce no dead links — a facet value the catalogue does not
-contain simply lands on the honest empty state — but a city that production
-*does* have and the fixture does not would be rejected as an unknown param.
-`getPublicFacets()` already returns the live city and language lists (`/teachers`
-uses them for its filter options); moving the whitelists onto them changes
-approved browse behaviour, so it is tracked separately rather than folded into
-the data-source fix.
+*Phase 20 — facet vocabularies, the known remainder resolved.* The
+fixture-derived URL whitelists (`courseCities`, `teacherCities`,
+`teacherLanguages`) are **deleted**. Public facets now come from live rows:
+`getPublicFacets()` returns the course cities, teacher cities and teacher
+languages behind published/queryable inventory, and the browse parsers
+(`parseCourseBrowseParams`, `parseTeacherBrowseParams`) accept a runtime
+allow-list — so a production city the fixture never had is a valid param,
+and a param with no inventory lands on the honest empty state. Static
+option sets that are taxonomy rather than inventory (formats, levels,
+subjects, price thresholds, sort orders) still live in `src/lib/*` and
+`src/data/taxonomy.ts`.
 
 ## Course lifecycle and visibility
 
@@ -903,7 +923,7 @@ accepted from the client; identity comes from the session cookie only.
 npm run db:migrate       # apply migrations (runs clean from scratch)
 npm run db:seed          # non-production demo data
 npm run db:reset         # drop, migrate, seed
-npm run test:server      # Phase 11/12 DB + security suite   (107 checks)
+npm run test:server      # Phase 11/12 DB + security suite   (133 checks)
 npm run test:enrollment  # Phase 13 enrollment suite         (67 checks)
 npm run build            # production build
 ```
@@ -1102,7 +1122,9 @@ and exactly one success event — over both the service API and real HTTP.
 
 Per Payme's documentation, customer refunds are performed by the merchant in the
 cabinet at `merchant.paycom.uz`, and are only possible *because* we implement
-`CancelTransaction`. This product implements no refund UI.
+`CancelTransaction`. Phase 14 implemented no refund UI; Phase 17 added the
+request → admin review → provider-confirmed workflow (see the Phase 17
+section).
 
 Consequently **an accepted enrollment with a succeeded payment cannot be
 self-cancelled.** The refusal is honest rather than silently cancelling while
@@ -1362,10 +1384,9 @@ unverified ──submit──▶ pending ──approve──▶ verified
   the reviewer's feedback is stored on the request row (visible to the teacher),
   and the teacher can fix the profile and re-apply. History is kept: a rejection
   is a decision, never a ban.
-* **No document uploads.** There is no file-upload infrastructure in this phase,
-  and every screen says so:
-  `Hujjat orqali tekshirish keyingi bosqichda ulanadi.` — the reviewer approves
-  on the basis of the profile data shown on the plugin screen.
+* **No document uploads (in this phase — superseded by Phase 18).**
+  Verification applications are now document-backed; see the Phase 18 section.
+  The trust decision itself is unchanged and still lives here.
 
 ## Course moderation lifecycle
 
@@ -1718,7 +1739,8 @@ existing role guard, exactly like any other non-participant.
 `messages` table. That is a **soft, database-derived guard against a runaway
 loop**, not production rate limiting: there is no shared or durable limiter
 infrastructure yet, and a process-memory limiter would be a lie on a
-multi-instance deployment. Real rate limiting is listed as Phase 20 hardening.
+multi-instance deployment. Phase 20 scoped itself to data consistency and did
+not add it; real rate limiting remains future work.
 
 ## Commands
 
@@ -2207,3 +2229,100 @@ document analysis, biometric or face matching, an antivirus service, an image
 editor/cropper, multi-image galleries, and reviews. Also deliberately absent: a
 content-addressed store, automatic cleanup scheduling, and any promise that a
 document was scanned.
+
+# Phase 20 — data consistency, mock cleanup and product truth
+
+Phase 20 changes no behaviour the backend phases got right; it removes the
+fiction that was still sitting next to it. Every public page, cabinet and
+browse filter now answers from one place — PostgreSQL — or says plainly that
+it cannot. The approved UI is untouched.
+
+## The one rule
+
+**PostgreSQL is the runtime source of truth. `src/data/*` holds only**
+(a) static product taxonomy and copy (categories, formats, levels,
+languages, price thresholds, sort orders, page text, footer), (b) pure
+formatter/validator functions over DB-projected rows, and (c) dev-seed input
+that never reaches a runtime page. Anything that used to **derive inventory
+from fixtures** — counts, city/language lists, demonstration rows — was
+deleted or rewired onto live queries.
+
+## Student dashboard (Phase 8 surface, Phase 20 truth)
+
+The account request cards read `listStudentRequests` (owner id from the
+session only; payment/refund facts join in the same server render), and
+the overview/saved panels join browser state against `getDashboardCatalog`
+— published rows only — rendering the real
+`submitted / accepted / rejected / cancelled` lifecycle with per-state
+actions. Phase 20 deleted `src/data/dashboard-catalog.ts` and the demo
+fallback: a signed-in student with no rows sees “Hozircha so‘rovingiz yo‘q”
+with a link to the catalog — never demonstration rows, never a fixture join.
+Saved courses/teachers stay an explicitly labelled browser-local list.
+
+## Public facets from live rows
+
+Inventory-dependent facets are queried from published/queryable rows through
+`getPublicFacets()` (course cities; languages of directory teachers) and
+`getCategoryCourseCounts()` (per-category counts), and the URL parsers
+(`parseCourseBrowseParams`, `parseTeacherBrowseParams`) take the live values
+as their runtime allow-list. A real city no fixture ever had is a valid
+param; a param with no rows lands on the honest empty state. Everything else
+on the filter panels is static taxonomy or user input, not inventory: subject
+vocabulary (the category slugs), formats, levels, schedules, rating/experience
+thresholds, sort orders, and the free-text price min/max. No price
+bounds or subject list is queried, because the UI offers none.
+
+## Fake counts and dead ends, removed
+
+* The hero's “Minglab kurslar…” claim is gone — no format promises inventory
+  the database does not have.
+* Every footer link resolves to a built route: `/about`, `/help`,
+  `/contacts`, `/privacy`, `/terms` are new, static, server-rendered pages
+  describing **actual** behaviour (the verification, enrollment, payment,
+  refund, review and moderation flows as they really work). `/contacts` lists
+  no phone, email or social channel, because none exists for this project —
+  inventing one would be a fake contact.
+* No `prefetch: false` remains anywhere; the convention stands for future
+  unbuilt links.
+
+## Fixture cleanup
+
+`dashboard-catalog.ts` and the derived `courseCities` / `teacherCities` /
+`teacherLanguages` exports are **deleted**. What survives in `src/data/*` is
+audited per module in “`src/data/*` runtime matrix” above. Nothing was
+migrated from fixtures into production reads — the dev seed still projects
+fixtures one way into a development database and refuses production.
+
+## Storage (explicitly NOT this phase)
+
+Phase 20 does no storage work: no bucket provisioning, no env changes, no
+cleanup scheduling. The Phase 18 contract stands as documented.
+
+## Guarantees held
+
+Session model, cookie flags, argon2id, composite FKs, the enrollment/payment/
+refund state machines, messaging eligibility, rating recomputation, review and
+moderation rules, the no-build-time-DB rule and the no-polling/no-realtime
+boundaries are all unchanged — re-verified by running every suite plus
+`tsc`, `lint` and a database-less production build after the cleanup.
+
+## Commands
+
+```bash
+npm run test:data-consistency  # Phase 20 data-consistency suite (see below)
+```
+
+`tests/data-consistency.test.ts` pins the Phase 20 contract: public-repo
+reads return published rows only; facet cities/languages derive from live
+rows; unknown params are dropped by the parsers with or without a runtime
+allow-list; the deleted fixture modules/exports have no importers; every
+footer href resolves to a built route; and no `generateStaticParams`
+survives on any DB-backed route. It runs against real PGlite migrations,
+like every other suite.
+
+## What Phase 20 does NOT implement
+
+Storage provisioning or scheduling · new marketplace features · real rate
+limiting · password recovery or OTP · server-side saved state · pagination ·
+any change to the session, payment, refund, messaging, review or moderation
+rules.

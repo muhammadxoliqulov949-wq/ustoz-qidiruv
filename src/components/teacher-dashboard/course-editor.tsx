@@ -111,13 +111,14 @@ function CourseEditorBody({ draftId, options, teachers }: CourseEditorProps) {
     return (
       <div className="flex min-h-[30rem] flex-col gap-4">
         <AuthNotice variant="warning" title="Ish maydoni tanlanmagan">
-          Kurs qoralamasi qaysidir ustozga tegishli bo‘lishi kerak. Hisob va
-          autentifikatsiya yo‘q, shuning uchun avval yon menyudan prototip ish
-          maydonini tanlang — qoralama o‘sha ustozga bog‘lanadi.
+          Bu eski mahalliy muharrir hisobingizga ulanmagan: qoralama qaysi
+          demo ustoz namunasiga tegishli bo‘lishi brauzer holatidan olinadi.
+          Tanlov topilmadi — yangi kurslarni “Kurslarim” bo‘limidagi server
+          qoralamasi orqali yarating.
         </AuthNotice>
-        <EmptyState title="Avval ustozni tanlang" as="h2">
-          Tanlamasdan kurs yaratib bo‘lmaydi: aks holda qoralama tasodifiy
-          ustozning nomidan yaratilgandek ko‘rinardi.
+        <EmptyState title="Eski qoralama ochilmadi" as="h2">
+          Bu brauzerda qoralama qaysi ustoz namunasiga tegishli ekani
+          saqlanmagan, shuning uchun uni bu yerda ochib bo‘lmaydi.
           <p className="mt-3">
             <Link
               href="/teacher/dashboard/courses"
@@ -392,7 +393,8 @@ function EditorForm({
         <AuthNotice title="Qoralama “ko‘rib chiqishga tayyor” deb belgilandi">
           Bu holat faqat sizning brauzeringizdagi belgi. Kurs katalogda
           chiqmagan, moderatsiyaga yuborilmagan va o‘quvchilar uni ko‘rmaydi.
-          Haqiqiy e’lon qilish backend bilan birga keladi.{" "}
+          Katalogda e’lon qilish uchun kursni “Kurslarim” bo‘limida server
+          qoralamasi sifatida kiriting.{" "}
           <Button
             variant="ghost"
             size="sm"

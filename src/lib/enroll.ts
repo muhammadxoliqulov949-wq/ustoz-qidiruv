@@ -3,18 +3,20 @@ import { canonicalPhoneOrEmpty, validateName, validatePhoneField } from "./onboa
 import { withNext } from "./safe-next";
 
 /* -------------------------------------------------------------------------- */
-/* Enrollment flow engine — Phase 7. The same pure-contract pattern as           */
-/* course-search / teacher-search / onboarding:                                  */
+/* Enrollment flow engine. The same pure-contract pattern as course-search /     */
+/* teacher-search / onboarding:                                                  */
 /*   • EnrollCourseLite/EnrollGroupLite — the serializable projection the          */
-/*     /enroll/[courseSlug] page builds from the catalog (no dataset import in     */
-/*     client islands, labels resolved server-side, one source of truth).          */
+/*     /enroll/[courseSlug] page builds from the live DB course (no dataset      */
+/*     import in client islands, labels resolved server-side, one source of      */
+/*     truth).                                                                   */
 /*   • resolveEnrollGroup — URL ⇄ draft group resolution; invalid/never silent.    */
 /*   • EnrollDraft + parseEnrollDraft — versioned, defensively sanitized,          */
 /*     and structurally incapable of holding passwords/tokens/ids.                 */
 /*   • enrollStepErrors / enrollmentSummary / href builders — step gating and     */
 /*     the review projection, so presentation components stay dumb.               */
-/* Nothing here claims a server enrollment exists — the "submitted" flag is a     */
-/* UI-state marker for the prototype completion screen only.                     */
+/* The "submitted" flag is a UI-state marker for the completion screen: a        */
+/* signed-in student's submission ALSO writes a real enrollment_requests row     */
+/* (server action), which the account section renders from the database.         */
 /* -------------------------------------------------------------------------- */
 
 export interface EnrollGroupLite {
@@ -99,7 +101,7 @@ export const ENROLL_STEPS: readonly EnrollStepDef[] = [
   {
     id: "done",
     title: "So‘rov holati",
-    hint: "Frontend prototipi — server yozuvi mavjud emas.",
+    hint: "Yakuniy holat — yuborilgan so‘rov kabinetingizda ko‘rinadi.",
   },
 ];
 

@@ -4,7 +4,8 @@ import type {
   CourseLevel,
   CourseSchedule,
 } from "@/data/models";
-import { courseCities, courseRatingFilters } from "@/data/courses";
+import { courseRatingFilters } from "@/data/courses";
+import { citySlugs } from "@/data/taxonomy";
 
 /* -------------------------------------------------------------------------- */
 /* Course search engine — the single pure contract behind every browse          */
@@ -81,9 +82,18 @@ function parseMoney(value: string | string[] | undefined): number | null {
   return Number.parseInt(raw, 10);
 }
 
-/** Parse + sanitize Next's raw searchParams into typed browse state. */
+/**
+ * Parse + sanitize Next's raw searchParams into typed browse state.
+ *
+ * `allowedCities` is the city whitelist. Production pages pass the RUNTIME
+ * list from `getPublicFacets()` (cities that currently have published
+ * courses), so the whitelist can never reject a real inventory city or bless
+ * a fixture-only one. Callers without a database (pure helpers, tests) omit
+ * it and get the static product taxonomy instead — never fixture inventory.
+ */
 export function parseCourseBrowseParams(
   searchParams: Record<string, string | string[] | undefined>,
+  allowedCities: readonly string[] = citySlugs,
 ): CourseBrowseParams {
   const rawFormat = first(searchParams.format) ?? first(searchParams.mode) ?? "";
   const rawCity = (first(searchParams.city) ?? "").toLowerCase();
@@ -102,9 +112,7 @@ export function parseCourseBrowseParams(
     schedule: SCHEDULES.includes(first(searchParams.schedule) ?? "")
       ? (first(searchParams.schedule) as CourseSchedule)
       : null,
-    city: (courseCities as readonly string[]).includes(rawCity)
-      ? rawCity
-      : null,
+    city: allowedCities.includes(rawCity) ? rawCity : null,
     price: rawPrice === "free" || rawPrice === "paid" ? rawPrice : null,
     priceMin,
     priceMax: priceMax !== null && priceMax >= (priceMin ?? 0) ? priceMax : null,

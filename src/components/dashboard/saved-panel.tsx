@@ -175,9 +175,9 @@ export function SavedPanel({ catalog }: { catalog: DashCatalog }) {
   return (
     <div className="flex flex-col gap-8">
       <AuthNotice title="Saqlanganlar shu brauzerda turadi">
-        Hisob ulanmagani uchun ro‘yxat faqat shu qurilma va brauzer xotirasida
-        saqlanadi — boshqa qurilmada ko‘rinmaydi va brauzer ma’lumotlari
-        tozalansa yo‘qoladi.
+        Saqlanganlar ro‘yxati hozircha hisobingizga bog‘lanmagan: u faqat shu
+        qurilma va brauzer xotirasida saqlanadi — boshqa qurilmada ko‘rinmaydi
+        va brauzer ma’lumotlari tozalansa yo‘qoladi.
       </AuthNotice>
 
       <section aria-labelledby="saved-courses" className="flex flex-col gap-4">

@@ -242,7 +242,7 @@ export function ProfilePanel() {
         </Button>
       </div>
       <p className="text-sm text-ink-500">
-        Saqlash faqat shu brauzerdagi prototip holatini yangilaydi — serverga
+        Saqlash faqat shu brauzerdagi qoralama holatini yangilaydi — serverga
         hech narsa yuborilmaydi.
       </p>
     </Card>

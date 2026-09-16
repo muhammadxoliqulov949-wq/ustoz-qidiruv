@@ -13,8 +13,11 @@ import type {
  * src/server/public-repo.ts, and `npm run db:seed` (development only — it
  * refuses to run in production) projects these rows into the database. No
  * public page renders this array, so nothing here is a real listing or
- * statistic. The label maps at the bottom of the file ARE runtime helpers:
- * static vocabulary, not marketplace data.
+ * statistic.
+ *
+ * RUNTIME-SAFE EXPORTS IN THIS FILE (static vocabulary, not inventory):
+ * `courseFormatLabels`, `courseLevelLabels`, `courseScheduleLabels`,
+ * `courseRatingFilters`, `cityLabel`. SEED-ONLY: the `courses` array.
  *
  * Seed-data rules:
  *  • array order IS the “Tavsiya etilgan” (recommended) sort — curated
@@ -364,16 +367,11 @@ export const courseRatingFilters = [
   { value: "4.5", label: "4.5 va yuqori", min: 4.5 },
 ] as const;
 
-/**
- * Cities present in the catalog (derived — the source of truth for the
- * city facet, so a mock course in a new city appears in the UI without
- * any component change).
- */
-export const courseCities: string[] = Array.from(
-  new Set(
-    courses.map((course) => course.city).filter((city): city is string => city !== null),
-  ),
-).sort();
+/* Phase 20: the fixture-derived `courseCities` list is DELETED. Form vocabularies
+ * read the static taxonomy (src/data/taxonomy.ts); browse filter OPTIONS and
+ * the URL whitelist come from live database rows (getPublicFacets +
+ * parseCourseBrowseParams with a runtime allow-list). A city facet derived
+ * from seed inventory would bless fixture-only cities and reject real ones. */
 
 /** "toshkent" → "Toshkent" (ASCII-safe capitalize for our city slugs). */
 export function cityLabel(city: string): string {

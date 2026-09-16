@@ -41,7 +41,7 @@ export function CourseReviewView({
         }
       >
         {review.complete
-          ? "Quyidagi ko‘rinish kurs qanday tuzilganini to‘liq ko‘rsatadi. Ma’lumot faqat shu brauzerda saqlanadi: katalogda chiqmaydi, o‘quvchilar ko‘rmaydi, moderatsiya va e’lon qilish ulanmagan."
+          ? "Quyidagi ko‘rinish kurs qanday tuzilganini to‘liq ko‘rsatadi. Ma’lumot faqat shu brauzerda saqlanadi: katalogda chiqmaydi, o‘quvchilar ko‘rmaydi, moderatsiyaga yuborilmaydi."
           : "Quyida to‘ldirilmagan joylar “To‘ldirilmagan” deb ko‘rsatilgan. Qoralamani shundayligicha saqlash mumkin, ammo “Ko‘rib chiqishga tayyor” holatiga o‘tkazish uchun hammasi to‘ldirilishi kerak."}
       </AuthNotice>
 
@@ -49,7 +49,7 @@ export function CourseReviewView({
         <Badge variant={review.status === "ready" ? "success" : "neutral"}>
           {COURSE_DRAFT_STATUS_LABELS[review.status]}
         </Badge>
-        <Badge variant="neutral">Mahalliy prototip ma’lumoti</Badge>
+        <Badge variant="neutral">Faqat brauzerda</Badge>
         <span className="text-sm text-ink-500">
           {COURSE_DRAFT_STATUS_NOTES[review.status]}
         </span>
@@ -123,8 +123,8 @@ export function CourseReviewView({
           </ul>
         )}
         <p className="text-sm text-ink-500">
-          Band qilingan joylar ko‘rsatilmaydi — prototipda haqiqiy yozilish
-          hisobi yo‘q.
+          Band qilingan joylar ko‘rsatilmaydi — bu mahalliy qoralamada
+          yozilish hisobi yuritilmaydi.
         </p>
       </Card>
 

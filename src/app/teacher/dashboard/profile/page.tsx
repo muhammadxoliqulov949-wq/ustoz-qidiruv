@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { teacherDirectory } from "@/data/teacher-dashboard";
 import { demoWorkspaceEnabled } from "@/server/env";
 import { TeacherProfilePanel } from "@/components/teacher-dashboard/profile-panel";
 import { TeacherSavedProfile } from "@/components/teacher-dashboard/saved-profile";
@@ -18,6 +17,11 @@ export default async function TeacherProfilePage() {
   const user = await requireRolePage("teacher", "/teacher/dashboard/profile");
   const profile = await getTeacherProfile(user.id);
   const demoEnabled = demoWorkspaceEnabled();
+  /* Phase 20: the legacy catalogue projection is loaded ONLY for the dev-only
+   * demo inspector. Production (flag off) never imports fixture inventory. */
+  const directory = demoEnabled
+    ? (await import("@/data/teacher-dashboard")).teacherDirectory
+    : { workspaces: [] };
 
   /*
    * PHASE 18 MEDIA. The MANAGED image wins; the legacy `/media/...` path that
@@ -46,7 +50,7 @@ export default async function TeacherProfilePage() {
         storageNote={storageNote}
       />
       <TeacherSavedProfile profile={profile} />
-      <TeacherProfilePanel directory={teacherDirectory} demoEnabled={demoEnabled} />
+      <TeacherProfilePanel directory={directory} demoEnabled={demoEnabled} />
     </div>
   );
 }

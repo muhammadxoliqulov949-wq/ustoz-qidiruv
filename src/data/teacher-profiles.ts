@@ -1,10 +1,12 @@
 import type { TeacherProfile } from "./models";
 
 /**
- * Teacher profile payloads (Phase 5) — content for /teachers/[slug] only.
- * Same architecture as course-details.ts: one record per teacher, merged in
- * teachers.ts at build time; a teacher without a profile is a data error
- * that fails the build rather than a silently broken page.
+ * DEV-SEED-ONLY teacher profile payloads — content for the seeded teacher
+ * rows only. Same architecture as course-details.ts: one record per teacher,
+ * merged in teachers.ts; a teacher without a profile is a data error that
+ * fails the build rather than a silently broken page. Since Phase 12 NO page
+ * renders from here: profiles come from PostgreSQL (public-repo.ts), and
+ * `npm run db:seed` (development only) is the only importer.
  */
 export const teacherProfilesById: Record<string, TeacherProfile> = {
   "t-dilshod-rahimov": {

@@ -1,15 +1,21 @@
 import type { Metadata } from "next";
-import { dashboardCatalog } from "@/data/dashboard-catalog";
 import { SavedPanel } from "@/components/dashboard/saved-panel";
 import { requireRolePage } from "@/server/auth/guards";
+import { getDashboardCatalog } from "@/server/public-repo";
 
 export const metadata: Metadata = {
   title: "Saqlanganlar",
 };
 
-/* /dashboard/saved — saved ids × canonical catalog projection. */
+// Account data + live catalog: never prerendered, never a build-time query.
+export const dynamic = "force-dynamic";
+
+/* /dashboard/saved — saved ids × the live catalog projection (Phase 20: the
+ * catalog is PostgreSQL truth, so every saved row links to a real published
+ * course or a real directory teacher; stale ids honestly drop out). */
 export default async function DashboardSavedPage() {
   await requireRolePage("student", "/dashboard/saved");
+  const catalog = await getDashboardCatalog();
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
@@ -20,7 +26,7 @@ export default async function DashboardSavedPage() {
           Yurakcha tugmasi bilan belgilagan kurslar va ustozlar.
         </p>
       </header>
-      <SavedPanel catalog={dashboardCatalog} />
+      <SavedPanel catalog={catalog} />
     </div>
   );
 }

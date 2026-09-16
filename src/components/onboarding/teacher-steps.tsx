@@ -19,12 +19,12 @@ import { courseLevelLabels } from "@/data/courses";
 
 /* -------------------------------------------------------------------------- */
 /* Teacher onboarding steps — the structured counterpart to the student flow.   */
-/* Five screens group the Phase-6 sections (identity / expertise+experience /   */
+/* Five screens group the sections (identity / expertise+experience /           */
 /* formats+languages / bio+approach / verification notice) without becoming    */
-/* a giant form. Course data is NOT collected here (Phase 10), and identity     */
-/* verification is only explained — the flow never shows a fake "Verified".     */
-/* Options reuse the catalog taxonomies: categories, level labels, derived      */
-/* cities and language tags.                                                    */
+/* a giant form. Course data is NOT collected here (it lives in the teacher     */
+/* panel's “Kurslarim” section), and identity verification is only explained —  */
+/* the flow never shows a fake "Verified". Options reuse the static product     */
+/* taxonomies: categories, level labels, city slugs and language tags.          */
 /* -------------------------------------------------------------------------- */
 
 export interface TeacherStepProps {
@@ -172,8 +172,8 @@ export function TeacherStep({ stepId, answers, errors, onChange }: TeacherStepPr
           />
         </div>
         <p className="text-sm text-ink-400">
-          Gibrid (onlayn + sinf) formati kurs yaratilganda belgilanadi — u 10-bosqichga
-          mo‘ljallangan, shuning uchun bu yerda so‘ralmaydi.
+          Gibrid (onlayn + sinf) formati kurs yaratilganda belgilanadi —
+          shuning uchun bu yerda so‘ralmaydi.
         </p>
       </div>
     );
@@ -203,7 +203,7 @@ export function TeacherStep({ stepId, answers, errors, onChange }: TeacherStepPr
         />
         <p className="text-sm text-ink-400">
           Kurs dasturi, narx va guruhlar bu yerda so‘ralmaydi — kurs yaratish
-          alohida bosqich (10-bosqich).
+          ustoz panelidagi “Kurslarim” bo‘limida bajariladi.
         </p>
       </div>
     );
@@ -212,10 +212,10 @@ export function TeacherStep({ stepId, answers, errors, onChange }: TeacherStepPr
   // verify
   return (
     <div className="flex flex-col gap-4">
-      <AuthNotice variant="warning" title="Hozircha haqiqiy tekshiruv ishlamaydi">
-        USTOZ’da ustozlarni tasdiqlash (telefon OTP, hujjatlar, malaka) alohida
-        infratuzilma orqali bo‘ladi. U ulanguncha profilingizda “Tasdiqlangan”
-        belgisi ko‘rinmaydi — bu oqim faqat keyingi bosqichga tayyorgarlik.
+      <AuthNotice variant="warning" title="Tekshiruv alohida jarayon">
+        Profilni saqlash sizni tasdiqlangan ustozga aylantirmaydi.
+        Tasdiqlash arizasini saqlaganingizdan so‘ng ustoz panelidagi “Profil
+        tasdig‘i” bo‘limidan yuborasiz — uni administrator ko‘rib chiqadi.
       </AuthNotice>
 
       <ul className="flex flex-col gap-2 text-sm text-ink-700">
@@ -223,14 +223,16 @@ export function TeacherStep({ stepId, answers, errors, onChange }: TeacherStepPr
           <ShieldQuestion aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-ink-400" />
           <span>
             <span className="font-medium text-ink-900">Telefon raqami</span> —
-            SMS tasdiqlash backend ulanganda so‘raladi.
+            hisobingizdagi raqam ishlatiladi. SMS orqali tasdiqlash joriy
+            qilinmagan.
           </span>
         </li>
         <li className="flex items-start gap-2.5 rounded-lg border border-line bg-surface-muted px-3.5 py-3">
           <FileCheck2 aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-ink-400" />
           <span>
             <span className="font-medium text-ink-900">Hujjat va malaka</span> —
-            diplom/sertifikat yuklash va moderatsiya keyinroq qo‘shiladi.
+            tasdiqlash arizasi bilan birga ustoz panelida yuklanadi va
+            administrator tomonidan ko‘rib chiqiladi.
           </span>
         </li>
       </ul>

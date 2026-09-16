@@ -26,8 +26,8 @@ export function TeacherOverviewPanels({ directory, demoEnabled = false }: { dire
         const nextAction =
           workspace.courses.length === 0
             ? {
-                title: "Katalogda kursingiz yo‘q",
-                body: "Bu ustoz profiliga bog‘langan e’lon qilingan kurs topilmadi. Kurs yaratish oqimi keyingi bosqichda ishga tushadi.",
+                title: "Demo katalogida kurs yo‘q",
+                body: "Bu demo ustoz profiliga bog‘langan e’lon qilingan kurs topilmadi. Haqiqiy kurslaringizni “Kurslarim” bo‘limida boshqarasiz.",
                 href: "/teachers/" + workspace.slug,
                 cta: "Ommaviy profilni ko‘rish",
               }
@@ -40,30 +40,31 @@ export function TeacherOverviewPanels({ directory, demoEnabled = false }: { dire
                 }
               : request
                 ? {
-                    title: "Mahalliy so‘rov mavjud",
-                    body: `“${request.courseTitle}” kursi uchun shu brauzerda tayyorlangan so‘rov bor. Bu server yozuvi emas.`,
+                    title: "Demo: mahalliy so‘rov mavjud",
+                    body: `“${request.courseTitle}” kursi uchun shu brauzerda tayyorlangan demo so‘rov bor. Bu server yozuvi emas.`,
                     href: "/teacher/dashboard/requests",
-                    cta: "So‘rovni ko‘rish",
+                    cta: "Haqiqiy so‘rovlarni ko‘rish",
                   }
                 : {
                     title: "Kurs va guruhlarni tekshiring",
-                    body: "Jadval, guruh va qolgan joylar katalogdagi ma’lumotdan olinadi — ularni Kurslarim bo‘limida ko‘rasiz.",
+                    body: "Jadval, guruh va qolgan joylar hisobingizdagi haqiqiy ma’lumotdan olinadi — ularni Kurslarim bo‘limida ko‘rasiz.",
                     href: "/teacher/dashboard/courses",
                     cta: "Kurslarimni ochish",
                   };
 
         return (
           <div className="flex flex-col gap-8">
-            <AuthNotice title="Bu panel hisob emas">
-              Ustoz autentifikatsiyasi ulanmagan. Quyidagi ko‘rsatkichlar —{" "}
+            <AuthNotice title="Bu — demo ko‘rinishi, hisobingiz emas">
+              Quyidagi ko‘rsatkichlar —{" "}
               <Link
                 href={`/teachers/${workspace.slug}`}
                 className="font-medium text-accent-700 underline underline-offset-2"
               >
                 {workspace.name}
               </Link>{" "}
-              profilining katalogdagi haqiqiy ma’lumotlari; daromad, to‘lov va
-              o‘sish statistikasi mavjud emas va o‘ylab topilmaydi.
+              demo profilining katalogdagi ma’lumotlari; hisobingizdagi haqiqiy
+              holat yuqorida ko‘rsatiladi. Daromad, to‘lov va o‘sish
+              statistikasi mavjud emas va o‘ylab topilmaydi.
             </AuthNotice>
 
             <section aria-labelledby="tw-stats">
@@ -104,15 +105,16 @@ export function TeacherOverviewPanels({ directory, demoEnabled = false }: { dire
 
             <section aria-labelledby="tw-request" className="flex flex-col gap-4">
               <h2 id="tw-request" className="text-xl font-semibold text-ink-900">
-                Mahalliy prototip so‘rovi
+                Demo: mahalliy so‘rov
               </h2>
               {request ? (
                 <TeacherRequestCard request={request} />
               ) : (
                 <Card variant="quiet" className="text-base leading-relaxed text-ink-700">
-                  Shu brauzerda kurslaringizga tegishli yozilish qoralamasi yo‘q.
-                  So‘rovlar backendsiz to‘planmaydi — bu bo‘lim faqat shu
-                  qurilmadagi Phase 7 holatini ko‘rsatadi.
+                  Shu brauzerda demo ustoz kurslariga tegishli yozilish
+                  qoralamasi yo‘q. Bu bo‘lim faqat shu qurilmadagi demo
+                  holatini ko‘rsatadi — haqiqiy so‘rovlar “So‘rovlar”
+                  bo‘limida.
                 </Card>
               )}
             </section>

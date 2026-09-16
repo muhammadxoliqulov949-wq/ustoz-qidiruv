@@ -1,14 +1,14 @@
 import type { CourseDetail } from "./models";
 
 /**
- * MOCK course-detail payloads (Phase 4), keyed by course id.
+ * DEV-SEED-ONLY course-detail payloads, keyed by course id.
  *
  * Kept separate from `courses.ts` so list views never carry this payload
- * into their module graph, and a future API can ship it lazily with the
- * detail response. Groups, syllabus and copy here are the ONLY source the
- * detail page renders from — no content lives in JSX. seatsRemaining and
- * capacity drive real “Guruh to‘lgan” states (one full group per a few
- * courses is intentional mock data, not a fake availability claim).
+ * into their module graph. Since Phase 12 NO page renders from here: the
+ * detail page reads PostgreSQL (getPublicCourseBySlug), and `npm run db:seed`
+ * (development only — it refuses to run in production) projects these rows
+ * into the database. `seatsRemaining` here is seed input only and is NOT
+ * imported: public availability is derived from real enrollment rows.
  */
 export const courseDetailsById: Record<string, CourseDetail> = {
   "c-ielts-intensive": {

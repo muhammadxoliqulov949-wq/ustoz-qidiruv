@@ -18,13 +18,14 @@ import type { CourseFormat, CourseLevel } from "@/data/models";
 /*                                                                              */
 /* HONESTY RULES BAKED INTO THE TYPE                                            */
 /*   • status is only "draft" | "ready" — there is no published/approved/live;  */
-/*     nothing here ever reaches the public catalog in this phase.              */
+/*     a LOCAL draft never reaches the public catalog (real courses are server  */
+/*     drafts created in “Kurslarim” and published through moderation).         */
 /*   • groups carry `capacity` ONLY. seatsRemaining is live enrollment          */
-/*     inventory owned by a backend that does not exist, so a draft cannot      */
-/*     express it and the UI never invents one.                                 */
-/*   • ids are local prototype ids (`cd-…`, `cdg-…`, `cdm-…`) — never a fake    */
-/*     server id, never a slug that could collide with /courses/[slug].         */
-/*   • teacherId is the Phase 9 prototype WORKSPACE owner, not a session user.  */
+/*     inventory derived from real requests, so a local draft cannot express    */
+/*     it and the UI never invents one.                                         */
+/*   • ids are local-only ids (`cd-…`, `cdg-…`, `cdm-…`) — never a fake server  */
+/*     id, never a slug that could collide with /courses/[slug].                */
+/*   • teacherId is the legacy browser WORKSPACE owner, not a session user.     */
 /* -------------------------------------------------------------------------- */
 
 /* --------------------------------- model ---------------------------------- */
@@ -40,7 +41,7 @@ export const COURSE_DRAFT_STATUS_LABELS: Record<CourseDraftStatus, string> = {
 export const COURSE_DRAFT_STATUS_NOTES: Record<CourseDraftStatus, string> = {
   draft: "Faqat shu brauzerda saqlangan — hech qayerga yuborilmagan.",
   ready:
-    "Barcha majburiy maydonlar to‘ldirilgan. Baribir mahalliy prototip ma’lumoti — katalogda chiqmaydi.",
+    "Barcha majburiy maydonlar to‘ldirilgan. Baribir faqat shu brauzerdagi qoralama — katalogda chiqmaydi.",
 };
 
 export type CoursePricingMode = "free" | "paid";
@@ -461,12 +462,12 @@ export const COURSE_STEPS: readonly CourseStepDef[] = [
   {
     id: "price",
     title: "Narx",
-    hint: "Bepul yoki oylik to‘lov. To‘lov tizimlari ulanmagan.",
+    hint: "Bepul yoki oylik to‘lov. Bu mahalliy qoralama to‘lovga ulanmaydi.",
   },
   {
     id: "groups",
     title: "Guruhlar va jadval",
-    hint: "Rejalashtirilgan guruhlar va sig‘im. Band joylar prototipda mavjud emas.",
+    hint: "Rejalashtirilgan guruhlar va sig‘im. Bu qoralama uchun band joylar hisoblanmaydi.",
   },
   {
     id: "syllabus",

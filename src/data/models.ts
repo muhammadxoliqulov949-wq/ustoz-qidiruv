@@ -3,11 +3,12 @@
  * the Phase 4 course-detail layer.
  *
  * These interfaces define the exact shape the marketplace UI consumes.
- * Mock data (categories.ts / courses.ts / teachers.ts) satisfies these same
- * types, so swapping the mock arrays for API responses in a later phase
- * changes nothing in components. Keep models plain-serializable: no
- * functions, no React nodes — icon references are string keys resolved at
- * the presentation layer (see components/icons.tsx).
+ * The dev-seed datasets (courses.ts / teachers.ts) satisfy these same
+ * types, and since Phase 12 the database-backed repository
+ * (src/server/public-repo.ts) projects live rows into them — so the UI
+ * consumes one shape from exactly one runtime source. Keep models
+ * plain-serializable: no functions, no React nodes — icon references are
+ * string keys resolved at the presentation layer (see components/icons.tsx).
  */
 
 export type CourseFormat = "online" | "offline" | "hybrid";

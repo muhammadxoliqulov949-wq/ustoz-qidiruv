@@ -26,14 +26,13 @@ export interface EnrollDialogProps {
 }
 
 /**
- * Enrollment entry point (Phase 4). Clicking never fakes enrollment: the
+ * Enrollment entry point. Clicking never fakes enrollment: the
  * dialog shows the selected course/group summary and hands off to the
- * Phase 7 enrollment flow (/enroll/[slug]?group=) — the flow itself keeps
- * honest prototype semantics (nothing is sent to a server). Kirish /
+ * enrollment flow (/enroll/[slug]?group=) — a signed-in student's submission
+ * writes a real request row the teacher reviews. Kirish /
  * Ro'yxatdan o'tish remain as secondary routes with ?next= back into the
  * flow. Self-contained (trigger + dialog) so the enrollment card and the
- * mobile bar can each host one without shared client state; a future
- * checkout flow mounts over the same trigger slot.
+ * mobile bar can each host one without shared client state.
  *
  * Dialog semantics match the Phase 3 filter sheet (same platform recipe):
  * role=dialog + aria-modal, labelled, Escape/backdrop close, body scroll
@@ -161,12 +160,12 @@ export function EnrollDialog({
                 </div>
               </dl>
 
-              {/* Step 2 — handoff into the enrollment flow (Phase 7) */}
+              {/* Step 2 — handoff into the enrollment flow */}
               <p className="mt-4 text-sm text-ink-700">
                 Yozilish shakli guruh, jadval va narx ma’lumotlarini o‘zi
                 olib kiradi — faqat ism, telefon va ixtiyoriy izoh
-                so‘raladi. To‘lov shartlarini ustoz bilan bevosita
-                kelishasiz.
+                so‘raladi. So‘rov ustozga yuboriladi; pullik kurslarda to‘lov
+                so‘rov qabul qilingandan so‘ng kabinetingizda ochiladi.
               </p>
               <div className="mt-4 flex flex-col gap-2.5 pb-1">
                 <ButtonLink href={flowHref} size="lg" fullWidth>
@@ -187,10 +186,9 @@ export function EnrollDialog({
                 </div>
               </div>
               <p className="pb-4 text-center text-xs text-ink-400">
-                Backend ulangaguncha yozilish shakli prototip sifatida
-                ishlaydi — so‘rov serverga yuborilmaydi. Shu sababli hisob
-                ham shart emas; yozilishni ustoz bilan bevosita ham
-                kelishish mumkin.
+                So‘rov hisobingizga saqlanadi va kabinetingizda ko‘rinadi.
+                Hisobga kirmagan bo‘lsangiz, shaklni to‘ldirishdan oldin
+                tizimga kiring yoki ro‘yxatdan o‘ting.
               </p>
             </div>
           </div>

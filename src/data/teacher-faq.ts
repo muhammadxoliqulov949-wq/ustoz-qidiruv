@@ -1,18 +1,28 @@
 import type { FaqItem } from "./models";
 import type { TeacherRow } from "./teacher-rows";
-import { cityLabel, courses } from "./courses";
+import { cityLabel } from "./courses";
 import { formatPrice } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
-/* FAQ builder for /teachers/[slug] (Phase 5). Mirrors course-faq.ts: every       */
-/* answer is DERIVED from data the page already shows (formats, cities, pricing, */
-/* group caps, languages) — so it cannot contradict the cards, and unsupported    */
-/* items are simply omitted rather than answered vaguely. No payment promises.    */
+/* FAQ builder for /teachers/[slug]. Mirrors course-faq.ts: every answer is       */
+/* DERIVED from data the page already shows (formats, cities, pricing, group     */
+/* caps, languages) — so it cannot contradict the cards, and unsupported items   */
+/* are simply omitted rather than answered vaguely.                              */
+/*                                                                              */
+/* Phase 20: the teacher's courses arrive as a parameter (DB-projected rows      */
+/* from getPublicTeacherBySlug), so this pure builder holds no fixture import    */
+/* and cannot describe inventory the database does not have. Payment and         */
+/* messaging answers describe the REAL flows: requests are reviewed by the       */
+/* teacher, paid courses are settled in the student cabinet, and messaging       */
+/* opens on an accepted enrollment.                                              */
 /* -------------------------------------------------------------------------- */
 
-export function buildTeacherFaq(row: TeacherRow): FaqItem[] {
-  const { teacher, formats, cities, minPriceUzs, courseIds } = row;
-  const ownCourses = courses.filter((course) => courseIds.includes(course.id));
+interface FaqCourseGroups {
+  detail: { groups: { capacity: number }[] };
+}
+
+export function buildTeacherFaq(row: TeacherRow, ownCourses: FaqCourseGroups[]): FaqItem[] {
+  const { teacher, formats, cities, minPriceUzs } = row;
   const items: FaqItem[] = [];
 
   const where = formats
@@ -40,8 +50,8 @@ export function buildTeacherFaq(row: TeacherRow): FaqItem[] {
       q: "Dars narxlari qanday?",
       a:
         minPriceUzs === 0
-          ? "Bu ustozning bepul kurslari ham, to‘lovli kurslari ham bor — aniq narx kurs sahifasida ko‘rsatilgan. To‘lov shartlarini ustoz bilan bevosita kelishasiz."
-          : `Kurslari ${formatPrice(minPriceUzs)}dan boshlanadi (oylik) — aniq narx kurs sahifasida. USTOZ onlayn to‘lovni hozircha taklif qilmaydi, shartlar ustoz bilan kelishiladi.`,
+          ? "Bu ustozning bepul kurslari ham, to‘lovli kurslari ham bor — aniq narx kurs sahifasida ko‘rsatilgan. Pullik kurslarda to‘lov so‘rovingiz qabul qilingandan so‘ng kabinetingiz orqali amalga oshiriladi."
+          : `Kurslari ${formatPrice(minPriceUzs)}dan boshlanadi (oylik) — aniq narx kurs sahifasida. To‘lov so‘rovingiz ustoz tomonidan qabul qilingandan so‘ng kabinetingiz orqali amalga oshiriladi.`,
     });
   }
 
@@ -56,7 +66,7 @@ export function buildTeacherFaq(row: TeacherRow): FaqItem[] {
 
   items.push({
     q: "Ustoz bilan qanday bog‘lanish mumkin?",
-    a: "Hozircha USTOZ’da shaxsiy xabar almashinuvi yo‘q. O‘zingizga mos kursni ustozning kurs ro‘yxatidan tanlab, kurs sahifasidagi yozilish bo‘limidan davom eting.",
+    a: "O‘zingizga mos kursni ustozning kurs ro‘yxatidan tanlab, kurs sahifasidagi yozilish shaklini to‘ldiring. So‘rovingiz qabul qilingach, ustoz bilan xabarlashish kabinetingizda ochiladi.",
   });
 
   return items;

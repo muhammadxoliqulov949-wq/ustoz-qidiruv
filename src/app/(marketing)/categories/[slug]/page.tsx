@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 import { CoursesBrowser } from "@/components/courses/courses-browser";
 import { categories } from "@/data/categories";
-import { listPublicCourses } from "@/server/public-repo";
+import { getPublicFacets, listPublicCourses } from "@/server/public-repo";
 import { parseCourseBrowseParams } from "@/lib/course-search";
 
 /* -------------------------------------------------------------------------- */
@@ -16,6 +16,9 @@ import { parseCourseBrowseParams } from "@/lib/course-search";
 /* than duplicated as a query param. Facets (mode/price/city/sort/q) live on      */
 /* the query string of this route — links are rewritten against the basePath.     */
 /* -------------------------------------------------------------------------- */
+
+// Dynamic SSR: results depend on the URL and on live database state.
+export const dynamic = "force-dynamic";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -46,7 +49,11 @@ export default async function CategoryResultsPage({
   const category = findCategory(slug);
   if (!category) notFound();
 
-  const browseParams = parseCourseBrowseParams(await searchParams);
+  // Phase 20: the city facet is runtime inventory — parse the URL against the
+  // live city list so unknown cities drop and the sidebar stays truthful.
+  const raw = await searchParams;
+  const facets = await getPublicFacets();
+  const browseParams = parseCourseBrowseParams(raw, facets.cities);
   const source = await listPublicCourses(browseParams, { categoryId: category.id });
 
   return (
@@ -58,6 +65,7 @@ export default async function CategoryResultsPage({
       source={source}
       params={browseParams}
       activeCategorySlug={category.slug}
+      cities={facets.cities}
       breadcrumb={
         <nav
           aria-label="Sahifalar yo‘li"

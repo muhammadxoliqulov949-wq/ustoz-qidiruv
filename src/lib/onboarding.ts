@@ -1,6 +1,6 @@
 import { categories } from "@/data/categories";
-import { courseCities, cityLabel } from "@/data/courses";
-import { teacherCities, teacherLanguages } from "@/data/teacher-rows";
+import { cityLabel } from "@/data/courses";
+import { citySlugs, languageTags } from "@/data/taxonomy";
 import type { CourseLevel } from "@/data/models";
 
 /* -------------------------------------------------------------------------- */
@@ -114,20 +114,23 @@ export function validatePhoneField(raw: string): string | null {
 }
 
 /* ------------------------- shared option taxonomies ------------------------ */
-/* Cities / languages / categories / levels are DERIVED from the existing      */
-/* catalog data — Phase 6 must not invent a second taxonomy.                   */
+/* Cities / languages / categories / levels are STATIC product taxonomy        */
+/* (src/data/taxonomy.ts, src/data/categories.ts) — the same vocabulary the    */
+/* server write-validation whitelists use. They are deliberately NOT derived   */
+/* from marketplace inventory: a city a student lives in, or a language a      */
+/* teacher picks, is a form option, not a record that must exist in the        */
+/* catalogue. (Before Phase 20 these lists were derived from the fixture       */
+/* arrays; that dependency is deleted.)                                        */
 
-/** Union of the course catalog cities and the derived teacher cities. */
-export const onboardingCities: string[] = Array.from(
-  new Set([...courseCities, ...teacherCities]),
-).sort();
+/** City slugs the product accepts in address/city fields. */
+export const onboardingCities: string[] = [...citySlugs];
 
 export function onboardingCityLabel(slug: string): string {
   return cityLabel(slug);
 }
 
-/** Language tags teachers actually use (derived) — same tags for students. */
-export const onboardingLanguages: string[] = teacherLanguages;
+/** Teaching-language tags the product accepts. */
+export const onboardingLanguages: string[] = [...languageTags];
 
 /** Presentation labels for the ISO tags (display only; data keeps the tags). */
 export const LANGUAGE_LABELS: Record<string, string> = {

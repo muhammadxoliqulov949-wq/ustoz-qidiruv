@@ -72,7 +72,7 @@ export function TeachersBrowser({
     }),
   });
 
-  const sections: TeacherFilterSection[] = [
+  const allSections: TeacherFilterSection[] = [
     {
       key: "subject",
       title: teachersPage.sections.subject,
@@ -129,6 +129,11 @@ export function TeachersBrowser({
       ],
     },
   ];
+
+  /* Inventory-driven sections with no runtime options (no city / language in
+   * the live directory yet) are omitted entirely — a bare heading would imply
+   * choices that do not exist. */
+  const sections = allSections.filter((section) => section.options.length > 0);
 
   /* chips — one per active filter; each drops exactly its own param */
   const drop = (over: Partial<TeacherBrowseParams>) =>

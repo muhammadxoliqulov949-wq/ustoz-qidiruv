@@ -234,8 +234,9 @@ export function OnboardingComplete({
           </p>
         ) : null}
         <p className="mt-3 text-xs text-ink-400">
-          Kurs yaratish, narx va guruhlar — alohida bosqich (10-bosqich). Bu
-          preview’da ular haqida hech qanday ma’lumot yo‘q va bo‘lmasligi kerak.
+          Kurs yaratish, narx va guruhlar ustoz panelidagi “Kurslarim”
+          bo‘limida qo‘shiladi. Bu preview’da ular haqida hech qanday
+          ma’lumot yo‘q va bo‘lmasligi kerak.
         </p>
       </div>
 
@@ -243,8 +244,9 @@ export function OnboardingComplete({
         <>
           <AuthNotice title="Tekshiruv holati o‘zgarmaydi">
             Profilni saqlash ustoz sifatida tasdiqlanganingizni bildirmaydi.
-            Tasdiqlash holati “tasdiqlanmagan” bo‘lib qoladi va uni faqat
-            moderatsiya jarayoni o‘zgartiradi — bu bosqichda u mavjud emas.
+            Tasdiqlash holati “tasdiqlanmagan” bo‘lib qoladi — arizani
+            saqlaganingizdan so‘ng ustoz panelidagi “Profil tasdig‘i”
+            bo‘limidan yuborasiz, uni administrator ko‘rib chiqadi.
             Profilingiz hozircha ommaviy katalogda chiqmaydi.
           </AuthNotice>
           <ProfileSave role="teacher" />
@@ -288,7 +290,7 @@ function ClearDraftButton({ onRestart }: { onRestart: () => void }) {
       onClick={onRestart}
       className="text-ink-500 hover:text-ink-900"
     >
-      Prototip holatini tozalash
+      Qoralama holatini tozalash
     </Button>
   );
 }

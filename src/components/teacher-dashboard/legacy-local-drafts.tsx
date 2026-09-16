@@ -97,7 +97,7 @@ export function LegacyLocalDrafts() {
       </h2>
 
       <AuthNotice title="Bu yozuvlar faqat shu brauzerda">
-        Quyidagilar oldingi prototip bosqichida faqat shu brauzer xotirasiga
+        Quyidagilar oldingi bosqichda faqat shu brauzer xotirasiga
         saqlangan qoralamalar. Ular serverda emas, hisobingizga bog‘lanmagan va
         katalogda ko‘rinmaydi. Biz ularni avtomatik yuklamaymiz va o‘chirmaymiz —
         matnlaringiz joyida turadi. Kursni davom ettirish uchun uni yuqoridagi

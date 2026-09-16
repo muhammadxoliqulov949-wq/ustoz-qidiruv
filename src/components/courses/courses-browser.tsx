@@ -4,7 +4,6 @@ import { ButtonLink, Card, CourseCard } from "@/components/ui";
 import { categories } from "@/data/categories";
 import {
   cityLabel,
-  courseCities,
   courseFormatLabels,
   courseLevelLabels,
   courseRatingFilters,
@@ -50,6 +49,9 @@ export interface CoursesBrowserProps {
   source: Course[];
   params: CourseBrowseParams;
   activeCategorySlug: string | null;
+  /** City facet options — runtime inventory from `getPublicFacets()`, so the
+   *  sidebar never offers a city no published course teaches in. */
+  cities: string[];
   /** Optional breadcrumb slot rendered above the eyebrow (page furniture). */
   breadcrumb?: ReactNode;
 }
@@ -62,6 +64,7 @@ export function CoursesBrowser({
   source,
   params,
   activeCategorySlug,
+  cities,
   breadcrumb,
 }: CoursesBrowserProps) {
   const results = applyCourseBrowse(
@@ -87,7 +90,7 @@ export function CoursesBrowser({
     }),
   });
 
-  const sections: FilterSectionData[] = [
+  const allSections: FilterSectionData[] = [
     {
       key: "category",
       title: coursesPage.sections.category,
@@ -123,7 +126,7 @@ export function CoursesBrowser({
     {
       key: "city",
       title: coursesPage.sections.city,
-      options: courseCities.map((city) =>
+      options: cities.map((city) =>
         toggle(cityLabel(city), params.city === city, { city }),
       ),
     },
@@ -150,6 +153,14 @@ export function CoursesBrowser({
       ),
     },
   ];
+
+  /* Inventory-driven sections with no runtime options (e.g. no city has a
+   * published course yet) are omitted entirely — a bare heading would imply
+   * choices that do not exist. The price section always stays: it carries the
+   * range form, not just pills. */
+  const sections = allSections.filter(
+    (section) => section.key === "price" || section.options.length > 0,
+  );
 
   const panelProps = {
     sections,

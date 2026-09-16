@@ -10,19 +10,20 @@ import type { TeacherAnswers } from "./onboarding";
 import type { CourseAuthoringSeed } from "./course-draft";
 
 /* -------------------------------------------------------------------------- */
-/* Teacher workspace model — Phase 9. PURE module (no React, no DOM, no        */
-/* dataset imports), the same contract-first pattern as course-search /         */
-/* enroll / dashboard:                                                          */
+/* Teacher workspace model — PURE module (no React, no DOM, no dataset           */
+/* imports), the same contract-first pattern as course-search / enroll /         */
+/* dashboard:                                                                   */
 /*   • TeacherWorkspaceLite / TeacherCourseLite — the serializable projection    */
-/*     built server-side (data/teacher-dashboard.ts) from the canonical          */
-/*     teachers + courses arrays. Client islands never import the datasets.      */
-/*   • Selectors below take that projection + prototype state and return read    */
+/*     built server-side (data/teacher-dashboard.ts, LEGACY DEMO-ONLY) from      */
+/*     the fixture teachers + courses arrays. Client islands never import the    */
+/*     datasets directly.                                                        */
+/*   • Selectors below take that projection + browser state and return read      */
 /*     models. Nothing is duplicated and nothing is invented.                    */
 /*                                                                                */
-/* IDENTITY HONESTY: there is no signed-in teacher. The "workspace" is an        */
-/* explicitly chosen canonical teacher id used to inspect the teacher surface    */
-/* (see components/teacher-dashboard/workspace-store.ts). It is prototype        */
-/* workspace state, NOT a session, and the UI says so on every screen.           */
+/* IDENTITY HONESTY: real identity is the session. The "workspace" here is an   */
+/* explicitly chosen demo teacher id used ONLY by the dev-only demo inspector   */
+/* and the legacy browser-only course editor — never by production account       */
+/* surfaces, which read the database through the session user id.                */
 /* -------------------------------------------------------------------------- */
 
 /* ------------------------------ lite projection ---------------------------- */
@@ -209,9 +210,9 @@ export const TEACHER_REQUEST_STATUS_LABELS: Record<TeacherRequestStatus, string>
 
 export const TEACHER_REQUEST_STATUS_NOTES: Record<TeacherRequestStatus, string> = {
   draft:
-    "Mahalliy prototip ma’lumoti — o‘quvchi yozilish shaklini yakunlamagan.",
+    "Demo ko‘rinishi — o‘quvchi yozilish shaklini yakunlamagan.",
   prepared:
-    "Mahalliy prototip ma’lumoti — backend ulanmagan, bu so‘rov sizga yuborilmagan va joy band qilinmagan.",
+    "Demo ko‘rinishi — bu so‘rov shu brauzerdagi demo holati, sizga yuborilmagan va joy band qilinmagan.",
 };
 
 /**
