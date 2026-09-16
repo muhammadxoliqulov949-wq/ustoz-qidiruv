@@ -344,7 +344,7 @@ async function main(): Promise<void> {
   /* ====================================================================== */
 
   const {
-    listPublicCourses, getPublicCourseBySlug, listPublicTeachers,
+    listPublicCourses, getPublicCourseBySlug, getPublicTeacherById, listPublicTeachers,
     getPublicTeacherBySlug, getCategoryCourseCounts,
   } = await import("../src/server/public-repo");
   const { getTeacherDashboardCourses, getOwnedCourseDetail } =
@@ -415,6 +415,122 @@ async function main(): Promise<void> {
     profile?.courses.every((c) => c.teacher.id === teacherId) === true);
   check("unknown teacher slug returns null",
     (await getPublicTeacherBySlug("no-such-teacher")) === null);
+
+  /* ------------------------------------------------------------------------ */
+  /* ENROLLMENT HOTFIX — consume this same runtime public projection.         */
+  /* ------------------------------------------------------------------------ */
+  /*
+   * The route is a Next server component, so its data-boundary contract is
+   * inspected as source here while the calls it relies on are exercised against
+   * this real throwaway PostgreSQL database below. Together these checks prove
+   * that /enroll cannot substitute a fixture for a runtime course result.
+   */
+  const enrollPageSource = readFileSync(
+    path.join(process.cwd(), "src/app/enroll/[courseSlug]/page.tsx"),
+    "utf8",
+  );
+  const enrollMetadataSource = enrollPageSource.slice(
+    enrollPageSource.indexOf("export async function generateMetadata"),
+    enrollPageSource.indexOf("export default async function EnrollPage"),
+  );
+  const importsFixtureCourses =
+    /import\s*{[^}]*\bcourses\b[^}]*}\s*from\s*["']@\/data\/courses["']/.test(enrollPageSource);
+
+  check("enrollment route imports no fixture courses", !importsFixtureCourses);
+  check("enrollment route imports no teacherById fixture",
+    !/\bteacherById\b/.test(enrollPageSource) && !/@\/data\/teachers/.test(enrollPageSource));
+  check("enrollment route is runtime-only and has no static slug enumeration",
+    enrollPageSource.includes('export const dynamic = "force-dynamic";') &&
+      !enrollPageSource.includes("generateStaticParams"));
+  check("enrollment page resolves its course through the public repository",
+    (enrollPageSource.match(/await getPublicCourseBySlug\(courseSlug\)/g) ?? []).length >= 2 &&
+      !enrollPageSource.includes("courseBySlug"));
+  check("enrollment metadata reads public course truth and otherwise stays generic",
+    enrollMetadataSource.includes("await getPublicCourseBySlug(courseSlug)") &&
+      enrollMetadataSource.includes('title: course ? `Yozilish — ${course.title}` : "Yozilish"') &&
+      !enrollMetadataSource.includes("courseBySlug"));
+  check("enrollment page maps a missing runtime course to 404",
+    enrollPageSource.includes("if (!course) notFound();"));
+  check("enrollment page resolves the teacher link through the public repository",
+    enrollPageSource.includes("getPublicTeacherById(course.teacher.id)") &&
+      enrollPageSource.includes("teacherSlug: teacher?.slug ?? null"));
+  check("enrollment page forwards runtime groups and live seats to EnrollCourseLite",
+    enrollPageSource.includes("groups: course.detail.groups.map") &&
+      enrollPageSource.includes("seatsRemaining: group.seatsRemaining"));
+  check("enrollment page permits a server write only for the signed-in student",
+    enrollPageSource.includes("getCurrentUser()") &&
+      enrollPageSource.includes('canSubmitToServer={user?.role === "student"}'));
+
+  const enrollmentActionSource = readFileSync(
+    path.join(process.cwd(), "src/server/actions/enrollment.ts"),
+    "utf8",
+  );
+  check("enrollment action derives the student identity from the session, never the form",
+    enrollmentActionSource.includes('const user = await requireRole("student");') &&
+      enrollmentActionSource.includes("studentUserId: user.id") &&
+      !/form\.get\(["'](?:studentUserId|userId)["']\)/.test(enrollmentActionSource));
+
+  // A real, published DB row (not present in the static catalog test fixture)
+  // is the exact source the enrollment route uses.
+  check("a published DB-backed course resolves for enrollment",
+    publicDetail?.id === courseId && publicDetail.title === "IELTS tayyorlov kursi");
+  check("an unknown enrollment slug has no public runtime course",
+    (await getPublicCourseBySlug("unknown-enrollment-course")) === null);
+
+  const enrollmentDraftId = newId("crs");
+  const enrollmentReadyId = newId("crs");
+  await db.insert(schema.courses).values([
+    {
+      id: enrollmentDraftId, slug: "enrollment-draft-only", teacherUserId: teacherId,
+      title: "Faqat qoralama yozilish kursi", categoryId: "ielts", level: "orta",
+      format: "online", priceUzs: 0, summary: "D".repeat(60), status: "draft",
+    },
+    {
+      id: enrollmentReadyId, slug: "enrollment-ready-only", teacherUserId: teacherId,
+      title: "Nashr qilinmagan yozilish kursi", categoryId: "ielts", level: "orta",
+      format: "online", priceUzs: 0, summary: "R".repeat(60), status: "ready",
+    },
+  ]);
+  check("a draft enrollment slug has no public runtime course",
+    (await getPublicCourseBySlug("enrollment-draft-only")) === null);
+  check("a ready or unpublished enrollment slug has no public runtime course",
+    (await getPublicCourseBySlug("enrollment-ready-only")) === null);
+
+  const { courses: staticCourseFixtures } = await import("../src/data/courses");
+  const fixtureOnlySlug = "ielts-intensive-band-7";
+  check("fixture-only enrollment regression uses a known static fixture slug",
+    staticCourseFixtures.some((course) => course.slug === fixtureOnlySlug));
+  check("a fixture-only course slug cannot become enrollable",
+    (await getPublicCourseBySlug(fixtureOnlySlug)) === null);
+
+  // Mark the earlier request accepted and confirm the fresh repository read
+  // exposes its actual capacity minus accepted enrollment count, not fixture
+  // seats or a stale page-level snapshot.
+  await db.update(schema.enrollmentRequests)
+    .set({ status: "accepted" })
+    .where(and(
+      eq(schema.enrollmentRequests.studentUserId, studentId),
+      eq(schema.enrollmentRequests.courseId, courseId),
+      eq(schema.enrollmentRequests.groupId, groupId),
+    ));
+  const liveEnrollmentCourse = await getPublicCourseBySlug("test-ielts-kursi");
+  const liveEnrollmentGroup = liveEnrollmentCourse?.detail.groups.find((group) => group.id === groupId);
+  check("enrollment groups and seats come from the live DB projection",
+    liveEnrollmentGroup?.title === "A guruhi" &&
+      liveEnrollmentGroup.capacity === 12 &&
+      liveEnrollmentGroup.seatsRemaining === 11);
+
+  // The public teacher repository supplies the linkable slug and verification
+  // state used by the enrollment projection; neither value comes from fixtures.
+  await db.update(schema.teacherProfiles)
+    .set({ verification: "verified" })
+    .where(eq(schema.teacherProfiles.userId, teacherId));
+  const enrollmentTeacher = await getPublicTeacherById(teacherId);
+  const verifiedEnrollmentCourse = await getPublicCourseBySlug("test-ielts-kursi");
+  check("enrollment teacher slug and verified state come from runtime public data",
+    enrollmentTeacher?.slug === teacherSlugRow.slug &&
+      enrollmentTeacher.verified === true &&
+      verifiedEnrollmentCourse?.teacher.verified === true);
 
   // A private draft owned by the SAME teacher must not leak into the profile.
   const hiddenId = newId("crs");
