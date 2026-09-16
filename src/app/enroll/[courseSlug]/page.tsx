@@ -1,40 +1,49 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { categories } from "@/data/categories";
-import { courseFormatLabels, courses } from "@/data/courses";
-import type { Course } from "@/data/models";
-import { teacherById } from "@/data/teachers";
+import { courseFormatLabels } from "@/data/courses";
+import type { Course, Teacher } from "@/data/models";
 import { formatPrice } from "@/lib/format";
 import { formatDateUz } from "@/components/course-detail/date";
 import type { EnrollCourseLite } from "@/lib/enroll";
 import { EnrollFlow } from "@/components/enroll/enroll-flow";
 import { getCurrentUser } from "@/server/auth/session";
+import { getPublicCourseBySlug, getPublicTeacherById } from "@/server/public-repo";
 
 /* -------------------------------------------------------------------------- */
-/* /enroll/[courseSlug]?group=<id> — the enrollment flow host (Phase 7).         */
-/* Server-resolved: unknown course slugs 404 (same registry rule as the detail   */
-/* pages); the raw ?group= value is handed to the flow UNFILTERED because        */
-/* lib/enroll.resolveEnrollGroup applies the same pure rules server and client — */
-/* there is exactly one interpretation of "selected group" everywhere.           */
-/* Phase 11: the SESSION is resolved here, on the server. A signed-in student   */
-/* gets a real transactional enrollment write; everyone else keeps the honest   */
-/* local-only prototype result. The visitor never tells us who they are.        */
+/* /enroll/[courseSlug]?group=<id> — the enrollment flow host.                  */
+/*                                                                              */
+/* Course, groups and live seats come from the same request-time public         */
+/* marketplace projection as /courses/[slug]. getPublicCourseBySlug() selects   */
+/* only published rows, so an unknown, draft or otherwise unpublished slug      */
+/* resolves to the same 404 here as it does on the course detail route.         */
+/*                                                                              */
+/* The raw ?group= value is handed to the flow UNFILTERED because                */
+/* lib/enroll.resolveEnrollGroup applies the same pure rules server and client  */
+/* — there is exactly one interpretation of "selected group" everywhere.       */
+/*                                                                              */
+/* The SESSION is resolved here, on the server. A signed-in student gets a real  */
+/* transactional enrollment write; everyone else keeps the honest local-only    */
+/* result. The visitor never tells us who they are.                              */
 /* -------------------------------------------------------------------------- */
 
-const courseBySlug = new Map(courses.map((course) => [course.slug, course]));
+// This route reads live marketplace inventory and must never query during build.
+export const dynamic = "force-dynamic";
+
 const categoryById = new Map(categories.map((category) => [category.id, category]));
 
-/** Serialize the catalog slice this flow consumes — labels computed once. */
-function toLite(course: Course): EnrollCourseLite {
-  const teacher = teacherById.get(course.teacher.id);
+/** Serialize the runtime marketplace projection consumed by the client flow. */
+function toLite(course: Course, teacher: Teacher | null): EnrollCourseLite {
   return {
     slug: course.slug,
     title: course.title,
     image: course.image,
     category: categoryById.get(course.categoryId)?.name ?? null,
-    teacherName: course.teacher.name,
+    // The course projection is DB truth when the teacher's public profile is
+    // unavailable; the full public profile supplies the link when it is public.
+    teacherName: teacher?.name ?? course.teacher.name,
     teacherSlug: teacher?.slug ?? null,
-    teacherVerified: teacher?.verified ?? false,
+    teacherVerified: teacher?.verified ?? course.teacher.verified,
     priceUzs: course.priceUzs,
     priceSummary:
       course.priceUzs === 0
@@ -65,7 +74,7 @@ export async function generateMetadata({
   params: Promise<{ courseSlug: string }>;
 }): Promise<Metadata> {
   const { courseSlug } = await params;
-  const course = courseBySlug.get(courseSlug);
+  const course = await getPublicCourseBySlug(courseSlug);
   return {
     // Transactional flow — indexable? No: keep search out of it, like auth.
     title: course ? `Yozilish — ${course.title}` : "Yozilish",
@@ -82,13 +91,15 @@ export default async function EnrollPage({
 }) {
   const { courseSlug } = await params;
   const query = await searchParams;
-  const course = courseBySlug.get(courseSlug);
+  const course = await getPublicCourseBySlug(courseSlug);
   if (!course) notFound();
 
-  const lite = toLite(course);
+  const [teacher, user] = await Promise.all([
+    getPublicTeacherById(course.teacher.id),
+    getCurrentUser(),
+  ]);
+  const lite = toLite(course, teacher);
   const rawGroup = typeof query.group === "string" ? query.group : null;
-  // Identity strictly from the session cookie — never from the form or URL.
-  const user = await getCurrentUser();
 
   return (
     <div className="site-container py-10 sm:py-14 lg:py-16">
