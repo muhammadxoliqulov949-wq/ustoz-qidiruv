@@ -102,8 +102,8 @@ function createDatabase() {
     throw new DatabaseConfigError(
       "Runtime database access is not configured for production: PGlite is a development/test " +
         "driver that writes a local data directory, which a production serverless runtime cannot " +
-        "persist or create. Set DB_DRIVER=pg and DATABASE_URL (a pooled connection string such as " +
-        "?sslmode=require) in this deployment's environment. See \"Deployment (Vercel)\" in README.md.",
+        "persist or create. Set DB_DRIVER=pg and DATABASE_URL (a pooled connection string with " +
+        "?sslmode=verify-full) in this deployment's environment. See \"Deployment (Vercel)\" in README.md.",
     );
   }
 

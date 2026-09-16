@@ -448,9 +448,10 @@ development/test tool and cannot serve a serverless deployment:
   and never on routes that need no database (e.g. `/login`, `/register` —
   `/` and `/categories` DO read live marketplace rows).
 - `DATABASE_URL` — a **pooled** connection string (Neon pooler, Supabase
-  pgbouncer, Vercel Postgres pooled) with TLS parameters such as
-  `?sslmode=require`; there is no separate `ssl` option in the pool. Startup
-  fails loudly if `DB_DRIVER=pg` is set without it.
+  pgbouncer, Vercel Postgres pooled) with `?sslmode=verify-full` (Phase 22:
+  the legacy `sslmode=require` still connects, but the pool normalizes it to
+  the explicitly-verifying `verify-full`; there is no separate `ssl` option
+  in the pool). Startup fails loudly if `DB_DRIVER=pg` is set without it.
 - `AUTH_INSECURE_COOKIES` must stay unset/`0` so session cookies remain
   `Secure`; `DEMO_TEACHER_WORKSPACE` is forced off in production regardless.
 - `ADMIN_PASSWORD` is read **only** by the operator CLI (`admin:create`,
