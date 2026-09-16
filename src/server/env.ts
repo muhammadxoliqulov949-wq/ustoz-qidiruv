@@ -241,6 +241,9 @@ export function describeEnv(): Record<string, string | boolean> {
       env.STORAGE_PROVIDER === "local" ||
       (env.STORAGE_PROVIDER === "s3" &&
         env.STORAGE_S3_BUCKET !== undefined &&
+        (env.NODE_ENV !== "production" ||
+          (env.STORAGE_S3_PUBLIC_BUCKET !== undefined &&
+            env.STORAGE_S3_BUCKET !== env.STORAGE_S3_PUBLIC_BUCKET)) &&
         env.STORAGE_S3_ACCESS_KEY_ID !== undefined &&
         env.STORAGE_S3_SECRET_ACCESS_KEY !== undefined &&
         env.STORAGE_PUBLIC_BASE_URL !== undefined),
@@ -259,3 +262,9 @@ export function demoWorkspaceEnabled(): boolean {
   const env = serverEnv();
   return env.DEMO_TEACHER_WORKSPACE === "1" && env.NODE_ENV !== "production";
 }
+
+/** Reset cached parsed env. Test double / environment harness only. */
+export function __resetServerEnvForTesting(): void {
+  cached = null;
+}
+

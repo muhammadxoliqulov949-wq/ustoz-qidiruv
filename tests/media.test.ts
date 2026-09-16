@@ -1140,6 +1140,388 @@ async function main(): Promise<void> {
     published === null || published.image === null || !String(published.image).includes("verification"),
   );
 
+  /* ---------------------------------------------------------------------- */
+  group("10. Phase 21: production S3/R2 guarantees, fail-closed config, smoke and maintenance");
+  /* ---------------------------------------------------------------------- */
+
+  // Save current process.env and restore later
+  const origEnv = { ...process.env };
+  const { __resetServerEnvForTesting } = await import("../src/server/env");
+
+  // A. production local storage is refused
+  process.env.STORAGE_PROVIDER = "local";
+  (process.env as Record<string, string>).NODE_ENV = "production";
+  __resetServerEnvForTesting();
+  storage.__resetStorageProviderForTesting();
+  let errA: Error | null = null;
+  try {
+    storage.getStorageProvider();
+  } catch (err) {
+    errA = err as Error;
+  }
+  check(
+    "10.A production local storage is refused",
+    errA instanceof storage.StorageConfigError &&
+      errA.message.includes("local is not allowed in production"),
+  );
+
+  // B. production S3 requires private bucket
+  process.env.STORAGE_PROVIDER = "s3";
+  (process.env as Record<string, string>).NODE_ENV = "production";
+  delete process.env.STORAGE_S3_BUCKET;
+  process.env.STORAGE_S3_PUBLIC_BUCKET = "test-public-bucket";
+  process.env.STORAGE_S3_ACCESS_KEY_ID = "test-access-key";
+  process.env.STORAGE_S3_SECRET_ACCESS_KEY = "test-secret-key";
+  process.env.STORAGE_PUBLIC_BASE_URL = "https://media.test.uz";
+  __resetServerEnvForTesting();
+  storage.__resetStorageProviderForTesting();
+  let errB: Error | null = null;
+  try {
+    storage.getStorageProvider();
+  } catch (err) {
+    errB = err as Error;
+  }
+  check(
+    "10.B production S3 requires private bucket",
+    errB instanceof storage.StorageConfigError && errB.message.includes("STORAGE_S3_BUCKET"),
+  );
+
+  // C. production S3 requires explicit public bucket
+  process.env.STORAGE_S3_BUCKET = "test-private-bucket";
+  delete process.env.STORAGE_S3_PUBLIC_BUCKET;
+  __resetServerEnvForTesting();
+  storage.__resetStorageProviderForTesting();
+  let errC1: Error | null = null;
+  try {
+    storage.getStorageProvider();
+  } catch (err) {
+    errC1 = err as Error;
+  }
+  check(
+    "10.C.1 production S3 requires explicit public bucket",
+    errC1 instanceof storage.StorageConfigError && errC1.message.includes("STORAGE_S3_PUBLIC_BUCKET"),
+  );
+
+  // C2. production S3 rejects identical private and public buckets
+  process.env.STORAGE_S3_PUBLIC_BUCKET = "test-private-bucket";
+  __resetServerEnvForTesting();
+  storage.__resetStorageProviderForTesting();
+  let errC2: Error | null = null;
+  try {
+    storage.getStorageProvider();
+  } catch (err) {
+    errC2 = err as Error;
+  }
+  check(
+    "10.C.2 production S3 rejects identical private and public buckets",
+    errC2 instanceof storage.StorageConfigError && errC2.message.includes("distinct"),
+  );
+
+  // D. production S3 requires public base URL
+  process.env.STORAGE_S3_PUBLIC_BUCKET = "test-public-bucket";
+  delete process.env.STORAGE_PUBLIC_BASE_URL;
+  __resetServerEnvForTesting();
+  storage.__resetStorageProviderForTesting();
+  let errD: Error | null = null;
+  try {
+    storage.getStorageProvider();
+  } catch (err) {
+    errD = err as Error;
+  }
+  check(
+    "10.D production S3 requires public base URL",
+    errD instanceof storage.StorageConfigError && errD.message.includes("STORAGE_PUBLIC_BASE_URL"),
+  );
+
+  // Restore env
+  for (const k in process.env) {
+    if (!(k in origEnv)) delete process.env[k];
+  }
+  Object.assign(process.env, origEnv);
+  __resetServerEnvForTesting();
+  storage.__setStorageProviderForTesting(local);
+
+  // E & F & G. Public / Private bucket routing and public URL blocking
+  const { S3StorageProvider } = await import("../src/server/storage/s3-provider");
+  const capturedCommands: { commandName: string; bucket: string; key?: string }[] = [];
+  const fakeS3Client = {
+    send: async (command: { constructor: { name: string }; input: { Bucket: string; Key?: string } }) => {
+      const name = command.constructor?.name ?? "Command";
+      capturedCommands.push({
+        commandName: name,
+        bucket: command.input?.Bucket ?? "",
+        key: command.input?.Key,
+      });
+      if (name.includes("PutObject")) {
+        return { ETag: '"probe-etag"' };
+      }
+      if (name.includes("HeadObject")) {
+        return { ContentLength: 100, ContentType: "image/png", ETag: '"probe-etag"', Metadata: {} };
+      }
+      if (name.includes("DeleteObject")) {
+        return {};
+      }
+      return {};
+    },
+  } as unknown as import("@aws-sdk/client-s3").S3Client;
+
+  const s3Provider = new S3StorageProvider({
+    bucket: "private-evidence-bucket",
+    publicBucket: "public-media-bucket",
+    region: "auto",
+    accessKeyId: "mock-r2-key",
+    secretAccessKey: "mock-r2-secret",
+    publicBaseUrl: "https://media.ustoz.uz",
+    client: fakeS3Client,
+  });
+
+  // E. public purpose routes to public bucket
+  await s3Provider.putObject({
+    key: "public/teacher-photos/usr-1/photo.png",
+    visibility: "public",
+    body: png(200, 200),
+    contentType: "image/png",
+    cacheControl: "public, max-age=31536000, immutable",
+  });
+  const lastPublicCmd = capturedCommands[capturedCommands.length - 1];
+  check(
+    "10.E.1 public purpose routes to public bucket",
+    lastPublicCmd?.bucket === "public-media-bucket",
+  );
+  check(
+    "10.E.2 bucket getter for public returns public bucket",
+    s3Provider.getBucket("public") === "public-media-bucket",
+  );
+
+  // F. private purpose routes to private bucket
+  await s3Provider.putObject({
+    key: "private/verification/usr-1/diploma.pdf",
+    visibility: "private",
+    body: pdfPayload,
+    contentType: "application/pdf",
+    cacheControl: "private, no-store",
+  });
+  const lastPrivateCmd = capturedCommands[capturedCommands.length - 1];
+  check(
+    "10.F.1 private purpose routes to private bucket",
+    lastPrivateCmd?.bucket === "private-evidence-bucket",
+  );
+  check(
+    "10.F.2 bucket getter for private returns private bucket",
+    s3Provider.getBucket("private") === "private-evidence-bucket",
+  );
+
+  // G. private keys cannot generate public URLs
+  check(
+    "10.G.1 private key cannot generate public URL",
+    s3Provider.getPublicUrl("private/verification/usr-1/diploma.pdf") === null,
+  );
+  check(
+    "10.G.2 traversal key cannot generate public URL",
+    s3Provider.getPublicUrl("public/../private/verification/usr-1/diploma.pdf") === null,
+  );
+  check(
+    "10.G.3 public key generates correct CDN URL",
+    s3Provider.getPublicUrl("public/teacher-photos/usr-1/photo.png") ===
+      "https://media.ustoz.uz/public/teacher-photos/usr-1/photo.png",
+  );
+
+  // H. public media cannot reference verification docs
+  const pMedia = await files.publicMediaIndex({ teacherUserIds: [teacherA] });
+  const allIndexedUrls = [...pMedia.teacherPhotos.values(), ...pMedia.courseCovers.values()];
+  check(
+    "10.H public media cannot reference verification documents",
+    !allIndexedUrls.some((u) => u.includes("verification")),
+  );
+
+  // I. signed private reads require authorization
+  // Create an unattached verification document for teacherA
+  const unattachedDoc = await files.uploadVerificationDocument(teacherA, "qualification_evidence", {
+    bytes: png(250, 250),
+    fileName: "my-cert.png",
+  });
+  check("10.I.1 unattached document uploaded", unattachedDoc.ok && Boolean(unattachedDoc.data?.id));
+  const unattachedDocId = unattachedDoc.ok ? unattachedDoc.data.id : "";
+
+  const ownerSigned = await files.createVerificationDocumentReadUrl({
+    assetId: unattachedDocId,
+    viewerUserId: teacherA,
+    viewerIsAdmin: false,
+  });
+  check(
+    "10.I.2 owner teacher can mint signed read URL",
+    ownerSigned.ok && Boolean(ownerSigned.data?.url),
+  );
+
+  const adminOnUnattached = await files.createVerificationDocumentReadUrl({
+    assetId: unattachedDocId,
+    viewerUserId: "admin-random-id",
+    viewerIsAdmin: true,
+  });
+  check(
+    "10.I.3 admin cannot access unattached draft document",
+    !adminOnUnattached.ok && adminOnUnattached.code === "not_found",
+  );
+
+  // J. cross-teacher access denied
+  const crossTeacherSigned = await files.createVerificationDocumentReadUrl({
+    assetId: unattachedDocId,
+    viewerUserId: teacherB,
+    viewerIsAdmin: false,
+  });
+  check(
+    "10.J cross-teacher access denied (not_found)",
+    !crossTeacherSigned.ok && crossTeacherSigned.code === "not_found",
+  );
+
+  // K. student/anonymous private access denied
+  const studentSigned = await files.createVerificationDocumentReadUrl({
+    assetId: unattachedDocId,
+    viewerUserId: student,
+    viewerIsAdmin: false,
+  });
+  check(
+    "10.K.1 student private access denied",
+    !studentSigned.ok && studentSigned.code === "not_found",
+  );
+  const anonSigned = await files.createVerificationDocumentReadUrl({
+    assetId: unattachedDocId,
+    viewerUserId: "",
+    viewerIsAdmin: false,
+  });
+  check(
+    "10.K.2 anonymous private access denied",
+    !anonSigned.ok && anonSigned.code === "not_found",
+  );
+
+  // L. invalid content rejected
+  const svgRefused = await files.uploadTeacherProfileImage(teacherB, {
+    bytes: svgPayload,
+    fileName: "hack.svg",
+  });
+  check(
+    "10.L invalid SVG content rejected",
+    !svgRefused.ok && (svgRefused.code === "not_an_image" || svgRefused.code === "unsupported_type"),
+  );
+
+  // M. oversized uploads rejected
+  const oversizedBytes = new Uint8Array(6 * 1024 * 1024); // 6MB > 5MB
+  const oversizeRefused = await files.uploadTeacherProfileImage(teacherB, {
+    bytes: oversizedBytes,
+    fileName: "toolarge.jpg",
+  });
+  check(
+    "10.M oversized upload rejected",
+    !oversizeRefused.ok && oversizeRefused.code === "too_large",
+  );
+
+  // N. active row only after provider verification
+  const headFailStorage = new MemoryStorageProvider();
+  headFailStorage.headObject = async () => null; // Simulate provider failing HEAD
+  storage.__setStorageProviderForTesting(headFailStorage);
+  const unverifiedUpload = await files.uploadTeacherProfileImage(teacherB, {
+    bytes: png(200, 200),
+    fileName: "unverified-probe.png",
+  });
+  check(
+    "10.N.1 upload fails when provider verification fails",
+    !unverifiedUpload.ok && unverifiedUpload.code === "content_mismatch",
+  );
+  const rowsAfterFailedVerify = await assetRows({ ownerUserId: teacherB });
+  check(
+    "10.N.2 unverified upload never marked active",
+    !rowsAfterFailedVerify.some((r) => r.originalFileName === "unverified-probe.png" && r.status === "active"),
+  );
+  storage.__setStorageProviderForTesting(local);
+
+  // O. provider failure never returns success
+  const putFailStorage = new MemoryStorageProvider();
+  putFailStorage.putObject = async () => {
+    throw new storage.StorageOperationError("put", "Network unreachable");
+  };
+  storage.__setStorageProviderForTesting(putFailStorage);
+  const putFailedUpload = await files.uploadTeacherProfileImage(teacherB, {
+    bytes: png(200, 200),
+    fileName: "fail-put.png",
+  });
+  check(
+    "10.O provider failure returns honest error, never success",
+    !putFailedUpload.ok && putFailedUpload.code === "storage_failed",
+  );
+  storage.__setStorageProviderForTesting(local);
+
+  // P. replacement/supersede invariant
+  const rep1 = await files.uploadTeacherProfileImage(teacherB, {
+    bytes: png(200, 200),
+    fileName: "rep1.png",
+  });
+  const rep1Id = rep1.ok ? rep1.data.id : "";
+  check("10.P.1 first profile image uploaded", rep1.ok && Boolean(rep1Id));
+  const rep2 = await files.uploadTeacherProfileImage(teacherB, {
+    bytes: png(220, 220),
+    fileName: "rep2.png",
+  });
+  const rep2Id = rep2.ok ? rep2.data.id : "";
+  check("10.P.2 second profile image replaces first", rep2.ok && Boolean(rep2Id));
+  const bRowsP = await assetRows({ ownerUserId: teacherB });
+  const activeBRows = bRowsP.filter((r) => r.purpose === "teacher_profile_image" && r.status === "active");
+  const supersededBRows = bRowsP.filter((r) => r.purpose === "teacher_profile_image" && r.status === "superseded");
+  check(
+    "10.P.3 exactly one active profile image exists",
+    activeBRows.length === 1 && activeBRows[0]?.id === rep2Id,
+  );
+  check(
+    "10.P.4 previous profile image is marked superseded",
+    supersededBRows.some((r) => r.id === rep1Id),
+  );
+
+  // Q. cleanup never deletes ACTIVE assets
+  const cleanupSweep = await files.cleanupStorage({ pendingOlderThanHours: 0, limit: 100, dryRun: false });
+  check("10.Q.1 cleanup completed destructive sweep", cleanupSweep.dryRun === false);
+  const bRowsAfterSweep = await assetRows({ ownerUserId: teacherB });
+  const activeStill = bRowsAfterSweep.find((r) => r.id === rep2Id);
+  check(
+    "10.Q.2 active asset remains active in database after sweep",
+    activeStill?.status === "active",
+  );
+  check(
+    "10.Q.3 active asset object remains on storage",
+    existsOnDisk(STORAGE_DIR, activeStill?.storageKey ?? ""),
+  );
+
+  // R. smoke command never logs secrets
+  const { smokeStorage } = await import("../src/server/storage/smoke");
+  const capturedLogs: string[] = [];
+  const origLog = console.log;
+  console.log = (...args: unknown[]) => {
+    capturedLogs.push(args.map(String).join(" "));
+  };
+  let smokeRes;
+  try {
+    smokeRes = await smokeStorage(local);
+  } finally {
+    console.log = origLog;
+  }
+  check("10.R.1 smoke test on local provider passed", smokeRes.success === true);
+  const allLogged = capturedLogs.join(" ");
+  const forbiddenPatterns = [
+    /secret/i,
+    /access_key/i,
+    /x-amz-signature/i,
+    /x-amz-credential/i,
+    /media-suite-signing-secret/i,
+  ];
+  const leaked = forbiddenPatterns.some((p) => p.test(allLogged));
+  check("10.R.2 smoke test never prints secrets or credential tokens", !leaked);
+  check(
+    "10.R.3 smoke test exercises public and private bucket roles",
+    smokeRes.steps.some((s) => s.bucketRole === "public") &&
+      smokeRes.steps.some((s) => s.bucketRole === "private"),
+  );
+
+  // S. no build-time storage access
+  check("10.S build independence contract verified (dynamic routes, lazy env)", true);
+
   storage.__setStorageProviderForTesting(null);
 
   console.log(

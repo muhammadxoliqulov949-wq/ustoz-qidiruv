@@ -89,7 +89,7 @@ export default async function AdminTeacherDetailPage({
       if (documentLinks.size >= 20) break;
       const signed = await createVerificationDocumentReadUrl({
         assetId: document.id,
-        viewerUserId: detail.teacherUserId,
+        viewerUserId: admin.id,
         viewerIsAdmin: true,
       });
       if (signed.ok) documentLinks.set(document.id, signed.data.url);

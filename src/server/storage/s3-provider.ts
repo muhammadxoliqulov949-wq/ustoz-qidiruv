@@ -73,23 +73,31 @@ export class S3StorageProvider implements StorageProvider {
       });
   }
 
+  getBucket(visibility: StorageVisibility): string {
+    return this.bucketFor(visibility);
+  }
+
   private bucketFor(visibility: StorageVisibility): string {
     if (visibility === "public") return this.options.publicBucket ?? this.options.bucket;
     return this.options.bucket;
   }
 
-  private assertKey(key: string, visibility: StorageVisibility): void {
+  private assertKey(
+    key: string,
+    visibility: StorageVisibility,
+    operation: "put" | "head" | "delete" | "sign" = "put",
+  ): void {
     if (!isSafeStorageKey(key)) {
-      throw new StorageOperationError("put", "Unsafe storage key.");
+      throw new StorageOperationError(operation, "Unsafe storage key.");
     }
     const expected = visibility === "private" ? "private/" : "public/";
     if (!key.startsWith(expected)) {
-      throw new StorageOperationError("put", "Key namespace does not match visibility.");
+      throw new StorageOperationError(operation, "Key namespace does not match visibility.");
     }
   }
 
   async putObject(input: PutObjectInput): Promise<StoredObjectHead> {
-    this.assertKey(input.key, input.visibility);
+    this.assertKey(input.key, input.visibility, "put");
     try {
       const response = await this.client.send(
         new PutObjectCommand({
@@ -114,7 +122,7 @@ export class S3StorageProvider implements StorageProvider {
   }
 
   async headObject(key: string, visibility: StorageVisibility): Promise<StoredObjectHead | null> {
-    this.assertKey(key, visibility);
+    this.assertKey(key, visibility, "head");
     try {
       const response = await this.client.send(
         new HeadObjectCommand({ Bucket: this.bucketFor(visibility), Key: key }),
@@ -127,16 +135,24 @@ export class S3StorageProvider implements StorageProvider {
         metadata: (response.Metadata ?? {}) as Record<string, string>,
       };
     } catch (error) {
-      const name = (error as { name?: string }).name;
+      const err = error as {
+        name?: string;
+        $metadata?: { httpStatusCode?: number };
+        statusCode?: number;
+      };
+      const name = err.name;
+      const status = err.$metadata?.httpStatusCode ?? err.statusCode;
       // A missing object is a NORMAL answer here (cleanup, verification), not a
       // failure: anything else is reported as an operation error.
-      if (name === "NotFound" || name === "NoSuchKey" || name === "404") return null;
+      if (name === "NotFound" || name === "NoSuchKey" || name === "404" || status === 404) {
+        return null;
+      }
       throw new StorageOperationError("head", (error as Error).message);
     }
   }
 
   async deleteObject(key: string, visibility: StorageVisibility): Promise<void> {
-    this.assertKey(key, visibility);
+    this.assertKey(key, visibility, "delete");
     try {
       await this.client.send(
         new DeleteObjectCommand({ Bucket: this.bucketFor(visibility), Key: key }),
@@ -165,7 +181,7 @@ export class S3StorageProvider implements StorageProvider {
     key: string,
     options: { expiresInSeconds: number; downloadFileName?: string | null },
   ): Promise<PrivateReadUrl> {
-    this.assertKey(key, "private");
+    this.assertKey(key, "private", "sign");
     const seconds = clampPrivateReadSeconds(options.expiresInSeconds);
     const fileName = options.downloadFileName?.replace(/["\\\r\n]/g, "").slice(0, 120);
     try {

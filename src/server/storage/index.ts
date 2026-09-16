@@ -59,6 +59,9 @@ function build(): StorageProvider {
   // s3
   const missing: string[] = [];
   if (!env.STORAGE_S3_BUCKET) missing.push("STORAGE_S3_BUCKET");
+  if (env.NODE_ENV === "production" && !env.STORAGE_S3_PUBLIC_BUCKET) {
+    missing.push("STORAGE_S3_PUBLIC_BUCKET");
+  }
   if (!env.STORAGE_S3_ACCESS_KEY_ID) missing.push("STORAGE_S3_ACCESS_KEY_ID");
   if (!env.STORAGE_S3_SECRET_ACCESS_KEY) missing.push("STORAGE_S3_SECRET_ACCESS_KEY");
   if (!env.STORAGE_PUBLIC_BASE_URL) missing.push("STORAGE_PUBLIC_BASE_URL");
@@ -66,6 +69,16 @@ function build(): StorageProvider {
     // Names only — never values.
     throw new StorageConfigError(
       `STORAGE_PROVIDER=s3 requires: ${missing.join(", ")}`,
+    );
+  }
+
+  if (
+    env.NODE_ENV === "production" &&
+    env.STORAGE_S3_PUBLIC_BUCKET &&
+    env.STORAGE_S3_BUCKET === env.STORAGE_S3_PUBLIC_BUCKET
+  ) {
+    throw new StorageConfigError(
+      "STORAGE_PROVIDER=s3 requires distinct STORAGE_S3_BUCKET (private) and STORAGE_S3_PUBLIC_BUCKET (public) in production.",
     );
   }
 
@@ -142,6 +155,10 @@ export function storageEnabled(): boolean {
  */
 export function __setStorageProviderForTesting(provider: StorageProvider | null): void {
   cached = provider;
+}
+
+export function __resetStorageProviderForTesting(): void {
+  cached = null;
 }
 
 export { StorageConfigError } from "./types";

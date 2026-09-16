@@ -2326,3 +2326,89 @@ Storage provisioning or scheduling · new marketplace features · real rate
 limiting · password recovery or OTP · server-side saved state · pagination ·
 any change to the session, payment, refund, messaging, review or moderation
 rules.
+
+---
+
+# Phase 21 — Production Object Storage & Media Delivery
+
+Phase 21 hardens the Phase 18 storage architecture for production deployments,
+targeting Cloudflare R2 as the primary object-storage provider while preserving
+full generic S3 / AWS S3 / MinIO compatibility.
+
+## Public and Private Bucket Separation
+
+Production requires strict separation of concerns between two storage namespaces:
+
+1. **Private Bucket (`STORAGE_S3_BUCKET`):**
+   - Stores sensitive teacher verification evidence (`teacher_verification_document`).
+   - MUST NOT have any public domain, CDN distribution, or bucket website attached.
+   - Objects are accessible solely through short-lived server-presigned signed URLs (10 min TTL).
+   - Authorization is checked BEFORE generating the signed capability (owner teacher or reviewing admin).
+   - Never exposed through `STORAGE_PUBLIC_BASE_URL`.
+
+2. **Public Bucket (`STORAGE_S3_PUBLIC_BUCKET`):**
+   - Stores public teacher profile photos (`teacher_profile_image`) and course covers (`course_cover_image`).
+   - Publicly accessible via `STORAGE_PUBLIC_BASE_URL` (custom domain or CDN).
+   - Keys are deterministic and server-generated (`public/teacher-photos/...`, `public/course-covers/...`).
+   - Cache-Control is immutable and long-lived (`public, max-age=31536000, immutable`).
+
+### Fail-Closed Production Invariant
+
+When `STORAGE_PROVIDER=s3` and `NODE_ENV=production`:
+- `STORAGE_S3_BUCKET` (private) is strictly required.
+- `STORAGE_S3_PUBLIC_BUCKET` (public) is strictly required.
+- `STORAGE_S3_BUCKET` and `STORAGE_S3_PUBLIC_BUCKET` MUST be distinct bucket names.
+- `STORAGE_PUBLIC_BASE_URL` is strictly required.
+- `STORAGE_PROVIDER=local` is refused with `StorageConfigError`.
+- Incomplete configuration fails immediately without half-configured state.
+
+## Cloudflare R2 Compatibility
+
+Cloudflare R2 is fully supported via the standard `@aws-sdk/client-s3` provider:
+- **Region:** `auto` (set `STORAGE_S3_REGION=auto`).
+- **Endpoint:** `https://<account_id>.r2.cloudflarestorage.com` (set `STORAGE_S3_ENDPOINT`).
+- **Credentials:** Cloudflare R2 API token (Access Key ID and Secret Access Key).
+- **Signed URLs:** AWS SDK presigned `GetObject` URLs with `ResponseCacheControl: "private, no-store"` and `inline` disposition.
+- **Addressing:** `STORAGE_S3_FORCE_PATH_STYLE=0` for standard Cloudflare R2 and AWS S3 virtual-host / custom domain routing (`1` for local MinIO).
+
+## Operator Setup Checklist (Manual Provisioning)
+
+> **SAFETY NOTE:** Do NOT commit `.env` files and never use `NEXT_PUBLIC_*` for storage credentials. All variables below are server-only.
+
+1. **Create Cloudflare R2 Buckets:**
+   - In Cloudflare Dashboard → R2 Object Storage:
+     - Create private bucket: e.g. `ustoz-private-prod`
+     - Create public bucket: e.g. `ustoz-public-prod`
+2. **Configure Public Access:**
+   - For `ustoz-public-prod`: Connect a custom domain or enable R2 managed domain (e.g. `https://media.ustoz.uz`).
+   - For `ustoz-private-prod`: Verify public access and custom domains are **COMPLETELY DISABLED**.
+3. **Generate API Token:**
+   - In Cloudflare Dashboard → R2 → Manage R2 API Tokens.
+   - Permissions: Object Read & Write (scoped to the two buckets, least privilege).
+   - Note the `Access Key ID`, `Secret Access Key`, and the S3 endpoint `https://<account_id>.r2.cloudflarestorage.com`.
+4. **Configure Production Environment (e.g. Vercel / Server):**
+   ```bash
+   STORAGE_PROVIDER=s3
+   STORAGE_S3_BUCKET=ustoz-private-prod
+   STORAGE_S3_PUBLIC_BUCKET=ustoz-public-prod
+   STORAGE_S3_REGION=auto
+   STORAGE_S3_ENDPOINT=https://<account_id>.r2.cloudflarestorage.com
+   STORAGE_S3_ACCESS_KEY_ID=<YOUR_R2_ACCESS_KEY_ID>
+   STORAGE_S3_SECRET_ACCESS_KEY=<YOUR_R2_SECRET_ACCESS_KEY>
+   STORAGE_S3_FORCE_PATH_STYLE=0
+   STORAGE_PUBLIC_BASE_URL=https://media.ustoz.uz
+   ```
+5. **Run the Operator Smoke Test:**
+   ```bash
+   npm run storage:smoke
+   ```
+   Verifies PUT, HEAD, signed URL generation, public URL blocking on private objects, and DELETE cleanup against both bucket roles without logging secrets.
+
+## Commands
+
+```bash
+npm run storage:status   # provider + configuration status + DB asset counts
+npm run storage:cleanup  # sweep abandoned uploads (pending) & orphaned superseded objects
+npm run storage:smoke   # non-destructive operational verification of S3/R2 storage
+```
+
