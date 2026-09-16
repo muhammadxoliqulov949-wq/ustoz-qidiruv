@@ -134,24 +134,71 @@ export const notificationType = pgEnum("notification_type", [
 
 /* ---------------------------------- users ---------------------------------- */
 
+/**
+ * Accounts — and the two IDENTIFIER KINDS that can never mix.
+ *
+ * A marketplace account (student/teacher) is identified by its phone number;
+ * an operator account (`role = 'admin'`) may instead be identified by an email
+ * address. Both are enforced here, by the database, not by application code:
+ *
+ *   • `users_email_admin_only`  — an email can only exist on an admin row, so
+ *     no student or teacher can ever be given (or log in with) an email
+ *     identifier, and no registration payload can smuggle one in;
+ *   • `users_has_one_identifier` — every account has at least one way to be
+ *     addressed; there is no such thing as an identifier-less user;
+ *   • `users_email_normalized`  — stored emails are trimmed lowercase, which
+ *     is what makes the UNIQUE index case-insensitive without citext;
+ *   • `users_phone_format`      — NULL-safe by SQL semantics (`NULL ~ pattern`
+ *     is NULL, and a CHECK only rejects FALSE), so an email-only operator row
+ *     satisfies it without the constraint being rewritten.
+ *
+ * An email operator account has NO phone and NO profile row, so it cannot own
+ * courses, enrollments or a public marketplace identity (see the composite role
+ * FKs below and scripts/admin.ts).
+ */
 export const users = pgTable(
   "users",
   {
     id: text("id").primaryKey(),
     role: userRole("role").notNull(),
-    /** Canonical E.164-ish "+998XXXXXXXXX" — the account identifier. */
-    phone: text("phone").notNull(),
+    /**
+     * Canonical E.164-ish "+998XXXXXXXXX" — the marketplace account
+     * identifier. NULL only for an email-identified operator account.
+     */
+    phone: text("phone"),
+    /**
+     * Operator (admin) login identifier: normalized lowercase, unique, and
+     * structurally unavailable to any non-admin role. NULL for every
+     * student/teacher account.
+     */
+    email: text("email"),
     /** argon2id hash. Never a plaintext password, never reversible. */
     passwordHash: text("password_hash").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    // NULLs are distinct in PostgreSQL, so every marketplace account keeps a
+    // NULL email and only real addresses collide.
     unique("users_phone_key").on(table.phone),
+    unique("users_email_key").on(table.email),
     // Target for the composite role FKs used by the profile tables.
     unique("users_id_role_key").on(table.id, table.role),
     check("users_phone_format", sql`${table.phone} ~ '^\\+998[0-9]{9}$'`),
     check("users_password_hash_not_plain", sql`${table.passwordHash} LIKE '$argon2%'`),
+    check(
+      "users_has_one_identifier",
+      sql`${table.phone} IS NOT NULL OR ${table.email} IS NOT NULL`,
+    ),
+    check("users_email_admin_only", sql`${table.email} IS NULL OR ${table.role} = 'admin'`),
+    check(
+      "users_email_normalized",
+      sql`${table.email} IS NULL OR (${table.email} = lower(btrim(${table.email})) AND length(${table.email}) BETWEEN 6 AND 254)`,
+    ),
+    check(
+      "users_email_format",
+      sql`${table.email} IS NULL OR ${table.email} ~ '^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$'`,
+    ),
   ],
 );
 

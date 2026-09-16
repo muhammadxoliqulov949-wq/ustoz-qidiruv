@@ -3,11 +3,13 @@
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "../db/client";
-import { hashPassword, verifyPassword } from "../auth/password";
+import { hashPassword } from "../auth/password";
+import { authenticateAdminEmail, authenticatePhone } from "../auth/credentials";
 import { createSession, destroySession, pruneExpiredSessions } from "../auth/session";
 import { newId } from "../auth/ids";
 import { parseSafeNext } from "@/lib/safe-next";
 import {
+  adminLoginSchema,
   fieldErrorsFrom,
   loginSchema,
   registerSchema,
@@ -25,7 +27,17 @@ import { slugifyName, uniqueTeacherSlug } from "../slug";
 /*                                                                              */
 /* Honesty: there is no SMS/OTP provider, so registration is phone + password   */
 /* with argon2id. Nothing pretends a code was sent, there is no hard-coded      */
-/* code and there is no bypass account.                                          */
+/* code and there is no bypass account.                                         */
+/*                                                                              */
+/* TWO LOGIN ACTIONS, TWO IDENTIFIER KINDS.                                     */
+/*   loginAction      — phone + password: students, teachers, and the operator  */
+/*                      accounts bootstrapped by `admin:create`.                */
+/*   adminLoginAction — email + password: operator accounts created by          */
+/*                      `admin:create-email`. It can only ever sign in an       */
+/*                      `admin` row (see auth/credentials.ts).                  */
+/* Both are AUTHENTICATION only. There is still no action, route or page that   */
+/* can CREATE an operator account or grant the admin role: the only writer of   */
+/* `users.role = 'admin'` remains the server-only CLI in scripts/admin.ts.      */
 /* -------------------------------------------------------------------------- */
 
 function formValue(form: FormData, key: string): string {
@@ -129,34 +141,18 @@ export async function loginAction(form: FormData): Promise<ActionResult> {
     };
   }
 
-  const db = getDb();
-  const rows = await db
-    .select({
-      id: schema.users.id,
-      role: schema.users.role,
-      passwordHash: schema.users.passwordHash,
-    })
-    .from(schema.users)
-    .where(eq(schema.users.phone, parsed.data.phone))
-    .limit(1);
-
-  const user = rows[0];
+  const authenticated = await authenticatePhone(parsed.data.phone, parsed.data.password);
   // Same generic message for "no such account" and "wrong password" so the
   // endpoint cannot be used to enumerate registered phone numbers.
-  const invalid: ActionResult = {
-    ok: false,
-    code: "invalid_credentials",
-    message: "Raqam yoki parol noto‘g‘ri.",
-  };
-  if (!user) {
-    // Equalise timing a little: still run a hash comparison against a dummy.
-    await verifyPassword("$argon2id$v=19$m=19456,t=2,p=1$AAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", parsed.data.password);
-    return invalid;
+  if (!authenticated.ok) {
+    return {
+      ok: false,
+      code: "invalid_credentials",
+      message: "Raqam yoki parol noto‘g‘ri.",
+    };
   }
-  const ok = await verifyPassword(user.passwordHash, parsed.data.password);
-  if (!ok) return invalid;
 
-  await createSession(user.id);
+  await createSession(authenticated.id);
   void pruneExpiredSessions();
 
   /*
@@ -166,12 +162,58 @@ export async function loginAction(form: FormData): Promise<ActionResult> {
    */
   const next = parseSafeNext(parsed.data.next ?? undefined);
   const home =
-    user.role === "admin"
+    authenticated.role === "admin"
       ? "/admin"
-      : user.role === "teacher"
+      : authenticated.role === "teacher"
         ? "/teacher/dashboard"
         : "/dashboard";
   redirect(next ?? home);
+}
+
+/**
+ * Operator login — email + password.
+ *
+ * Separate from `loginAction` on purpose: the marketplace login above is
+ * untouched, and this action cannot authenticate a student or a teacher even in
+ * principle, because an email can only exist on an `admin` row (database CHECK
+ * `users_email_admin_only`, re-verified in `authenticateAdminEmail`).
+ *
+ * It authenticates; it never creates. An operator account exists only if
+ * `npm run admin:create-email` made one on the server, so this form is not a
+ * registration surface and offers no link to one.
+ */
+export async function adminLoginAction(form: FormData): Promise<ActionResult> {
+  const parsed = adminLoginSchema.safeParse({
+    email: formValue(form, "email"),
+    password: formValue(form, "password"),
+    next: form.get("next") === null ? null : formValue(form, "next"),
+  });
+  if (!parsed.success) {
+    return {
+      ok: false,
+      code: "invalid_input",
+      message: "Ma’lumotlarni tekshiring.",
+      fieldErrors: fieldErrorsFrom(parsed.error),
+    };
+  }
+
+  const authenticated = await authenticateAdminEmail(parsed.data.email, parsed.data.password);
+  // One generic message for unknown address, wrong password and "that email
+  // belongs to a non-operator" alike — nothing here enumerates accounts.
+  if (!authenticated.ok) {
+    return {
+      ok: false,
+      code: "invalid_credentials",
+      message: "Email yoki parol noto‘g‘ri.",
+    };
+  }
+
+  await createSession(authenticated.id);
+  void pruneExpiredSessions();
+
+  // An operator has exactly one area. A ?next= target is still honoured when it
+  // is an internal path; the role guards decide what that path may show.
+  redirect(parseSafeNext(parsed.data.next ?? undefined) ?? "/admin");
 }
 
 export async function logoutAction(): Promise<void> {

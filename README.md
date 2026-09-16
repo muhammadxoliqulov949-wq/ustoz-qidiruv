@@ -434,6 +434,11 @@ development/test tool and cannot serve a serverless deployment:
   fails loudly if `DB_DRIVER=pg` is set without it.
 - `AUTH_INSECURE_COOKIES` must stay unset/`0` so session cookies remain
   `Secure`; `DEMO_TEACHER_WORKSPACE` is forced off in production regardless.
+- `ADMIN_PASSWORD` is read **only** by the operator CLI (`admin:create`,
+  `admin:create-email`) and only at the moment an admin account is created:
+  required, ≥ 12 characters, never interactive, never stored — the row keeps its
+  argon2id hash. It is deliberately absent from `src/server/env.ts` because no
+  request handler ever reads it, so no HTTP surface can consume it.
 - Payments stay off unless configured: `PAYMENT_MODE=disabled` (the default)
   needs no credentials, while enabling it requires `PAYME_MERCHANT_ID` and
   `PAYME_MERCHANT_KEY` or the process refuses to boot. Set `APP_BASE_URL` when
@@ -623,8 +628,20 @@ public URLs stay stable.
 
 ## Auth architecture
 
-Phone (`+998XXXXXXXXX`) + password. **No SMS/OTP exists**, so nothing in the UI
-claims a code was sent, and there is no hard-coded code and no bypass account.
+Two identities, two credential shapes, one session mechanism:
+
+| who | identifier | server action | credential check |
+| --- | --- | --- | --- |
+| student / teacher | phone `+998XXXXXXXXX` | `loginAction` | `authenticatePhone` |
+| admin (operator) | email | `adminLoginAction` | `authenticateAdminEmail` |
+
+Both are password-based; the operator login additionally re-checks that the row
+it found really is `role = 'admin'`, so a mis-stored email can never authenticate
+as an operator. **No SMS/OTP exists**, so nothing in the UI claims a code was
+sent, and there is no hard-coded code and no bypass account. `/login` asks which
+identity is signing in and shows exactly one matching field — a phone input that
+strips non-digits cannot also be an email input, and guessing from the text would
+make the two credential paths share one error surface.
 
 1. Register/login go through **Server Actions**, which give CSRF protection for
    free (POST + Origin/Host check + unguessable action id) and expose no public
@@ -1153,11 +1170,11 @@ Three rules everything else follows from:
 
 ## Roles
 
-| role | who | dashboard |
-| --- | --- | --- |
-| `student` | the default account | `/dashboard` |
-| `teacher` | an account with a `teacher_profiles` row | `/teacher/dashboard` |
-| `admin` | an operator account with **no profile row** | `/admin` |
+| role | who | signs in with | dashboard |
+| --- | --- | --- | --- |
+| `student` | the default account | phone + password | `/dashboard` |
+| `teacher` | an account with a `teacher_profiles` row | phone + password | `/teacher/dashboard` |
+| `admin` | an operator account with **no profile row** | email + password, or phone + password for a phone-created/promoted operator | `/admin` |
 
 `user_role` gained `admin` in migration `0005`. The composite foreign keys
 (`student_profiles_(user_id, role)` and `teacher_profiles_(user_id, role)`, each
@@ -1170,39 +1187,80 @@ marketplace identity. The practical consequence is documented below.
 ## Bootstrapping an admin (out-of-band, by design)
 
 ```bash
-npm run admin:list                                  # who is an admin right now
+npm run admin:list                                  # who is an operator, and with which identifier
+ADMIN_PASSWORD='…12+ chars…' npm run admin:create-email -- operator@example.uz
 ADMIN_PASSWORD='…12+ chars…' npm run admin:create -- +998XXXXXXXXX
 npm run admin:promote -- +998XXXXXXXXX              # an EXISTING profile-less account
-npm run admin:demote  -- +998XXXXXXXXX              # back to student
+npm run admin:demote  -- +998XXXXXXXXX              # back to student (phone operators only)
 ```
 
 Why a CLI and not a route:
 
 * it is **not reachable over HTTP at all** — there is no endpoint, action or
   page that grants the role, so an escalation attempt has nothing to call;
-* it never reads a role from a request; the operator states the target phone
-  explicitly and the command implies the role;
+* it never reads a role from a request; the operator states the target phone or
+  email explicitly and the command implies the role;
 * it is the **only** writer of `users.role = 'admin'` in the codebase.
 
 Safety properties:
 
 * **No default admin, no seeded admin, no committed password.** `admin:create`
-  requires `ADMIN_PASSWORD` in the environment (≥ 12 characters) and refuses a
-  weaker or missing one; it is never interactive, so no password is echoed to a
-  shell history or a log. `db:seed` refuses `NODE_ENV=production`.
-* **Safe failure.** An unknown phone number changes nothing and says nothing
-  about which numbers exist. Output is masked (`+998****233`).
+  and `admin:create-email` require `ADMIN_PASSWORD` in the environment
+  (≥ 12 characters) and refuse a weaker or missing one; neither is interactive,
+  so no password is echoed to a shell history or a log. `db:seed` refuses
+  `NODE_ENV=production`.
+* **Safe failure.** An unknown phone number or email changes nothing and says
+  nothing about which identifiers exist. Output is masked (`+998****233`,
+  `o***@example.uz`), so a terminal recording or CI log cannot recover either.
 * **`promote` refuses a profiled account** with an explanation instead of
   deleting data to force the update through — the composite role FK would reject
   it anyway, and removing the profile would delete that teacher's courses.
   Use `admin:create` for a dedicated operator account.
+* **`promote`/`demote` refuse an email argument** outright. An email operator has
+  no phone identity and no marketplace role to return to, so there is nothing to
+  promote from or demote to — the account is created once and stays an operator.
 * **Production is never seeded.** The dev fixtures below exist only when
   `db:seed` runs outside production.
 
-The two supported ways to get an admin, in order of preference:
+The three supported ways to get an admin, in order of preference:
 
-1. `admin:create` — a dedicated, profile-less operator account (recommended).
-2. `admin:promote` — an existing account that has no profile row.
+1. `admin:create-email` — a dedicated operator account with an email identity
+   (recommended: an operator mailbox is not a personal phone number).
+2. `admin:create` — a dedicated, profile-less operator account with a phone.
+3. `admin:promote` — an existing account that has no profile row.
+
+### Two operator identities (email + phone)
+
+An operator account is identified by **either** a phone number **or** an email
+address, never both, and `users` enforces that in the database rather than in
+application code. Migration `0009_admin_email_identity` made `phone` nullable,
+added a nullable `email`, and added four CHECK constraints plus a unique key:
+
+| constraint | what it guarantees |
+| --- | --- |
+| `users_email_key` (UNIQUE) | no two accounts share an operator email |
+| `users_has_one_identifier` | every account has a phone or an email — no identity-less row |
+| `users_email_admin_only` | an email can exist **only** on `role = 'admin'`; registration (student/teacher) can never carry one, and `promote` cannot smuggle one in |
+| `users_email_normalized` | stored emails equal `lower(btrim(email))`, so a duplicate cannot hide behind case or padding |
+| `users_email_format` | the stored value really looks like an address (`local@domain.tld`) |
+
+`users_phone_format` is NULL-safe, so the phone rules for marketplace accounts
+are unchanged, and `users_id_role_key` still makes a profile impossible for an
+admin (see *Roles* above). The migration is additive and reversible in shape: it
+drops no column, rewrites no row, and needs no downtime. Applying it to a
+database whose every row already has a phone cannot fail — there is nothing to
+backfill.
+
+Email normalization lives in `src/lib/email.ts` (`normalizeEmail`,
+`isValidEmail`, `maskEmail`) and is applied on **both** sides — the CLI before
+insert, and `authenticateAdminEmail` before lookup — so the stored form and the
+queried form are produced by the same function and cannot drift apart.
+
+What this hotfix does **not** touch: payments, courses, enrollment, messaging,
+storage, the audit log's shape, and anything in Phase 19 (which does not exist).
+No public registration path gained an email field, `registerSchema` is unchanged
+and still `.strict()` (an extra `email` key is a validation failure), and no
+route, action or API endpoint can create an operator.
 
 ### Development fixtures (dev seed only)
 
@@ -1343,7 +1401,9 @@ neither a second decision nor a second notification.
 
 Authorization is resolved **once, in the admin layout, on the server**:
 
-* anonymous → `/login?next=/admin` (auth gate);
+* anonymous → `/login?next=/admin` (auth gate — the operator picks the **email**
+  mode on that form; `next` is preserved and re-validated by `parseSafeNext`
+  before the redirect, so it can only ever be an internal path);
 * student/teacher → an explicit in-shell *"this area is not an admin"* screen
   with links to their own dashboard — never a silent cross-dashboard redirect
   that would make the attempt invisible;
@@ -1419,9 +1479,19 @@ build.
 ## Commands
 
 ```bash
-npm run test:admin       # Phase 15 admin/verification/moderation suite (147 checks)
-npm run admin:list       # current admin accounts (masked)
-npm run admin:create     # new operator account (requires ADMIN_PASSWORD)
+npm run test:admin         # Phase 15 admin/verification/moderation suite (194 checks)
+npm run admin:list         # current operator accounts (masked, with identifier kind)
+npm run admin:create-email # new operator with an EMAIL identity (requires ADMIN_PASSWORD)
+npm run admin:create       # new operator with a PHONE identity (requires ADMIN_PASSWORD)
+```
+
+A production operator bootstrap is exactly two commands, run from a trusted
+environment with the production connection string — never from a build step:
+
+```bash
+DB_DRIVER=pg DATABASE_URL=<production-url> npm run db:migrate
+DB_DRIVER=pg DATABASE_URL=<production-url> \
+  ADMIN_PASSWORD='<12+ characters>' npm run admin:create-email -- operator@your-domain.uz
 ```
 
 `npm run test:admin` runs against real PGlite migrations and covers the intent
@@ -1430,7 +1500,14 @@ admin; a profile cannot be attached to one), the whole verification lifecycle
 including idempotent retries and the "opposite decision" refusal, resubmission
 after a rejection, the publication rule (including an unverified owner being
 refused), the no-redeploy public visibility check, audit contents and
-immutability, and racing admins producing exactly one decision.
+immutability, and racing admins producing exactly one decision. It also covers
+the email operator identity: email + password authentication (and refusal of a
+wrong password, an unknown address, an empty password, and a differently-cased
+password), normalization before lookup, the phone login staying intact, the five
+`users` constraints (unique, at-least-one-identifier, admin-only, normalized,
+format), the impossibility of attaching a marketplace profile or demoting an
+email operator, absence from the public directory, and the fact that no
+registration or login schema will accept an `email` or a `role`.
 
 ## What Phase 15 does NOT implement
 

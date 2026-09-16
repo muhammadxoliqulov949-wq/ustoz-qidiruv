@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { VERIFICATION_DOCUMENT_TYPES } from "@/lib/media";
 import { categories } from "@/data/categories";
+import { isValidEmail, normalizeEmail } from "@/lib/email";
 import {
   extractUzPhoneDigits,
   UZ_MOBILE_PREFIXES,
@@ -102,6 +103,34 @@ export const registerSchema = z
 export const loginSchema = z
   .object({
     phone: phoneSchema,
+    password: z.string().min(1).max(72),
+    next: z.string().max(400).nullable().optional(),
+  })
+  .strict();
+
+/*
+ * OPERATOR LOGIN — email + password.
+ *
+ * A separate schema (and a separate server action) rather than an "identifier"
+ * field that accepts either shape: the phone login above stays byte-for-byte
+ * the marketplace path it has always been, and this one can only ever describe
+ * an operator. `.strict()` matters twice over — it rejects an unknown field, so
+ * neither login payload can smuggle `role`, `userId` or `email` into the other.
+ *
+ * `registerSchema` above is deliberately untouched: public registration is
+ * phone-only and `roleSchema` accepts student|teacher, so no request can create
+ * an admin or attach an email to a marketplace account. The database agrees
+ * (`users_email_admin_only`).
+ */
+export const emailSchema = z
+  .string()
+  .max(320, "Email manzili juda uzun.")
+  .transform((raw) => normalizeEmail(raw))
+  .refine((value) => isValidEmail(value), "Email manzili noto‘g‘ri.");
+
+export const adminLoginSchema = z
+  .object({
+    email: emailSchema,
     password: z.string().min(1).max(72),
     next: z.string().max(400).nullable().optional(),
   })
@@ -449,6 +478,7 @@ export const courseCoverRemovalSchema = z.object({ courseId: idSchema }).strict(
 
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
+export type AdminLoginInput = z.infer<typeof adminLoginSchema>;
 export type StudentProfileInput = z.infer<typeof studentProfileSchema>;
 export type TeacherProfileInput = z.infer<typeof teacherProfileSchema>;
 

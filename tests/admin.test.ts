@@ -74,6 +74,10 @@ async function main(): Promise<void> {
   const contracts = await import("../src/lib/course-moderation");
   const verifyCopy = await import("../src/lib/teacher-verification");
   const validation = await import("../src/server/validation");
+  const { authenticateAdminEmail, authenticatePhone } = await import(
+    "../src/server/auth/credentials"
+  );
+  const emailLib = await import("../src/lib/email");
   const publicRepo = await import("../src/server/public-repo");
   const { parseCourseBrowseParams } = await import("../src/lib/course-search");
 
@@ -267,6 +271,352 @@ async function main(): Promise<void> {
     }));
   check("an admin owns no courses by construction (no teacher profile)",
     (await db.select().from(schema.courses).where(eq(schema.courses.teacherUserId, adminA))).length === 0);
+
+  /* ========================= ADMIN EMAIL IDENTITY ========================= */
+  console.log("\n# ADMIN EMAIL — a separate operator identity, and the wall around it");
+
+  const ADMIN_EMAIL = "operator@ustoz.uz";
+  const adminEmailPassword = "operator-email-secret";
+  const emailAdminHash = await hashPassword(adminEmailPassword);
+
+  /*
+   * Exactly the row `npm run admin:create-email` writes: role=admin, a
+   * normalized email, NO phone, and no marketplace profile of any kind.
+   */
+  const emailAdmin = newId("usr");
+  await db.insert(schema.users).values({
+    id: emailAdmin,
+    role: "admin",
+    phone: null,
+    email: ADMIN_EMAIL,
+    passwordHash: emailAdminHash,
+  });
+  const emailAdminRow = (
+    await db.select().from(schema.users).where(eq(schema.users.id, emailAdmin))
+  )[0];
+  check(
+    "an email operator account carries an email and no phone",
+    emailAdminRow.email === ADMIN_EMAIL && emailAdminRow.phone === null,
+  );
+  check(
+    "the operator password is stored as an argon2id hash, never in plaintext",
+    emailAdminRow.passwordHash.startsWith("$argon2id$") &&
+      !emailAdminRow.passwordHash.includes(adminEmailPassword),
+  );
+  const sessionProjection = (
+    await db
+      .select({ id: schema.users.id, role: schema.users.role, phone: schema.users.phone })
+      .from(schema.users)
+      .where(eq(schema.users.id, emailAdmin))
+  )[0];
+  check(
+    "the session projection is honest about an operator with no phone",
+    sessionProjection.role === "admin" && sessionProjection.phone === null,
+  );
+
+  // --- the operator login -------------------------------------------------
+  const operatorLogin = await authenticateAdminEmail(ADMIN_EMAIL, adminEmailPassword);
+  check(
+    "email + correct password authenticates the operator",
+    operatorLogin.ok === true &&
+      operatorLogin.ok &&
+      operatorLogin.id === emailAdmin &&
+      operatorLogin.role === "admin",
+  );
+  check(
+    "the operator login can only ever return role=admin",
+    operatorLogin.ok && operatorLogin.role === "admin",
+  );
+  check(
+    "a wrong password is refused",
+    (await authenticateAdminEmail(ADMIN_EMAIL, "not-the-operator-password")).ok === false,
+  );
+  check(
+    "a differently-cased password is refused (passwords are never normalized)",
+    (await authenticateAdminEmail(ADMIN_EMAIL, adminEmailPassword.toUpperCase())).ok === false,
+  );
+  check(
+    "an unknown operator address is refused",
+    (await authenticateAdminEmail("nobody@ustoz.uz", adminEmailPassword)).ok === false,
+  );
+  check(
+    "an empty password is refused",
+    (await authenticateAdminEmail(ADMIN_EMAIL, "")).ok === false,
+  );
+  check(
+    "the address is normalized before the lookup, so case and padding still work",
+    (await authenticateAdminEmail("  Operator@USTOZ.UZ  ", adminEmailPassword)).ok === true,
+  );
+
+  // --- the marketplace login is untouched ---------------------------------
+  const teacherLogin = await authenticatePhone("+998902220001", "supersecret-qa");
+  check(
+    "a teacher still signs in with phone + password",
+    teacherLogin.ok === true && teacherLogin.ok && teacherLogin.role === "teacher",
+  );
+  const phoneAdminLogin = await authenticatePhone("+998902220003", "supersecret-qa");
+  check(
+    "the phone-bootstrapped admin still signs in with phone + password",
+    phoneAdminLogin.ok === true &&
+      phoneAdminLogin.ok &&
+      phoneAdminLogin.id === adminA &&
+      phoneAdminLogin.role === "admin",
+  );
+  check(
+    "a wrong phone password is refused",
+    (await authenticatePhone("+998902220001", "wrong-password")).ok === false,
+  );
+  check(
+    "the operator login is keyed by email only — a phone number cannot use it",
+    (await authenticateAdminEmail("+998902220001", "supersecret-qa")).ok === false,
+  );
+  check(
+    "the phone login is keyed by phone only — an operator email cannot use it",
+    (await authenticatePhone(ADMIN_EMAIL, adminEmailPassword)).ok === false,
+  );
+
+  // --- the wall: an email identifier may exist ONLY on an admin -----------
+  await rejects(
+    "an existing teacher cannot be given an email identifier (users_email_admin_only)",
+    () =>
+      db
+        .update(schema.users)
+        .set({ email: "teacher@ustoz.uz" })
+        .where(eq(schema.users.id, teacherA)),
+  );
+  await rejects("a student row cannot carry an email (users_email_admin_only)", () =>
+    db.insert(schema.users).values({
+      id: newId("usr"),
+      role: "student",
+      phone: "+998902220081",
+      email: "student@ustoz.uz",
+      passwordHash,
+    }),
+  );
+  await rejects("an email must be stored normalized (users_email_normalized)", () =>
+    db.insert(schema.users).values({
+      id: newId("usr"),
+      role: "admin",
+      email: "MixedCase@Ustoz.UZ",
+      passwordHash,
+    }),
+  );
+  await rejects("an email with stray whitespace is refused (users_email_normalized)", () =>
+    db.insert(schema.users).values({
+      id: newId("usr"),
+      role: "admin",
+      email: " second-operator@ustoz.uz",
+      passwordHash,
+    }),
+  );
+  await rejects("an email without a real shape is refused (users_email_format)", () =>
+    db.insert(schema.users).values({
+      id: newId("usr"),
+      role: "admin",
+      email: "operator@localhost",
+      passwordHash,
+    }),
+  );
+  await rejects("a duplicate operator email is refused (users_email_key)", () =>
+    db.insert(schema.users).values({
+      id: newId("usr"),
+      role: "admin",
+      email: ADMIN_EMAIL,
+      passwordHash,
+    }),
+  );
+  /*
+   * A real deployment has more than one operator, and every one of them has a
+   * NULL phone. `users_phone_key` is still UNIQUE, so this proves NULLs stay
+   * distinct there — a second email operator is not blocked by the first.
+   */
+  const secondEmailAdmin = newId("usr");
+  await db.insert(schema.users).values({
+    id: secondEmailAdmin,
+    role: "admin",
+    phone: null,
+    email: "second-operator@ustoz.uz",
+    passwordHash: emailAdminHash,
+  });
+  const operators = await db
+    .select({ id: schema.users.id, email: schema.users.email, phone: schema.users.phone })
+    .from(schema.users);
+  const emailOperators = operators.filter((row) => row.email !== null);
+  check(
+    "two email operators coexist — a NULL phone never collides on users_phone_key",
+    emailOperators.length === 2 &&
+      new Set(emailOperators.map((row) => row.id)).size === 2 &&
+      emailOperators.every((row) => row.phone === null),
+  );
+  check(
+    "the second operator authenticates on its own address",
+    (await authenticateAdminEmail("second-operator@ustoz.uz", adminEmailPassword)).ok === true,
+  );
+  check(
+    "one operator's password does not authenticate another's address",
+    (await authenticateAdminEmail("second-operator@ustoz.uz", "somebody-elses-password")).ok ===
+      false,
+  );
+  await rejects(
+    "an account with no identifier at all is refused (users_has_one_identifier)",
+    () =>
+      db.insert(schema.users).values({
+        id: newId("usr"),
+        role: "admin",
+        phone: null,
+        email: null,
+        passwordHash,
+      }),
+  );
+  await rejects(
+    "a marketplace account still needs its phone (users_has_one_identifier)",
+    () =>
+      db.insert(schema.users).values({
+        id: newId("usr"),
+        role: "student",
+        phone: null,
+        passwordHash,
+      }),
+  );
+  await rejects(
+    "an operator cannot be demoted into a marketplace role while holding an email",
+    () =>
+      db
+        .update(schema.users)
+        .set({ role: "student" })
+        .where(eq(schema.users.id, emailAdmin)),
+  );
+  check(
+    "the operator row survived every rejected write unchanged",
+    (
+      await db
+        .select({ role: schema.users.role, email: schema.users.email, phone: schema.users.phone })
+        .from(schema.users)
+        .where(eq(schema.users.id, emailAdmin))
+    )[0]?.role === "admin" && emailAdminRow.email === ADMIN_EMAIL,
+  );
+
+  // --- privilege isolation: an operator is an operator and nothing else ----
+  await rejects(
+    "an email operator cannot be given a teacher profile (composite role FK)",
+    () =>
+      db.insert(schema.teacherProfiles).values({
+        userId: emailAdmin,
+        role: "teacher",
+        slug: "qa-operator",
+        name: "Operator",
+      }),
+  );
+  await rejects("an email operator cannot be given a student profile", () =>
+    db.insert(schema.studentProfiles).values({
+      userId: emailAdmin,
+      role: "student",
+      name: "Operator",
+    }),
+  );
+  check(
+    "no marketplace profile row references the operator",
+    (
+      await db
+        .select()
+        .from(schema.teacherProfiles)
+        .where(eq(schema.teacherProfiles.userId, emailAdmin))
+    ).length === 0 &&
+      (
+        await db
+          .select()
+          .from(schema.studentProfiles)
+          .where(eq(schema.studentProfiles.userId, emailAdmin))
+      ).length === 0,
+  );
+  check(
+    "the operator owns no courses",
+    (await db.select().from(schema.courses).where(eq(schema.courses.teacherUserId, emailAdmin)))
+      .length === 0,
+  );
+  const directory = await publicRepo.listPublicTeachers();
+  check(
+    "the operator is absent from the public teacher directory",
+    directory.every((entry) => entry.teacher.id !== emailAdmin),
+  );
+
+  // --- the public forms cannot mint an admin or carry an email -------------
+  check(
+    "public registration cannot request role=admin",
+    validation.registerSchema.safeParse({
+      role: "admin",
+      phone: "+998902220082",
+      password: adminEmailPassword,
+      name: "Operator",
+    }).success === false,
+  );
+  check(
+    "public registration cannot carry an email field (.strict())",
+    validation.registerSchema.safeParse({
+      role: "student",
+      phone: "+998902220082",
+      password: adminEmailPassword,
+      name: "Operator",
+      email: ADMIN_EMAIL,
+    }).success === false,
+  );
+  const operatorLoginParse = validation.adminLoginSchema.safeParse({
+    email: " Operator@Ustoz.UZ ",
+    password: adminEmailPassword,
+  });
+  check(
+    "the operator login schema normalizes the address",
+    operatorLoginParse.success === true &&
+      operatorLoginParse.success &&
+      operatorLoginParse.data.email === ADMIN_EMAIL,
+  );
+  check(
+    "the operator login schema rejects a malformed address",
+    validation.adminLoginSchema.safeParse({
+      email: "operator-at-ustoz",
+      password: adminEmailPassword,
+    }).success === false,
+  );
+  check(
+    "the operator login schema rejects an empty password",
+    validation.adminLoginSchema.safeParse({ email: ADMIN_EMAIL, password: "" }).success === false,
+  );
+  check(
+    "the operator login schema keeps the role out of the client's hands (.strict())",
+    validation.adminLoginSchema.safeParse({
+      email: ADMIN_EMAIL,
+      password: adminEmailPassword,
+      role: "admin",
+    }).success === false,
+  );
+  check(
+    "the marketplace login schema still takes a phone and rejects an email",
+    validation.loginSchema.safeParse({
+      phone: "+998902220001",
+      password: "supersecret-qa",
+    }).success === true &&
+      validation.loginSchema.safeParse({
+        phone: ADMIN_EMAIL,
+        password: "supersecret-qa",
+      }).success === false,
+  );
+  check(
+    "email normalization is pure and idempotent",
+    emailLib.normalizeEmail("  Operator@USTOZ.UZ  ") === ADMIN_EMAIL &&
+      emailLib.normalizeEmail(emailLib.normalizeEmail(ADMIN_EMAIL)) === ADMIN_EMAIL,
+  );
+  check(
+    "the email helpers agree on what a usable address looks like",
+    emailLib.isValidEmail(ADMIN_EMAIL) === true &&
+      emailLib.isValidEmail("operator@localhost") === false &&
+      emailLib.isValidEmail("operator @ustoz.uz") === false &&
+      emailLib.isValidEmail("") === false,
+  );
+  check(
+    "masking never reveals a full address",
+    emailLib.maskEmail(ADMIN_EMAIL) === "o***@ustoz.uz" &&
+      emailLib.maskEmail(ADMIN_EMAIL).length < ADMIN_EMAIL.length,
+  );
 
   /* ========================= TEACHER VERIFICATION ========================= */
   console.log("\n# TEACHER VERIFICATION — submit, decide, and who may write `verified`");
@@ -688,6 +1038,7 @@ async function main(): Promise<void> {
     events.every((event) => event.metadata === null || event.metadata.length <= 300));
   const auditText = JSON.stringify(events);
   check("no phone number appears in the audit log", !auditText.includes("+998"));
+  check("no email address appears in the audit log", !auditText.includes("@"));
   check("no password hash appears in the audit log", !auditText.includes("$argon2"));
   check("no session token appears in the audit log", !auditText.includes("tokenHash"));
   check("the audit table has no `updated_at` column (rows are immutable by shape)",
