@@ -18,6 +18,8 @@ import { categories } from "@/data/categories";
 import { courseFormatLabels, courseLevelLabels } from "@/data/courses";
 import { formatCount } from "@/lib/format";
 import { getPublicCourseBySlug, getPublicTeacherById } from "@/server/public-repo";
+import { getCourseReviewContext } from "@/server/review-service";
+import { getCurrentUser } from "@/server/auth/session";
 import { cn, focusRing } from "@/lib/utils";
 
 /* -------------------------------------------------------------------------- */
@@ -100,7 +102,20 @@ export default async function CourseDetailPage({
   if (!group) notFound(); // defensive — every course has ≥1 group
 
   const category = categoryById.get(course.categoryId);
-  const teacher = await getPublicTeacherById(course.teacher.id);
+  /*
+   * PHASE 19: the reviews section reads PostgreSQL, not a compiled-in fixture.
+   * One call returns the published list, the signed-in student's own row and
+   * their eligibility — all derived from the session cookie and the database, so
+   * nothing about who may write comes from the request body.
+   *
+   * The viewer is resolved here (rather than inside the service) because this
+   * page is also the only place that knows the route is public: an anonymous
+   * visitor still gets the published list, just with an `anonymous` reason.
+   */
+  const [teacher, reviewContext] = await Promise.all([
+    getPublicTeacherById(course.teacher.id),
+    getCurrentUser().then((viewer) => getCourseReviewContext(course.id, viewer)),
+  ]);
 
   return (
     <>
@@ -317,10 +332,16 @@ export default async function CourseDetailPage({
               <section id="reviews" className={ANCHOR}>
                 <SectionHeader
                   title="Fikrlar"
-                  description="Sahifada faqat haqiqatan yozilgan fikrlar keltiriladi — sonlar sun’iy ko‘paytirilmaydi."
+                  description="Sahifada faqat tasdiqlangan qatnashuvchilar yozgan va administrator e’lon qilgan fikrlar keltiriladi — sonlar sun’iy ko‘paytirilmaydi."
                   as="h2"
                 />
-                <CourseReviews course={course} />
+                <CourseReviews
+                  course={course}
+                  reviews={reviewContext.reviews}
+                  eligibility={reviewContext.eligibility}
+                  own={reviewContext.own}
+                  canSubmit={reviewContext.canSubmit}
+                />
               </section>
 
               <section id="faq" className={ANCHOR}>

@@ -3,6 +3,12 @@ import { and, asc, count, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { getDb, schema } from "./db/client";
 import { publicMediaIndex, teacherPhotoUrl } from "./file-service";
 import { getAcceptedCounts } from "./enrollment-service";
+import {
+  listPublicCourseReviews as reviewServiceListPublicCourseReviews,
+  listPublicTeacherReviews as reviewServiceListPublicTeacherReviews,
+  type PublicReviewView,
+  type PublicTeacherReviewView,
+} from "./review-service";
 import { categories } from "@/data/categories";
 import type {
   Course,
@@ -206,6 +212,37 @@ function toCourse(
  */
 async function liveSeats(groupIds: string[]): Promise<Map<string, number>> {
   return getAcceptedCounts(groupIds);
+}
+
+/* -------------------------------- reviews --------------------------------- */
+
+/*
+ * PHASE 19: written reviews come from PostgreSQL through the review service, and
+ * the public projection is deliberately tiny (id, rating, body, date, a safe
+ * author label). The `status = 'published'` predicate lives in the service's SQL,
+ * so a pending, rejected or withdrawn review is never selected by a public
+ * surface — it is not "hidden by a filter", it is not in the result set.
+ *
+ * There is NO fixture fallback: the compiled-in sample list this replaced is
+ * deleted, so an empty array means the section renders its honest empty state
+ * rather than borrowed testimonials.
+ *
+ * These wrappers exist so the public marketplace keeps exactly ONE database
+ * boundary — pages import from here and never reach a service directly.
+ */
+
+export type { PublicReviewView, PublicTeacherReviewView };
+
+/** Published written reviews for one course, newest first. */
+export async function listPublicCourseReviews(courseId: string): Promise<PublicReviewView[]> {
+  return reviewServiceListPublicCourseReviews(courseId);
+}
+
+/** Published reviews across all of a teacher's published courses, newest first. */
+export async function listPublicTeacherReviews(
+  teacherUserId: string,
+): Promise<PublicTeacherReviewView[]> {
+  return reviewServiceListPublicTeacherReviews(teacherUserId);
 }
 
 /* ------------------------------ course reads ------------------------------ */

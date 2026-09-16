@@ -520,7 +520,7 @@ fixture data and static site copy only**.
 | `courses.ts`, `teachers.ts` | **Seed-only** for the course/teacher records. The exported *label maps* (`courseFormatLabels`, `courseLevelLabels`, `cityLabel`) remain runtime presentation helpers — they are static vocabulary, not marketplace data. The former home-facing exports `recommendedCourses` and `topTeachers` are **deleted**: they were slices of this fixture array, and a card built from them links to a `/courses/[slug]` the database-backed detail route 404s on. |
 | `teacher-rows.ts`, `course-details.ts` | **Seed/reference only.** The equivalent read model is now derived in SQL by `listPublicTeachers()`. (Their derived *facet vocabularies* — `teacherCities`, `teacherLanguages` — still whitelist URL params; see the note under the matrix.) |
 | `categories.ts` | **Runtime, static taxonomy.** Six fixed categories used for routing, labels and the authoring form. Not marketplace inventory, and it carries **no `courseCount` any more**: how many published courses a category holds is counted by `getCategoryCourseCounts()` and passed to `CategoryCard` as a prop (the card renders no count line when it is not given one). |
-| `reviews.ts` | **Runtime read-only fixtures**, joined to DB courses by stable course id. See "Reviews and FAQ" below. |
+| ~~`reviews.ts`~~ | **DELETED in Phase 19.** Written reviews are real rows in `course_reviews`, read through `public-repo.ts`. There is no fixture left to fall back to. See "Reviews and FAQ" below. |
 | `course-faq.ts`, `teacher-faq.ts` | **Runtime pure functions.** They take a `Course`/`TeacherRow` (now DB-projected) and compute FAQ text. They hold no records. |
 | `site.ts` | **Runtime static copy** (page titles, intros, footer). |
 | `dashboard-catalog.ts`, `teacher-dashboard.ts`, `teacher-profiles.ts`, `course-authoring.ts` | **Legacy prototype projections.** No longer used by the primary teacher dashboard, which reads the database. Retained for the legacy local-draft editor and option lists. |
@@ -565,11 +565,72 @@ seeded and registered teacher; there is no approval workflow to grant it.
 
 ## Reviews and FAQ
 
-Reviews stay **read-only fixtures** (`src/data/reviews.ts`), joined to database
-courses by stable course id. There is no reviews table, no submission path and
-no UI control implying one. Building a reviews table with no way to earn a
-review would be a pretend system, so writing reviews is explicitly deferred.
-FAQ content is computed by pure functions from the (now DB-backed) course and
+**Phase 19 replaced the fixture review list with a real, PostgreSQL-backed
+review + reputation system.** `src/data/reviews.ts` is deleted: the testimonials
+it held were invented, and a rating nobody earned is worse than no rating.
+
+### `course_reviews`
+
+One row per (student, course) — the row is *reused*, never duplicated, so
+`UNIQUE(student_user_id, course_id)` is the duplicate guard and two racing
+submissions cannot both land.
+
+| Column | Rule |
+|---|---|
+| `course_id` / `student_user_id` / `enrollment_request_id` | A **composite FK** onto `enrollment_requests(id, student_user_id, course_id)` makes a review that claims somebody else's enrollment — or a different course than the enrollment's — impossible to insert. |
+| `rating` | `CHECK BETWEEN 1 AND 5`. |
+| `body` | Stored **trimmed**, `length BETWEEN 20 AND 1500`. Plain text; rendered as a React text child, never as HTML. |
+| `status` | `pending` → `published` / `rejected`; `withdrawn` is the student's own act. |
+| `moderated_at` / `moderated_by_admin_user_id` | All-or-nothing with a decision. `pending` has neither; **`withdrawn` has neither either**, because attributing a student's withdrawal to an operator would misstate who acted. |
+| `moderation_reason` | Only on a rejection, and optional. |
+
+### Who may write
+
+Eligibility is answered by the database, never by a form: session role is
+`student`, an `enrollment_requests` row owned by that session user is
+`accepted`, its group's `start_date` is today or earlier, the course is
+`published`, and no live review exists yet. The copy says
+**"Tasdiqlangan qatnashuvchi"** — an accepted participant — because the product
+tracks no completion and will not claim one.
+
+### Who may moderate
+
+`/admin/reviews`, behind `requireAdminPage`. A teacher has **no** path to
+approve, hide or delete reviews of their own course: no teacher surface imports
+the actions, and `review-service` re-checks the caller's `users.role` *inside
+the transaction* before writing, so the recorded moderator is always a real
+admin. Every decision writes one `admin_audit_events` row (`entity_type =
+'review'`) and notifies the student.
+
+The queue shows the course, the student's **name**, the rating, the text and the
+date. It never selects `users.phone` or `users.email` — not masked, not read.
+
+### Reputation
+
+`courses.rating_x10` / `courses.reviews_count` and the same pair on
+`teacher_profiles` are **cached aggregates of published rows**, recomputed by
+`recalculateCourseReviewStats()` / `recalculateTeacherReviewStats()` inside
+every transaction that changes visibility, under a `courses` →
+`teacher_profiles` lock order. A teacher's number is a **flat mean over all
+their published review rows**, not an average of per-course averages — that
+weighting would let a course with one review outweigh a course with fifty.
+Zero published reviews means `0` and `0`, never a seeded default.
+
+Editing a **published** review returns it to `pending` and removes its old value
+from the public numbers in the same transaction: an admin approved a specific
+text, not whatever replaces it.
+
+### Local seed data
+
+`npm run db:seed` creates a small set of explicitly-labelled development review
+rows (published, pending and rejected) so the moderation queue and the
+reputation engine can be exercised locally, and then recomputes every aggregate
+from those rows. It refuses to run with `NODE_ENV=production`; the migration
+seeds nothing. Seeded courses and teachers start at `rating_x10 = 0`,
+`reviews_count = 0` — the fictional numbers from the catalogue fixture are no
+longer imported.
+
+FAQ content is still computed by pure functions from the DB-backed course and
 teacher records.
 
 ## Rendering and caching
@@ -1257,7 +1318,7 @@ insert, and `authenticateAdminEmail` before lookup — so the stored form and th
 queried form are produced by the same function and cannot drift apart.
 
 What this hotfix does **not** touch: payments, courses, enrollment, messaging,
-storage, the audit log's shape, and anything in Phase 19 (which does not exist).
+storage and the audit log's shape.
 No public registration path gained an email field, `registerSchema` is unchanged
 and still `.strict()` (an extra `email` key is a validation failure), and no
 route, action or API endpoint can create an operator.
@@ -1480,6 +1541,7 @@ build.
 
 ```bash
 npm run test:admin         # Phase 15 admin/verification/moderation suite (194 checks)
+npm run test:reviews       # Phase 19 reviews + reputation suite (173 checks)
 npm run admin:list         # current operator accounts (masked, with identifier kind)
 npm run admin:create-email # new operator with an EMAIL identity (requires ADMIN_PASSWORD)
 npm run admin:create       # new operator with a PHONE identity (requires ADMIN_PASSWORD)
@@ -1786,6 +1848,12 @@ parameter and no client state that produces `completed`.
 
 ## Admin interface
 
+- `/admin/reviews` — **Phase 19.** The review moderation queue: pending first,
+  oldest first, with a status filter and counts. Each row shows the course, the
+  student's name, the rating, the full text and the submission date, and offers
+  exactly two decisions. Publishing makes the text public and moves the course's
+  and the teacher's rating in the same transaction; rejecting removes it from
+  both. The queue never selects the student's phone number or email.
 - `/admin/refunds` — the queue, live work first (`requested` before
   `awaiting_provider`, oldest first inside it), with a status filter and counts;
   it is linked from the overview and counted in the navigation badge.

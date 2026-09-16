@@ -24,6 +24,15 @@ import {
   REFUND_REASON_MAX_LENGTH,
   REFUND_REASON_MIN_LENGTH,
 } from "@/lib/refund";
+import {
+  REVIEW_BODY_MAX_LENGTH,
+  REVIEW_BODY_MIN_LENGTH,
+  REVIEW_RATING_MAX,
+  REVIEW_RATING_MIN,
+  REVIEW_REASON_MAX_LENGTH,
+  REVIEW_REASON_MIN_LENGTH,
+  normalizeReviewBody,
+} from "@/lib/reviews";
 
 /* -------------------------------------------------------------------------- */
 /* Server-side input schemas — Phase 11.                                       */
@@ -448,6 +457,89 @@ export const refundRejectionSchema = z
 
 /** Admin records the outcome of the provider operation. Same shape as rejection. */
 export const refundFailureSchema = refundRejectionSchema;
+
+/* --------------------------------- reviews --------------------------------- */
+/*
+ * PHASE 19 review schemas.
+ *
+ * A review payload carries EXACTLY what a student can legitimately choose:
+ * which course, which of THEIR OWN accepted enrollments it is about, a rating and
+ * a body. There is no `studentUserId`, no `author`, no `role`, no `status` and no
+ * `courseId`-adjacent ownership field, and `.strict()` makes an attempt to send one
+ * a validation ERROR rather than a silently ignored key — so "author comes from the
+ * session" is enforced by the shape of the input, not by a comment.
+ *
+ * The bounds mirror the database CHECK constraints (see lib/reviews.ts), so the
+ * server can never accept a rating or a length the table would refuse.
+ */
+
+const reviewRatingSchema = z.coerce
+  .number()
+  .int(`Baho ${REVIEW_RATING_MIN} dan ${REVIEW_RATING_MAX} gacha bo‘lgan butun son bo‘lsin.`)
+  .min(REVIEW_RATING_MIN, `Baho kamida ${REVIEW_RATING_MIN} bo‘lsin.`)
+  .max(REVIEW_RATING_MAX, `Baho ${REVIEW_RATING_MAX} dan oshmasin.`);
+
+/** Body is normalised (control chars stripped, whitespace collapsed) before the
+ *  length is judged, so 20 newlines cannot pass as an opinion. */
+const reviewBodySchema = z
+  .string()
+  .transform(normalizeReviewBody)
+  .refine((value) => value.length >= REVIEW_BODY_MIN_LENGTH, {
+    message: `Fikr kamida ${REVIEW_BODY_MIN_LENGTH} belgidan iborat bo‘lsin.`,
+  })
+  .refine((value) => value.length <= REVIEW_BODY_MAX_LENGTH, {
+    message: `Fikr ${REVIEW_BODY_MAX_LENGTH} belgidan oshmasin.`,
+  });
+
+/** Create. Identity is NOT a field: the session supplies it. */
+export const createCourseReviewSchema = z
+  .object({
+    courseId: idSchema,
+    /** Must be the session student's own ACCEPTED enrollment — proven in SQL. */
+    enrollmentRequestId: idSchema,
+    rating: reviewRatingSchema,
+    body: reviewBodySchema,
+  })
+  .strict();
+
+/**
+ * Edit. Note what is ABSENT: `courseId` and `studentUserId`. A review's course and
+ * author are decided when it is created and cannot be re-pointed by an edit — the
+ * service updates only rating/body/status, and ownership is checked against the
+ * locked row.
+ */
+export const updateCourseReviewSchema = z
+  .object({
+    reviewId: idSchema,
+    rating: reviewRatingSchema,
+    body: reviewBodySchema,
+  })
+  .strict();
+
+export const withdrawCourseReviewSchema = z.object({ reviewId: idSchema }).strict();
+
+/** Admin publish — the decision is the whole input. */
+export const publishCourseReviewSchema = z.object({ reviewId: idSchema }).strict();
+
+/**
+ * Admin rejection. The reason is OPTIONAL (a decision without prose is still a
+ * decision), but if one is written it must say something and stay short — the
+ * database CHECK enforces the same bounds.
+ */
+export const rejectCourseReviewSchema = z
+  .object({
+    reviewId: idSchema,
+    reason: z
+      .string()
+      .transform((value) => value.trim())
+      .refine((value) => value.length === 0 || value.length >= REVIEW_REASON_MIN_LENGTH, {
+        message: `Sabab kamida ${REVIEW_REASON_MIN_LENGTH} belgidan iborat bo‘lsin yoki bo‘sh qoldiring.`,
+      })
+      .refine((value) => value.length <= REVIEW_REASON_MAX_LENGTH, {
+        message: `Sabab ${REVIEW_REASON_MAX_LENGTH} belgidan oshmasin.`,
+      }),
+  })
+  .strict();
 
 /* ---------------------------------- media ---------------------------------- */
 /*
