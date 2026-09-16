@@ -888,6 +888,8 @@ export interface CleanupReport {
   scannedPending: number;
   /** How many of those were marked `deleted` in the database. */
   deletedPending: number;
+  /** `superseded` or `deleted` rows scanned for object removal. */
+  scannedOrphans: number;
   /** Objects physically removed from the provider (idempotent). */
   objectsRemoved: number;
   /** Operations that failed and will be retried by the next run. */
@@ -916,6 +918,7 @@ export async function cleanupStorage(input: {
   const report: CleanupReport = {
     scannedPending: 0,
     deletedPending: 0,
+    scannedOrphans: 0,
     objectsRemoved: 0,
     failed: 0,
     dryRun,
@@ -932,19 +935,6 @@ export async function cleanupStorage(input: {
     .limit(limit);
 
   report.scannedPending = stalePending.length;
-  if (dryRun) return report;
-  for (const asset of stalePending) {
-    /*
-     * Database first, bytes second: once the row is `deleted` the file service
-     * stops drawing it, so a failed object delete is an orphaned byte rather
-     * than a broken reference.
-     */
-    await markDeleted(asset.id);
-    report.deletedPending += 1;
-    const removed = await removeObjectQuietly(asset);
-    if (removed) report.objectsRemoved += 1;
-    else report.failed += 1;
-  }
 
   const orphanRows = await db
     .select({
@@ -964,7 +954,23 @@ export async function cleanupStorage(input: {
     )
     .limit(limit);
 
+  report.scannedOrphans = orphanRows.length;
+
   if (dryRun) return report;
+
+  for (const asset of stalePending) {
+    /*
+     * Database first, bytes second: once the row is `deleted` the file service
+     * stops drawing it, so a failed object delete is an orphaned byte rather
+     * than a broken reference.
+     */
+    await markDeleted(asset.id);
+    report.deletedPending += 1;
+    const removed = await removeObjectQuietly(asset);
+    if (removed) report.objectsRemoved += 1;
+    else report.failed += 1;
+  }
+
   for (const asset of orphanRows) {
     const removed = await removeObjectQuietly(asset);
     if (removed) report.objectsRemoved += 1;

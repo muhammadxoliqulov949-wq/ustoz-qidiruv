@@ -13,6 +13,7 @@
     "db:generate": "drizzle-kit generate",
     "storage:status": "tsx --conditions=react-server scripts/storage.ts status",
     "storage:cleanup": "tsx --conditions=react-server scripts/storage.ts cleanup",
+    "storage:smoke": "tsx --conditions=react-server scripts/storage.ts smoke",
     "admin:list": "tsx --conditions=react-server scripts/admin.ts list",
     "admin:promote": "tsx --conditions=react-server scripts/admin.ts promote",
     "admin:demote": "tsx --conditions=react-server scripts/admin.ts demote",

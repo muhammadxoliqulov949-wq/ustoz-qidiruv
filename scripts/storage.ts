@@ -2,17 +2,21 @@ import { sql } from "drizzle-orm";
 import { getDb, schema } from "../src/server/db/client";
 import { cleanupStorage } from "../src/server/file-service";
 import { storageStatus } from "../src/server/storage";
+import { smokeStorage } from "../src/server/storage/smoke";
 
 /* -------------------------------------------------------------------------- */
-/* Storage operations CLI — Phase 18.                                           */
+/* Storage operations CLI — Phase 18 / Phase 21.                               */
 /*                                                                              */
-/* Two commands, both read-mostly and both safe to run by hand:                  */
+/* Three commands, all safe to run by hand:                                     */
 /*                                                                              */
 /*   storage:status                       → is this deployment configured, and    */
 /*                                          how many assets are in each state?   */
 /*   storage:cleanup [--dry-run] [--hours=24] [--limit=500]                       */
 /*                                        → sweep abandoned uploads + orphaned   */
 /*                                          objects.                              */
+/*   storage:smoke                        → non-destructive diagnostic probe      */
+/*                                          testing PUT, HEAD, signed reads,     */
+/*                                          and cleanup on public & private.      */
 /*                                                                              */
 /* Nothing here prints a credential, a bucket name or a storage key: the report   */
 /* is counts and state names only. Scheduling is deliberately NOT implemented —   */
@@ -29,20 +33,24 @@ async function status(): Promise<void> {
   const storage = storageStatus();
   console.log("storage:", JSON.stringify(storage, null, 2));
 
-  const db = getDb();
-  const rows = await db
-    .select({ status: schema.fileAssets.status, count: sql<number>`count(*)::int` })
-    .from(schema.fileAssets)
-    .groupBy(schema.fileAssets.status);
+  try {
+    const db = getDb();
+    const rows = await db
+      .select({ status: schema.fileAssets.status, count: sql<number>`count(*)::int` })
+      .from(schema.fileAssets)
+      .groupBy(schema.fileAssets.status);
 
-  const byStatus: Record<string, number> = {};
-  for (const row of rows) byStatus[row.status] = row.count;
-  console.log("assets by status:", JSON.stringify(byStatus));
+    const byStatus: Record<string, number> = {};
+    for (const row of rows) byStatus[row.status] = row.count;
+    console.log("assets by status:", JSON.stringify(byStatus));
 
-  const documents = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(schema.teacherVerificationDocuments);
-  console.log("frozen evidence rows:", documents[0]?.count ?? 0);
+    const documents = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(schema.teacherVerificationDocuments);
+    console.log("frozen evidence rows:", documents[0]?.count ?? 0);
+  } catch {
+    console.log("assets by status: (database table unmigrated or unreachable)");
+  }
 
   if (!storage.enabled) {
     console.log(
@@ -83,11 +91,40 @@ async function cleanup(): Promise<void> {
   }
 }
 
+async function smoke(): Promise<void> {
+  const report = await smokeStorage();
+  console.log("storage:smoke:");
+  console.log("  provider:", report.provider);
+  console.log("  overall:", report.success ? "PASSED" : "FAILED");
+  if (report.error) {
+    console.log("  error:", report.error);
+  }
+  for (const step of report.steps) {
+    console.log(
+      `  [${step.bucketRole}] ${step.operation}: ${step.success ? "OK" : "FAIL"}` +
+        (Object.keys(step.safeMetadata).length > 0
+          ? ` (${JSON.stringify(step.safeMetadata)})`
+          : "") +
+        (step.error ? ` error=${step.error}` : ""),
+    );
+  }
+  if (!report.success) {
+    process.exit(1);
+  }
+}
+
 const command = process.argv[2];
-const run = command === "status" ? status : command === "cleanup" ? cleanup : null;
+const run =
+  command === "status"
+    ? status
+    : command === "cleanup"
+      ? cleanup
+      : command === "smoke"
+        ? smoke
+        : null;
 
 if (run === null) {
-  console.error("usage: tsx --conditions=react-server scripts/storage.ts <status|cleanup> [--dry-run]");
+  console.error("usage: tsx --conditions=react-server scripts/storage.ts <status|cleanup|smoke> [--dry-run]");
   process.exit(1);
 }
 
