@@ -652,11 +652,36 @@ export async function requestRefund(input: {
     });
   } catch (error) {
     /*
-     * The unique index is the last line of defence: two simultaneous requests
-     * can reach this point and exactly one INSERT wins. The loser does not get
-     * a stack trace — it gets a typed, honest failure, and its retry lands on
-     * the winner's live row through the idempotent path above.
+     * Phase 22: the unique index is the last line of defence — two
+     * simultaneous requests reach the INSERT and exactly one wins. The loser
+     * re-reads the winner's live row (same pattern as payment initiation) so
+     * a double-click answers with the request that exists rather than with
+     * a failure. The lookup is ownership-checked: the enrollment id and the
+     * session student id are both in the predicate.
      */
+    if ((error as { code?: string }).code === "23505") {
+      const winner = await db
+        .select({ id: schema.refundRequests.id, status: schema.refundRequests.status })
+        .from(schema.refundRequests)
+        .where(
+          and(
+            eq(schema.refundRequests.enrollmentRequestId, input.enrollmentRequestId),
+            eq(schema.refundRequests.studentUserId, input.studentUserId),
+            inArray(schema.refundRequests.status, [...LIVE_REFUND_STATUSES]),
+          ),
+        )
+        .limit(1);
+      if (winner[0]) {
+        return {
+          ok: true as const,
+          data: {
+            refundRequestId: winner[0].id,
+            created: false,
+            status: winner[0].status as RefundStatus,
+          },
+        };
+      }
+    }
     console.error("requestRefund failed", {
       code: (error as { code?: string }).code ?? "unknown",
     });

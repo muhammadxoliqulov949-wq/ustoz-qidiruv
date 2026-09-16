@@ -51,6 +51,20 @@ export function visibilityOfKey(key: string): StorageVisibility | null {
 }
 
 /**
+ * Join decoded route segments into a key. Returns null when a segment is not
+ * valid percent-encoding (`decodeURIComponent` throws on a malformed `%`
+ * sequence) instead of letting the throw become a 500 — the media route maps
+ * null to the same 404 as any other unknown key.
+ */
+export function safeJoinKeySegments(segments: string[]): string | null {
+  try {
+    return segments.map((segment) => decodeURIComponent(segment)).join("/");
+  } catch {
+    return null;
+  }
+}
+
+/**
  * A key is acceptable only when it is namespaced, has no traversal segments and
  * is plain ASCII. Used before every provider call, so a forged key from a
  * browser can never reach storage.

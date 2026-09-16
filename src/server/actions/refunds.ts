@@ -4,6 +4,12 @@ import { revalidatePath } from "next/cache";
 import { AuthError, requireRole } from "../auth/guards";
 import { requestRefund } from "../refund-service";
 import { refundRequestSchema, type ActionResult } from "../validation";
+import {
+  RATE_LIMIT_POLICIES,
+  RATE_LIMITED_MESSAGE,
+  consumeRateLimit,
+  rateLimitKey,
+} from "../rate-limit";
 
 /* -------------------------------------------------------------------------- */
 /* Student refund requests — Phase 17.                                         */
@@ -49,6 +55,15 @@ export async function requestRefundAction(
         code: "invalid_input",
         message: "So‘rov ma’lumotlari noto‘g‘ri. Sababni kamida 10 belgi bilan yozing.",
       };
+    }
+
+    // Phase 22: per-student refund-request budget, before the money path runs.
+    const budget = await consumeRateLimit(
+      RATE_LIMIT_POLICIES.refundRequest,
+      rateLimitKey("refund:request", user.id),
+    );
+    if (!budget.allowed) {
+      return { ok: false, code: "rate_limited", message: RATE_LIMITED_MESSAGE };
     }
 
     const result = await requestRefund({

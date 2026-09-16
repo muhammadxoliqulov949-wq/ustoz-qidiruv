@@ -39,7 +39,15 @@ async function connect(): Promise<{ exec: Sql; close: () => Promise<void> }> {
   }
   if (driver === "pg") {
     const { Pool } = await import("pg");
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    // Phase 22: the CLI negotiates the SAME TLS semantics as the request-time
+    // pool (sslmode=require is rewritten to the verify-full it already means),
+    // so operator commands neither warn nor connect differently than the app.
+    const { normalizePostgresUrl } = await import("../src/server/db/postgres-url");
+    const { connectionString } = normalizePostgresUrl(
+      process.env.DATABASE_URL ?? "",
+      process.env.NODE_ENV ?? "development",
+    );
+    const pool = new Pool({ connectionString });
     return {
       exec: async (query) => pool.query(query),
       close: async () => {

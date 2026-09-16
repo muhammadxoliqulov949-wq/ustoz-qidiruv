@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { getDb, schema } from "../db/client";
 import { hashPassword } from "../auth/password";
 import { authenticateAdminEmail, authenticatePhone } from "../auth/credentials";
-import { createSession, destroySession, pruneExpiredSessions } from "../auth/session";
+import { createSession, destroySession, maybePruneExpiredSessions } from "../auth/session";
 import { newId } from "../auth/ids";
 import { parseSafeNext } from "@/lib/safe-next";
 import {
@@ -16,6 +16,14 @@ import {
   type ActionResult,
 } from "../validation";
 import { slugifyName, uniqueTeacherSlug } from "../slug";
+import {
+  RATE_LIMIT_POLICIES,
+  RATE_LIMITED_MESSAGE,
+  consumeRateLimits,
+  rateLimitKey,
+  requestClientIp,
+  type RateLimitCheck,
+} from "../rate-limit";
 
 /* -------------------------------------------------------------------------- */
 /* Auth server actions — Phase 11.                                             */
@@ -45,6 +53,23 @@ function formValue(form: FormData, key: string): string {
   return typeof value === "string" ? value : "";
 }
 
+/* -------------------------------------------------------------------------- */
+/* Phase 22 abuse protection. Every credential attempt spends from a durable,  */
+/* Postgres-backed budget BEFORE any argon2id work runs, so a login flood      */
+/* cannot burn CPU/memory on hashing. The per-identifier bucket stops          */
+/* credential stuffing against one account; the per-IP bucket stops broad      */
+/* spraying. A refusal is the same generic shape as any other failure.         */
+/* -------------------------------------------------------------------------- */
+
+function rateLimited(): ActionResult {
+  return { ok: false, code: "rate_limited", message: RATE_LIMITED_MESSAGE };
+}
+
+async function consumeAuthLimits(checks: RateLimitCheck[]): Promise<boolean> {
+  const decision = await consumeRateLimits(checks);
+  return decision.allowed;
+}
+
 export async function registerAction(form: FormData): Promise<ActionResult> {
   const parsed = registerSchema.safeParse({
     role: formValue(form, "role"),
@@ -63,6 +88,16 @@ export async function registerAction(form: FormData): Promise<ActionResult> {
   }
 
   const { role, name, phone, password } = parsed.data;
+
+  const registerIp = await requestClientIp();
+  const registerAllowed = await consumeAuthLimits([
+    { policy: RATE_LIMIT_POLICIES.registerByPhone, key: rateLimitKey("register:phone", phone) },
+    ...(registerIp
+      ? [{ policy: RATE_LIMIT_POLICIES.registerByIp, key: rateLimitKey("register:ip", registerIp) }]
+      : []),
+  ]);
+  if (!registerAllowed) return rateLimited();
+
   const db = getDb();
 
   const existing = await db
@@ -141,6 +176,20 @@ export async function loginAction(form: FormData): Promise<ActionResult> {
     };
   }
 
+  // Before the argon2id verification: hashing is the expensive step, and a
+  // flood of attempts must be refused before it burns CPU and memory.
+  const loginIp = await requestClientIp();
+  const loginAllowed = await consumeAuthLimits([
+    {
+      policy: RATE_LIMIT_POLICIES.loginByPhone,
+      key: rateLimitKey("login:phone", parsed.data.phone),
+    },
+    ...(loginIp
+      ? [{ policy: RATE_LIMIT_POLICIES.authByIp, key: rateLimitKey("auth:ip", loginIp) }]
+      : []),
+  ]);
+  if (!loginAllowed) return rateLimited();
+
   const authenticated = await authenticatePhone(parsed.data.phone, parsed.data.password);
   // Same generic message for "no such account" and "wrong password" so the
   // endpoint cannot be used to enumerate registered phone numbers.
@@ -153,7 +202,7 @@ export async function loginAction(form: FormData): Promise<ActionResult> {
   }
 
   await createSession(authenticated.id);
-  void pruneExpiredSessions();
+  void maybePruneExpiredSessions();
 
   /*
    * Phase 15: each role lands in its OWN area. An admin has no student or
@@ -197,6 +246,20 @@ export async function adminLoginAction(form: FormData): Promise<ActionResult> {
     };
   }
 
+  // Same pre-hash throttle as the marketplace login: operator accounts are
+  // the highest-value brute-force target in the system.
+  const adminIp = await requestClientIp();
+  const adminAllowed = await consumeAuthLimits([
+    {
+      policy: RATE_LIMIT_POLICIES.loginByEmail,
+      key: rateLimitKey("login:email", parsed.data.email),
+    },
+    ...(adminIp
+      ? [{ policy: RATE_LIMIT_POLICIES.authByIp, key: rateLimitKey("auth:ip", adminIp) }]
+      : []),
+  ]);
+  if (!adminAllowed) return rateLimited();
+
   const authenticated = await authenticateAdminEmail(parsed.data.email, parsed.data.password);
   // One generic message for unknown address, wrong password and "that email
   // belongs to a non-operator" alike — nothing here enumerates accounts.
@@ -209,7 +272,7 @@ export async function adminLoginAction(form: FormData): Promise<ActionResult> {
   }
 
   await createSession(authenticated.id);
-  void pruneExpiredSessions();
+  void maybePruneExpiredSessions();
 
   // An operator has exactly one area. A ?next= target is still honoured when it
   // is an internal path; the role guards decide what that path may show.

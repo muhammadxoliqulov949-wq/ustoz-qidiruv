@@ -2412,3 +2412,156 @@ npm run storage:cleanup  # sweep abandoned uploads (pending) & orphaned supersed
 npm run storage:smoke   # non-destructive operational verification of S3/R2 storage
 ```
 
+# Phase 22 — Security, Performance & Scalability Hardening
+
+Phase 22 audits the production-tested Phase 21 application across security,
+performance and scalability, and applies the smallest production-grade fixes the
+audit justified. No behaviour was redesigned; everything below is a hardening of
+an existing path.
+
+## Security headers
+
+`next.config.ts` now serves a header table built by the pure, tested module
+`src/lib/security-headers.ts`:
+
+- `Content-Security-Policy` — conservative allowlist: `default-src 'self'`,
+  `object-src 'none'`, `base-uri 'self'`, `img-src 'self' https: data: blob:`,
+  `font-src 'self' data:`, `connect-src 'self'`, `form-action 'self'` plus the
+  two Payme checkout hosts. `script-src` keeps `'unsafe-inline'` because the
+  App Router streams RSC payloads through inline scripts — a nonce-free
+  `script-src 'self'` would break every page; a nonce-based policy needs
+  per-request middleware plumbing that does not exist yet and is deferred
+  explicitly (see below).
+- `X-Content-Type-Options: nosniff`, `Referrer-Policy:
+  strict-origin-when-cross-origin`, `Permissions-Policy` (camera, microphone,
+  geolocation, payment all disabled), `Cross-Origin-Opener-Policy: same-origin`.
+- Production only: `X-Frame-Options: DENY`, `frame-ancestors 'none'`,
+  `Strict-Transport-Security` (1 year + subdomains), `upgrade-insecure-requests`.
+- Development only (required by the dev loop): `frame-ancestors` permits the
+  sandbox preview host plus loopback, `script-src` adds `'unsafe-eval'` for HMR,
+  and HSTS/upgrade are omitted. Preview and production both run with
+  `NODE_ENV=production` and receive the strict policy.
+- Private routes (`/dashboard*`, `/teacher/dashboard*`, `/admin*`,
+  `/notifications`, `/enroll*`) additionally send `Cache-Control: no-store`.
+  Dynamic 200s already receive an equally strict framework directive; the rule
+  takes effect on redirects, where the framework sets none.
+
+CSRF posture (audited, unchanged): mutations travel through Server Actions
+(POST + Origin/Host check + unguessable action id). The Payme callback is
+machine-to-machine Basic auth with no cookie, and the local media route is a
+side-effect-free GET whose private namespace requires an HMAC capability.
+
+## Durable rate limiting
+
+`src/server/rate-limit.ts` is the single reusable abstraction for sensitive
+mutations. Budgets are enforced in Postgres (`rate_limit_events`), because an
+in-memory counter would grant the full budget on every serverless instance and
+no Redis exists in this project. Messaging keeps its existing DB-derived
+30/minute send guard (tested, behaviour-identical); everything else adopts this
+module:
+
+| Action | Budget |
+|---|---|
+| Phone login, per phone | 10 / 10 min (before argon2id) |
+| Operator login, per email | 10 / 10 min (before argon2id) |
+| Login/register, per IP | 60 / 10 min · register 20 / hour |
+| Registration, per phone | 5 / hour |
+| Enrollment submit / cancel, per student | 20 / 30 per hour |
+| Review create/update/withdraw, per student | 20 / hour shared |
+| Uploads (any purpose), per teacher | 30 / hour, before bytes are read |
+| Payment initiation / refund request, per student | 20 / 10 per hour |
+
+Refusals answer `{ ok: false, code: "rate_limited" }` with generic copy that
+discloses no budget. A blocked attempt records nothing (no self-extending
+block); races can over-admit by a small margin, which is accepted for abuse
+control — money stays guarded by unique indexes and row locks. If the limiter
+itself errors, it fails OPEN (the request is allowed, the failure is logged
+with a code): a defence must never become an outage, and authentication still
+runs. Admin decisions and the Payme callback are intentionally unlimited
+(trusted operators with audit logs; provider retries that must succeed).
+
+## Database / Neon
+
+- **The `pg` SSL warning is resolved, not silenced.**
+  `pg-connection-string` warns that `sslmode=require` is currently a
+  `verify-full` alias but will weaken in pg v9. `normalizePostgresUrl()`
+  (`src/server/db/postgres-url.ts`, used by the pool AND the operator CLI)
+  rewrites `require`/`prefer`/`verify-ca` to explicit `verify-full` — behaviour
+  is unchanged on pg v8, semantics are pinned for v9. Production additionally
+  refuses a missing `sslmode`, `sslmode=disable` and unknown modes with errors
+  that name the variable and never the URL.
+- **Pool policy** (`src/server/db/client.ts`): `max: 10` unchanged,
+  `connectionTimeoutMillis: 10s` (overload fails fast instead of hanging),
+  `statement_timeout: 30s` and `idle_in_transaction_session_timeout: 30s`,
+  plus an idle-client `error` listener — without it, a routine pooler-side
+  close of a stale connection would crash the serverless instance.
+- **Migration `0011_phase22_hardening.sql`** (the only migration; both objects
+  justified, nothing else lacked an index after auditing every filter/sort/join
+  path): the `rate_limit_events` table with its `(key, created_at)` index, and
+  `sessions_expires_at_idx` for the expiry sweep.
+- **Session hygiene**: at most 10 live sessions per user (oldest revoked on
+  login, best-effort, never fails the login); the expired-session sweep now runs
+  on ~10% of logins instead of every one.
+- **Scalability races**: enrollment double-submit maps the unique violation to
+  the honest `duplicate_request` (was `server_error`); a racing refund request
+  re-reads the winner's live row and answers success (same pattern as payment
+  initiation). Enrollment acceptance, review aggregates, messaging threads,
+  verification/moderation queues and payments already serialised correctly
+  (locks + partial unique indexes + idempotent re-reads) and are unchanged.
+
+## Performance
+
+- `getPublicCourseBySlug`, `getPublicTeacherBySlug` and `getPublicTeacherById`
+  are request-memoized with React `cache()`: `generateMetadata` and the page
+  run in the same request and used to pay for the same read twice. The cache is
+  request-scoped (revalidation takes effect immediately) and a transparent
+  passthrough outside React, so tests are unaffected.
+- Independent reads now run together: review context (eligibility + own row +
+  published list), teacher-by-id (profile + owned count), teacher capacity
+  summary (capacity sum + accepted count).
+- `listPublicTeachers()` groups courses by teacher in one pass instead of
+  filtering the whole course list per teacher (O(T+C), same order/membership).
+- Deliberately NOT changed: `force-dynamic` SSR stays everywhere (live seats
+  and prices over cached snapshots — correctness over aggressive caching), and
+  the student dashboard still receives the full lite catalog because saved ids
+  and drafts live in browser stores; server-side saved state plus pagination
+  remain the documented path to fixing that payload.
+
+## Storage re-audit (Phase 21 architecture, unchanged)
+
+Verified without redesign: distinct-buckets enforcement in production,
+private/public key-namespace assertion on every provider call, 10-minute signed
+reads clamped to 15, magic-byte content detection (SVG/HTML rejected), size
+checks before buffering plus server re-checks, owner-or-reviewing-admin
+authorization on private reads, DB-first delete/replace with best-effort object
+removal and the time-gated cleanup CLI, immutable cache headers on public
+objects with new keys on replacement, and no private object addressable through
+a public URL. Two fixes only: malformed percent-encoding in the local media
+route now 404s instead of throwing toward a 500, and the S3 provider docstring
+no longer claims a `response-content-type` override (the stored, verified type
+governs).
+
+## Observability
+
+`src/server/log.ts` gives new code one safe shape — scope + code + whitelisted
+scalar extras, never a thrown message, payload, token, URL or credential. All
+pre-existing log sites were audited and already follow it (codes only).
+
+## Deferred with reasons
+
+- Nonce-based CSP (`script-src` without `'unsafe-inline'`): needs middleware
+  nonce plumbing; the current policy still restricts frames, plugins, base
+  tags, form targets, images and fonts.
+- Public marketplace ISR/caching: would serve stale seats/prices; kept dynamic.
+- Dashboard catalog payload + catalog pagination: needs server-side saved state.
+- `Cross-Origin-Resource-Policy`: marginal value over the shipped set, kept out
+  to avoid breaking the temporary `r2.dev` delivery domain.
+- A custom R2 domain: still temporary `r2.dev`, unchanged this phase.
+
+## Commands
+
+```bash
+npm run test:phase22       # Phase 22 hardening suite (91 checks)
+npm run db:migrate         # applies 0011_phase22_hardening.sql with the rest
+```
+

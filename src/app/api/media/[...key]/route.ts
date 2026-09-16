@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { getDb, schema } from "@/server/db/client";
 import { getStorageProvider } from "@/server/storage";
-import { isSafeStorageKey } from "@/server/storage/keys";
+import { isSafeStorageKey, safeJoinKeySegments } from "@/server/storage/keys";
 import { LocalStorageProvider } from "@/server/storage/local-provider";
 import {
   INLINE_SAFE_MIME_TYPES,
@@ -56,8 +56,10 @@ export async function GET(
   if (!(provider instanceof LocalStorageProvider)) return notFound();
 
   const { key: segments } = await context.params;
-  const key = segments.map((segment) => decodeURIComponent(segment)).join("/");
-  if (!isSafeStorageKey(key)) return notFound();
+  // Phase 22: malformed percent-encoding decodes to null (same 404 as an
+  // unknown key) instead of throwing its way to a 500.
+  const key = safeJoinKeySegments(segments);
+  if (key === null || !isSafeStorageKey(key)) return notFound();
 
   const isPrivate = key.startsWith("private/");
   const url = new URL(request.url);

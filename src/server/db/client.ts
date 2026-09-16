@@ -4,6 +4,10 @@ import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
 import { mkdirSync } from "node:fs";
 import * as schema from "./schema";
 import { serverEnv } from "../env";
+import { DatabaseConfigError } from "./errors";
+import { normalizePostgresUrl } from "./postgres-url";
+
+export { DatabaseConfigError };
 
 /* -------------------------------------------------------------------------- */
 /* Database client — Phase 11.                                                 */
@@ -37,28 +41,6 @@ import { serverEnv } from "../env";
 
 export type Database = ReturnType<typeof createDatabase>;
 
-/**
- * Thrown when this deployment's database configuration cannot safely serve
- * reads. Messages name ENVIRONMENT VARIABLES and never their values, so they
- * are safe to log and safe to show an operator.
- */
-export class DatabaseConfigError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "DatabaseConfigError";
-  }
-}
-
-/** A connection string is the one value the pool cannot guess or default. */
-function postgresUrl(raw: string): string {
-  if (!/^postgres(ql)?:\/\//i.test(raw)) {
-    throw new DatabaseConfigError(
-      'DATABASE_URL must be a PostgreSQL connection string beginning with "postgresql://" or "postgres://".',
-    );
-  }
-  return raw;
-}
-
 function createDatabase() {
   const env = serverEnv();
   if (env.DB_DRIVER === "pg") {
@@ -66,8 +48,43 @@ function createDatabase() {
     // PGlite-only deployment does not need `pg` installed at all).
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { Pool } = require("pg") as typeof import("pg");
-    // Presence is enforced by serverEnv(); the shape is enforced here.
-    const pool = new Pool({ connectionString: postgresUrl(env.DATABASE_URL as string), max: 10 });
+    // Presence is enforced by serverEnv(); the shape AND the TLS policy are
+    // enforced here (Phase 22: `sslmode=require` is rewritten to the
+    // explicitly-verifying `verify-full` it already means on pg v8).
+    const { connectionString } = normalizePostgresUrl(
+      env.DATABASE_URL as string,
+      env.NODE_ENV,
+    );
+    const pool = new Pool({
+      connectionString,
+      /*
+       * Phase 22 pool policy for serverless Postgres (Neon pooler):
+       *   • max 10 — the pg default, unchanged: each warm serverless instance
+       *     holds at most ten connections, and the pooler multiplexes them;
+       *   • connectionTimeoutMillis — waiting for a free connection fails
+       *     after 10 s instead of hanging the request forever, so an
+       *     overloaded pool degrades into catchable errors, not hung pages;
+       *   • statement_timeout — no single statement may run longer than 30 s;
+       *     every legitimate query in this codebase is milliseconds, so this
+       *     only ever catches a stuck query before it pins a connection;
+       *   • idle_in_transaction_session_timeout — a transaction idle for 30 s
+       *     is killed server-side; no transaction here legitimately idles.
+       */
+      max: 10,
+      connectionTimeoutMillis: 10_000,
+      statement_timeout: 30_000,
+      idle_in_transaction_session_timeout: 30_000,
+    });
+    /*
+     * An idle client that errors (the pooler closing a stale connection is
+     * the routine case) emits 'error' on the pool — and an EventEmitter with
+     * no 'error' listener THROWS, which would crash the serverless instance.
+     * This listener keeps that routine event routine. Code only, never the
+     * connection string.
+     */
+    pool.on("error", (error: Error & { code?: string }) => {
+      console.error("pg pool idle client error", { code: error.code ?? "unknown" });
+    });
     return drizzlePg(pool, { schema, casing: "snake_case" });
   }
 

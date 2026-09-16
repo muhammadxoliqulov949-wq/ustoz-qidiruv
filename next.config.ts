@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { buildHeaderRules } from "./src/lib/security-headers";
 
 /* -------------------------------------------------------------------------- */
 /* Phase 18: image delivery + upload body limit.                                */
@@ -47,6 +48,19 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["@electric-sql/pglite", "pg", "@node-rs/argon2", "@aws-sdk/client-s3"],
   images: {
     remotePatterns: publicStoragePatterns(),
+  },
+  /**
+   * Phase 22: security headers + private-route cache policy.
+   *
+   * The table itself lives in `src/lib/security-headers.ts` (pure, tested).
+   * `isProduction` is read when the server starts: `next dev` serves plain
+   * http locally (and under the sandbox preview host, which must be allowed
+   * to frame the app), while Vercel preview AND production both run with
+   * NODE_ENV=production and receive the strict policy — including
+   * frame-ancestors 'none' and HSTS.
+   */
+  async headers() {
+    return buildHeaderRules(process.env.NODE_ENV === "production");
   },
   /**
    * Development-only. The preview environment proxies this dev server under a
