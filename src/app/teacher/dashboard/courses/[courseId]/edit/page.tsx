@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { courseAuthoringOptions } from "@/data/course-authoring";
-import { teacherWorkspaceOptions } from "@/data/teacher-dashboard";
 import { CourseEditor } from "@/components/teacher-dashboard/course-editor";
 import { DbCourseEditor } from "@/components/teacher-dashboard/db-course-editor";
 import { isLocalDraftId } from "@/lib/course-draft";
@@ -136,6 +135,11 @@ export default async function EditCoursePage({
     );
   }
 
+  /* Phase 20: the legacy browser-only editor below is the ONLY consumer of the
+   * fixture workspace names on this route (to label which demo workspace owns
+   * a legacy draft), so the import stays inside this branch. The server-backed
+   * editor above never touches fixture inventory. */
+  const { teacherWorkspaceOptions } = await import("@/data/teacher-dashboard");
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
@@ -143,7 +147,7 @@ export default async function EditCoursePage({
           Kurs qoralamasi
         </h1>
         <p className="max-w-prose text-base text-ink-500">
-          Mahalliy prototip ma’lumoti. O‘zgarishlar shu brauzerda avtomatik
+          Eski brauzer qoralamasi. O‘zgarishlar shu brauzerda avtomatik
           saqlanadi; katalogdagi kurslarga ta’sir qilmaydi.
         </p>
       </header>

@@ -3,11 +3,12 @@ import { Badge, ButtonLink, Card } from "@/components/ui";
 import type { DashRequest } from "@/lib/dashboard";
 
 /* -------------------------------------------------------------------------- */
-/* RequestCard — the enrollment-request read model rendered honestly.           */
+/* RequestCard — the BROWSER-LOCAL enrollment draft rendered honestly.          */
 /* Status wording comes from lib/dashboard (“So‘rov tayyor” / “Tugallanmagan    */
-/* qoralama”) and is always paired with the reason line (“Backend ulanmagan”).  */
-/* There is no accepted / confirmed / paid / teacher-approved state to render — */
-/* those facts do not exist in the product yet.                                 */
+/* qoralama”) and is always paired with the reason line, which points at the    */
+/* account section for server-side requests. There is no accepted / confirmed / */
+/* paid / teacher-approved state to render here — those facts live in the       */
+/* account requests above, rendered from real rows.                             */
 /* Server component: pure projection, no interactivity of its own.              */
 /* -------------------------------------------------------------------------- */
 

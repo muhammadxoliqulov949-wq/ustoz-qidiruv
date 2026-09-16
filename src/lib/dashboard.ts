@@ -12,9 +12,10 @@ import {
 /* dataset imports), the same contract-first pattern as course-search /         */
 /* teacher-search / onboarding / enroll:                                        */
 /*   • DashCourseLite / DashTeacherLite — the serializable catalog projection    */
-/*     the server pages build (lib/dashboard-catalog.ts). Client islands never   */
-/*     import courses.ts / teachers.ts, so the full catalog is not shipped as a   */
-/*     side effect of a saved list.                                              */
+/*     the server builds at request time (getDashboardCatalog in                  */
+/*     src/server/public-repo.ts, from published DB rows). Client islands never   */
+/*     import a dataset, so a saved list does not drag the catalog into the      */
+/*     bundle as a side effect.                                                  */
 /*   • DashRequest — the enrollment-request read model, DERIVED from the         */
 /*     Phase 7 EnrollDraft + the catalog projection. No enrollment facts are     */
 /*     stored twice and no status is invented.                                   */
@@ -103,11 +104,13 @@ export function savedTeachers(
 /* --------------------------- enrollment requests ---------------------------- */
 
 /**
- * The only two states a frontend prototype can honestly report:
+ * The only two states the BROWSER-LOCAL enrollment draft can honestly report:
  *   draft      — the student started the flow and stopped somewhere;
  *   prepared   — the review step was completed ("So‘rov tayyor"), which is a
  *                UI marker, NOT a server record, NOT teacher approval.
- * There is deliberately no accepted/confirmed/paid member of this union.
+ * Server-side requests (submitted / accepted / rejected / cancelled) live in
+ * the account section above and are rendered from real rows — this union
+ * deliberately has no accepted/confirmed/paid member.
  */
 export type DashRequestStatus = "draft" | "prepared";
 
@@ -149,7 +152,7 @@ export const REQUEST_STATUS_NOTES: Record<DashRequestStatus, string> = {
   draft:
     "Yozilish jarayoni oxirigacha yakunlanmagan — brauzeringizdagi qoralama.",
   prepared:
-    "Backend ulanmagan: so‘rov hech qayerga yuborilmadi va ustoz uni hali ko‘rmaydi.",
+    "Bu yozuv shu brauzerdagi qoralama holati. Hisobingizga yuborilgan so‘rovlar yuqoridagi “Hisobingizdagi so‘rovlar” bo‘limida ko‘rinadi.",
 };
 
 /**

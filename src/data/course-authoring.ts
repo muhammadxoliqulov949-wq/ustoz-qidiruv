@@ -1,22 +1,19 @@
 import { categories } from "./categories";
-import {
-  cityLabel,
-  courseCities,
-  courseFormatLabels,
-  courseLevelLabels,
-} from "./courses";
+import { cityLabel, courseFormatLabels, courseLevelLabels } from "./courses";
+import { citySlugs } from "./taxonomy";
 import { LANGUAGE_LABELS, onboardingLanguages } from "@/lib/onboarding";
 import type { CourseFormat, CourseLevel } from "./models";
 
 /* -------------------------------------------------------------------------- */
-/* Course-authoring taxonomies — Phase 10.                                     */
+/* Course-authoring taxonomies — STATIC vocabulary, safe for runtime use.       */
 /*                                                                              */
-/* DERIVED, never a new taxonomy: categories come from categories.ts, levels    */
-/* and formats from the canonical label maps in courses.ts, cities from the      */
-/* catalog's own city facet, languages from the onboarding language list        */
-/* (itself derived from teachers.ts). If a new category ships tomorrow the      */
-/* course editor offers it with no edit here. Options are plain {value,label}   */
-/* pairs so the client islands never import a dataset.                          */
+/* Categories come from categories.ts, levels and formats from the static label */
+/* maps in courses.ts, cities and languages from the static product taxonomy    */
+/* (taxonomy.ts via lib/onboarding.ts). Nothing here is derived from fixture    */
+/* inventory any more (Phase 20 deleted the courseCities dependency): a city a  */
+/* teacher may pick for a new course is an address option, not a record that    */
+/* must already exist in the catalogue. Options are plain {value,label} pairs   */
+/* so the client islands never import a dataset.                                */
 /* -------------------------------------------------------------------------- */
 
 export interface AuthoringOption {
@@ -36,7 +33,7 @@ export const authoringFormatOptions: AuthoringOption[] = (
   ["online", "offline", "hybrid"] satisfies CourseFormat[]
 ).map((format) => ({ value: format, label: courseFormatLabels[format] }));
 
-export const authoringCityOptions: AuthoringOption[] = courseCities.map((city) => ({
+export const authoringCityOptions: AuthoringOption[] = citySlugs.map((city) => ({
   value: city,
   label: cityLabel(city),
 }));

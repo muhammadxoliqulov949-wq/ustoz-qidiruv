@@ -2,16 +2,17 @@ import type { Course, FaqItem } from "./models";
 import { formatPrice } from "@/lib/format";
 
 /**
- * FAQ builder for the Phase 4 detail page.
+ * FAQ builder for the course detail page.
  *
  * Answers that can be TRUE for a given course (venue, price behavior, seat
  * sizes) are derived from its typed data — the same fields the UI shows —
  * so the FAQ can never contradict the listing. Only the neutral items are
- * shared. A future API will return precomputed FaqItem[] per course; the
- * output shape is already that contract.
+ * shared. The course arrives DB-projected (getPublicCourseBySlug), so this
+ * pure builder holds no records of its own.
  *
- * Honesty rules honored here: no payment promises (on-page checkout does
- * not exist) and no certificate promises.
+ * Honesty rules honored here: payment wording describes the real flow (the
+ * teacher reviews the request; paid courses settle in the student cabinet),
+ * and no certificate promises are made.
  */
 export function buildCourseFaq(course: Course): FaqItem[] {
   const { detail } = course;
@@ -33,7 +34,7 @@ export function buildCourseFaq(course: Course): FaqItem[] {
     },
     {
       q: "Kurs narxi qancha va to‘lov qanday bo‘ladi?",
-      a: `Ko‘rsatilgan narx — ${course.priceUzs > 0 ? `${formatPrice(course.priceUzs)} (${detail.pricePeriod === "month" ? "oylik" : "kurs uchun bir marta"}).` : "Bepul kurs.”"} To‘lov shartlari yozilishda bevosita ustoz bilan kelishiladi — USTOZ’da hozircha onlayn to‘lov oqimi ishga tushmagan.`,
+      a: `Ko‘rsatilgan narx — ${course.priceUzs > 0 ? `${formatPrice(course.priceUzs)} (${detail.pricePeriod === "month" ? "oylik" : "kurs uchun bir marta"}). So‘rovingiz ustoz tomonidan qabul qilingandan so‘ng to‘lov kabinetingiz orqali amalga oshiriladi.` : "Bepul kurs — to‘lov talab qilinmaydi.”"}`,
     },
     {
       q: "Guruh vaqtini o‘zgartirsa bo‘ladimi?",

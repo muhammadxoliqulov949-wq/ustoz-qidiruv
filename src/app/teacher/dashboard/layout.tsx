@@ -38,7 +38,7 @@ export const metadata: Metadata = {
     template: "%s · Ustoz paneli",
   },
   description:
-    "USTOZ ustoz paneli — kurslar, guruhlar va profil holati (frontend prototipi).",
+    "USTOZ ustoz paneli — kurslar, guruhlar va profil holati.",
   robots: { index: false, follow: true },
 };
 

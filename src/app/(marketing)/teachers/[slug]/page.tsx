@@ -68,7 +68,7 @@ export default async function TeacherProfilePage({
   if (!found) notFound();
   const { row, courses: own } = found;
   const { teacher, formats, cities, minPriceUzs } = row;
-  const faq = buildTeacherFaq(row);
+  const faq = buildTeacherFaq(row, own);
   /*
    * PHASE 19: written reviews come from `course_reviews` (published rows of this
    * teacher's published courses), joined by the ownership FK. The count beside the
@@ -214,8 +214,8 @@ export default async function TeacherProfilePage({
             </div>
           ) : (
             <p className="mt-6 max-w-md text-sm text-ink-500">
-              Ustoz hozircha ochiq kurs ro‘yxatiga ega emas — xabar almashinuvi va
-              shaxsiy yozilish imkoniyati keyingi bosqichlarda ishga tushadi.
+              Ustoz hozircha ochiq kurs ro‘yxatiga ega emas — kurs ochilganda u
+              shu sahifada ko‘rinadi.
             </p>
           )}
         </div>

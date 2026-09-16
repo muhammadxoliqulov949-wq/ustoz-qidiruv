@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { teacherDirectory } from "@/data/teacher-dashboard";
 import { demoWorkspaceEnabled } from "@/server/env";
 import { TeacherOverviewPanels } from "@/components/teacher-dashboard/overview-panels";
 import { requireRolePage } from "@/server/auth/guards";
@@ -27,6 +26,12 @@ export default async function TeacherOverviewPage() {
     getTeacherRequestCounts(user.id),
     getTeacherCapacitySummary(user.id),
   ]);
+  /* Phase 20: the legacy catalogue projection is loaded ONLY for the dev-only
+   * demo inspector. Production (flag off) never imports fixture inventory —
+   * the gate below renders its explanatory state from an empty directory. */
+  const directory = demoEnabled
+    ? (await import("@/data/teacher-dashboard")).teacherDirectory
+    : { workspaces: [] };
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
@@ -66,7 +71,7 @@ export default async function TeacherOverviewPage() {
           </Link>
         </p>
       </section>
-      <TeacherOverviewPanels directory={teacherDirectory} demoEnabled={demoEnabled} />
+      <TeacherOverviewPanels directory={directory} demoEnabled={demoEnabled} />
     </div>
   );
 }

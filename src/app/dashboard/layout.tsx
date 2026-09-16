@@ -37,7 +37,7 @@ export const metadata: Metadata = {
     template: "%s · Kabinet",
   },
   description:
-    "USTOZ o‘quvchi kabineti — yozilish so‘rovlari, saqlangan kurslar va profil (frontend prototipi).",
+    "USTOZ o‘quvchi kabineti — yozilish so‘rovlari, saqlangan kurslar va profil.",
   robots: { index: false, follow: true },
 };
 

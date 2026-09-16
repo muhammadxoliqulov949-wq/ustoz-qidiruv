@@ -30,8 +30,16 @@ export default async function TeachersPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const params = parseTeacherBrowseParams(await searchParams);
-  const [source, facets] = await Promise.all([listPublicTeachers(), getPublicFacets()]);
+  // Phase 20: parse the URL against the RUNTIME city/language lists, so the
+  // whitelist can never reject a real inventory value or bless a fixture-only
+  // one. Facets first, then params, then rows.
+  const raw = await searchParams;
+  const facets = await getPublicFacets();
+  const params = parseTeacherBrowseParams(raw, {
+    cities: facets.cities,
+    languages: facets.languages,
+  });
+  const source = await listPublicTeachers();
 
   return (
     <TeachersBrowser

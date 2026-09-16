@@ -53,11 +53,11 @@ export function RequestsPanel({ catalog }: { catalog: DashCatalog }) {
       <h2 id="requests-heading" className="sr-only">
         Yozilish so‘rovlari
       </h2>
-      <AuthNotice title="So‘rovlar hali serverga yuborilmaydi">
-        Yozilish infratuzilmasi ulanmagan. Quyidagi yozuv faqat shu
-        brauzeringizda saqlangan qoralama: ustoz uni ko‘rmaydi, joy band
-        qilinmaydi va to‘lov amalga oshmaydi. Bir vaqtda bitta kurs uchun
-        qoralama saqlanadi.
+      <AuthNotice title="Bu — brauzeringizdagi qoralama">
+        Quyidagi yozuv faqat shu brauzeringizda saqlangan qoralama: ustoz uni
+        ko‘rmaydi, joy band qilinmaydi va to‘lov amalga oshmaydi. Bir vaqtda
+        bitta kurs uchun qoralama saqlanadi. Hisobingizga yuborilgan so‘rovlar
+        yuqoridagi “Hisobingizdagi so‘rovlar” bo‘limida.
       </AuthNotice>
       {requests.map((request) => (
         <RequestCard key={request.courseSlug} request={request} />

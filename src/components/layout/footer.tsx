@@ -4,9 +4,10 @@ import { footerGroups } from "@/data/site";
 
 /**
  * Homepage footer — light and minimal (surface band, hairline top).
- * Per-link prefetch is declared in the nav data (site.ts): built routes
- * omit the flag, future-phase routes set prefetch:false. No newsletter,
- * no social clutter, no app badges.
+ * Every link resolves to a built route. Per-link prefetch stays declared in
+ * the nav data (site.ts) as the standing convention: any future unbuilt link
+ * must set prefetch:false until its route exists. No newsletter, no social
+ * clutter, no app badges.
  */
 export function Footer() {
   return (
@@ -31,7 +32,7 @@ export function Footer() {
                   <li key={link.label}>
                     <Link
                       href={link.href}
-                      prefetch={link.prefetch} // unbuilt routes stay inert (site.ts data)
+                      prefetch={link.prefetch}
                       className="rounded-md text-sm text-ink-500 transition-colors duration-fast hover:text-ink-900 focus-visible:ring-[length:var(--size-focus-ring)] focus-visible:ring-accent-600/35 focus-visible:outline-none"
                     >
                       {link.label}

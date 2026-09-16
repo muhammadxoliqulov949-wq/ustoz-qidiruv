@@ -10,9 +10,9 @@ import type { TeacherProfileRow } from "@/server/db/schema";
 
 /* -------------------------------------------------------------------------- */
 /* TeacherSavedProfile — the teacher's PERSISTED profile row, rendered on the  */
-/* server from the session. Verification is read-only and honest: the product  */
-/* has no self-verify path and no moderation queue in this phase, so an        */
-/* unverified profile stays out of the public catalogue.                       */
+/* server from the session. Verification is read-only HERE: the application is */
+/* submitted from the “Profil tasdig‘i” section and decided by an admin —      */
+/* saving the profile never verifies it.                                       */
 /* The phone number is never rendered here.                                    */
 /* -------------------------------------------------------------------------- */
 
@@ -112,8 +112,22 @@ export function TeacherSavedProfile({ profile }: { profile: TeacherProfileRow | 
         </>
       )}
       <p className="mt-3 text-xs text-ink-400">
-        Tasdiqlash holatini o‘zgartirish bu bosqichda mavjud emas — profilingiz
-        ommaviy katalogda chiqmaydi.
+        {profile?.verification === "verified" ? (
+          "Profilingiz tasdiqlangan. Ommaviy katalogda chiqish uchun kamida bitta kursingiz e’lon qilingan bo‘lishi kerak."
+        ) : (
+          <>
+            Tasdiqlash arizasi —{" "}
+            <Link
+              href="/teacher/dashboard/verification"
+              className="font-medium text-accent-700 underline underline-offset-2"
+            >
+              “Profil tasdig‘i” bo‘limida
+            </Link>
+            {profile?.verification === "pending"
+              ? "; arizangiz hozir ko‘rib chiqilmoqda."
+              : "; uni administrator ko‘rib chiqadi."}
+          </>
+        )}
       </p>
     </section>
   );

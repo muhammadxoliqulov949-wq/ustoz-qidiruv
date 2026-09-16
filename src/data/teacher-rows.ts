@@ -4,11 +4,23 @@ import { teachers } from "./teachers";
 import type { CourseFormat, Teacher } from "./models";
 
 /**
- * Derived teacher rows — the browse layer's read model for /teachers.
- * Everything here is COMPUTED from the canonical datasets (teachers.ts +
- * courses.ts), so a teacher's availability, cities, subjects and pricing
- * can never drift from the courses that actually exist. No new facts are
- * invented; there is simply no second source.
+ * SEED-ONLY derived teacher rows (dev seed input + the dev-demo teacher
+ * workspace inspector + the `TeacherRow` TYPE, which the database-backed
+ * repository also projects into).
+ *
+ * Everything here is COMPUTED from the fixture datasets (teachers.ts +
+ * courses.ts). No production browse surface reads these rows: /teachers and
+ * /teachers/[slug] derive the equivalent read model in SQL
+ * (listPublicTeachers in src/server/public-repo.ts).
+ *
+ * RUNTIME-SAFE EXPORTS IN THIS FILE: the `TeacherRow` type (erased at
+ * compile time — not a data dependency) and the static threshold lists
+ * `teacherRatingFilters` / `teacherExperienceFilters` (product vocabulary,
+ * not inventory). Phase 20 DELETED the fixture-derived `teacherCities` /
+ * `teacherLanguages` lists: form vocabularies read the static taxonomy
+ * (src/data/taxonomy.ts); browse filter options and the URL whitelist come
+ * from live database rows (getPublicFacets + parseTeacherBrowseParams with a
+ * runtime allow-list).
  */
 export interface TeacherRow {
   teacher: Teacher;
@@ -63,15 +75,6 @@ export const teacherRows: TeacherRow[] = buildRows();
 
 export const teacherRowBySlug = new Map(
   teacherRows.map((row) => [row.teacher.slug, row]),
-);
-
-/** Facet option lists derived from the data — every option can match something. */
-export const teacherCities: string[] = Array.from(
-  new Set(teacherRows.flatMap((row) => row.cities)),
-);
-
-export const teacherLanguages: string[] = ["UZ", "EN", "RU", "AR"].filter(
-  (lang) => teachers.some((teacher) => teacher.languages.includes(lang)),
 );
 
 export const teacherRatingFilters = [

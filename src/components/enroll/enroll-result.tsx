@@ -77,8 +77,9 @@ export function EnrollResult({ course, group, draft, onEditAgain, onClear, persi
             kuzatishingiz yoki bekor qilishingiz mumkin.
           </span>
           <span className="mt-2 block text-ink-500">
-            Ustoz tomonidan tasdiqlash va to‘lov hali mavjud emas — hech kim
-            joyni band qilgani yoki qabul qilinganingizni bildirmaydi.
+            So‘rov ustozga yuborildi: u qabul qilishi yoki rad etishi mumkin.
+            Pullik kurslarda to‘lov qabul qilingandan so‘ng kabinetingizda
+            ochiladi.
           </span>
         </AuthNotice>
       ) : (
@@ -138,7 +139,7 @@ export function EnrollResult({ course, group, draft, onEditAgain, onClear, persi
           onClick={onClear}
           className="text-ink-500 hover:text-ink-900"
         >
-          Prototip holatini tozalash
+          Qoralama holatini tozalash
         </Button>
       </div>
     </div>

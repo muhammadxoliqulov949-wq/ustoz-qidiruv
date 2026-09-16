@@ -15,12 +15,19 @@ import type {
 } from "@/lib/teacher-workspace";
 
 /* -------------------------------------------------------------------------- */
-/* Teacher dashboard projection — DERIVED, never a second dataset.             */
-/* Built once at module scope from the canonical teacherRows (themselves        */
-/* computed from teachers.ts + courses.ts) and the course catalog, then handed   */
-/* to the teacher-dashboard client islands as plain JSON. Ownership comes from   */
-/* the canonical course.teacher.id relationship — there is no hand-maintained    */
-/* teacher→course mapping anywhere in this phase.                               */
+/* LEGACY DEMO-ONLY projection — fixture inventory, NEVER production data.      */
+/*                                                                              */
+/* Built once at module scope from the fixture teacherRows (themselves computed  */
+/* from teachers.ts + courses.ts). Since Phase 11 the real teacher dashboard    */
+/* reads the database; this projection survives ONLY for two non-production     */
+/* consumers, both of which import it lazily so production requests never load  */
+/* fixture inventory:                                                           */
+/*   1. the dev-only workspace inspector (DEMO_TEACHER_WORKSPACE=1, forced off   */
+/*      in production) on the teacher overview + profile pages;                 */
+/*   2. the legacy browser-only course editor (local `cd-…` drafts), to label    */
+/*      which demo workspace owns a legacy draft.                               */
+/*                                                                              */
+/* Do NOT add new consumers. Do NOT render this in any production path.         */
 /* -------------------------------------------------------------------------- */
 
 const categoryById = new Map(categories.map((category) => [category.id, category]));

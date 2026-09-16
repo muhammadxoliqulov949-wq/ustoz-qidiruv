@@ -1,11 +1,10 @@
 import { categories } from "@/data/categories";
 import {
-  teacherCities,
   teacherExperienceFilters,
-  teacherLanguages,
   teacherRatingFilters,
   type TeacherRow,
 } from "@/data/teacher-rows";
+import { citySlugs, languageTags } from "@/data/taxonomy";
 import { normalizeForMatch } from "./course-search";
 
 /* -------------------------------------------------------------------------- */
@@ -58,8 +57,19 @@ function first(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
+/**
+ * Parse + sanitize Next's raw searchParams into typed browse state.
+ *
+ * `allowed` carries the RUNTIME whitelists. Production pages pass the live
+ * lists from `getPublicFacets()` (cities with published courses, languages
+ * directory teachers actually teach in), so the whitelist can never reject a
+ * real inventory value or bless a fixture-only one. Callers without a
+ * database (pure helpers, tests) omit it and get the static product taxonomy
+ * instead — never fixture inventory.
+ */
 export function parseTeacherBrowseParams(
   searchParams: Record<string, string | string[] | undefined>,
+  allowed: { cities?: readonly string[]; languages?: readonly string[] } = {},
 ): TeacherBrowseParams {
   const rawSubject = (first(searchParams.subject) ?? "").toLowerCase();
   const rawCity = (first(searchParams.city) ?? "").toLowerCase();
@@ -67,6 +77,8 @@ export function parseTeacherBrowseParams(
   const rawRating = first(searchParams.rating) ?? "";
   const rawExp = first(searchParams.exp) ?? "";
   const rawSort = first(searchParams.sort) ?? "";
+  const allowedCities = allowed.cities ?? citySlugs;
+  const allowedLanguages = allowed.languages ?? languageTags;
 
   return {
     q: (first(searchParams.q) ?? "").trim().slice(0, 100),
@@ -74,8 +86,8 @@ export function parseTeacherBrowseParams(
     format: FORMATS.includes(first(searchParams.format) ?? "")
       ? (first(searchParams.format) as TeacherBrowseParams["format"])
       : null,
-    city: teacherCities.includes(rawCity) ? rawCity : null,
-    lang: (teacherLanguages as readonly string[]).includes(rawLang) ? rawLang : null,
+    city: allowedCities.includes(rawCity) ? rawCity : null,
+    lang: allowedLanguages.includes(rawLang) ? rawLang : null,
     minRating: teacherRatingFilters.find((f) => f.value === rawRating)?.min ?? null,
     minExperience:
       teacherExperienceFilters.find((f) => f.value === rawExp)?.min ?? null,

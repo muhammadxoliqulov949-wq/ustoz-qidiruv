@@ -10,6 +10,7 @@ import {
   type PublicTeacherReviewView,
 } from "./review-service";
 import { categories } from "@/data/categories";
+import { courseFormatLabels } from "@/data/courses";
 import type {
   Course,
   CourseFormat,
@@ -18,7 +19,10 @@ import type {
   Teacher,
 } from "@/data/models";
 import type { TeacherRow } from "@/data/teacher-rows";
-import type { CourseBrowseParams } from "@/lib/course-search";
+import { formatDateUz } from "@/components/course-detail/date";
+import { defaultBrowseParams, type CourseBrowseParams } from "@/lib/course-search";
+import type { DashCatalog } from "@/lib/dashboard";
+import { formatPrice } from "@/lib/format";
 
 /* -------------------------------------------------------------------------- */
 /* PUBLIC MARKETPLACE REPOSITORY — Phase 12.                                   */
@@ -564,22 +568,43 @@ export async function getPublicTeacherBySlug(
 
 /* ------------------------------ facet options ----------------------------- */
 
-/** Facet option lists derived from live public data — every option can match. */
+/**
+ * Facet option lists derived from live public data — every option can match.
+ *
+ * PHASE 20: both lists describe the SAME population the browse pages render.
+ * Cities come from published courses (an online-only catalogue yields no city
+ * facet at all); languages come from public profiles that actually own at
+ * least one published course — the exact directory membership
+ * `listPublicTeachers()` returns — so a language no visible teacher teaches
+ * in is never offered. An empty database yields empty lists, and the browse
+ * sidebars render no option that implies inventory which does not exist.
+ */
 export async function getPublicFacets(): Promise<{
   cities: string[];
   languages: string[];
   categoryCounts: Map<string, number>;
 }> {
   const db = getDb();
+  // Teachers with at least one published course — the directory population.
+  const directoryTeachers = db
+    .selectDistinct({ teacherUserId: schema.courses.teacherUserId })
+    .from(schema.courses)
+    .where(eq(schema.courses.status, PUBLIC_STATUS));
   const [cityRows, langRows, categoryCounts] = await Promise.all([
     db
       .selectDistinct({ city: schema.courses.city })
       .from(schema.courses)
-      .where(and(eq(schema.courses.status, PUBLIC_STATUS), sql`${schema.courses.city} IS NOT NULL`)),
+      .where(and(eq(schema.courses.status, PUBLIC_STATUS), sql`${schema.courses.city} IS NOT NULL`))
+      .orderBy(asc(schema.courses.city)),
     db
       .select({ languages: schema.teacherProfiles.languages })
       .from(schema.teacherProfiles)
-      .where(eq(schema.teacherProfiles.isPublic, true)),
+      .where(
+        and(
+          eq(schema.teacherProfiles.isPublic, true),
+          inArray(schema.teacherProfiles.userId, directoryTeachers),
+        ),
+      ),
     getCategoryCourseCounts(),
   ]);
 
@@ -591,6 +616,85 @@ export async function getPublicFacets(): Promise<{
     // Keep the approved display order rather than DB order.
     languages: ["UZ", "EN", "RU", "AR"].filter((tag) => languageSet.has(tag)),
     categoryCounts,
+  };
+}
+
+/* ------------------------- student dashboard catalog ------------------------ */
+
+/**
+ * PHASE 20: the student dashboard catalog, projected from PostgreSQL.
+ *
+ * This REPLACES the deleted `src/data/dashboard-catalog.ts`, which built the
+ * same `DashCatalog` shape from the fixture arrays at module scope. The shape
+ * is unchanged — the dashboard islands (`OverviewPanels`, `RequestsPanel`,
+ * `SavedPanel`) join it against the same browser stores exactly as before —
+ * but every row now comes from the same request-time reads the public
+ * marketplace uses:
+ *
+ *   • courses: published rows via `listPublicCourses()` (live group seats
+ *     included, managed covers overlaid);
+ *   • teachers: directory rows via `listPublicTeachers()` (public profiles
+ *     that own at least one published course, active counts derived).
+ *
+ * There is deliberately no second database access pattern here: this function
+ * composes the existing public reads and only reshapes them into the lite
+ * projection. No fixture fallback exists: an empty database yields an empty
+ * catalog, and the dashboard renders its honest empty states (a saved id or
+ * an enrollment draft that names no published row simply resolves to
+ * nothing, exactly as `savedCourses` / `toDashRequest` already specify).
+ *
+ * A course whose teacher has no public directory row keeps a null
+ * `teacherSlug` (same as the old projection) rather than inventing a link.
+ */
+export async function getDashboardCatalog(): Promise<DashCatalog> {
+  const [courses, teacherRows] = await Promise.all([
+    listPublicCourses({ ...defaultBrowseParams }),
+    listPublicTeachers(),
+  ]);
+  const slugByTeacherId = new Map(
+    teacherRows.map((row) => [row.teacher.id, row.teacher.slug]),
+  );
+
+  return {
+    courses: courses.map((course) => {
+      const unit = course.detail.pricePeriod === "month" ? "oyiga" : "kurs uchun bir marta";
+      return {
+        id: course.id,
+        slug: course.slug,
+        title: course.title,
+        image: course.image,
+        category: categoryById.get(course.categoryId)?.name ?? null,
+        formatLabel: courseFormatLabels[course.format],
+        location: course.format === "online" ? null : course.location,
+        teacherName: course.teacher.name,
+        teacherSlug: slugByTeacherId.get(course.teacher.id) ?? null,
+        priceSummary:
+          course.priceUzs === 0 ? "Bepul" : `${formatPrice(course.priceUzs)} / ${unit}`,
+        priceUzs: course.priceUzs,
+        groups: course.detail.groups.map((group) => ({
+          id: group.id,
+          title: group.title,
+          days: group.days,
+          startTime: group.startTime,
+          format: group.format,
+          formatLabel: courseFormatLabels[group.format],
+          location: group.location,
+          capacity: group.capacity,
+          seatsRemaining: group.seatsRemaining,
+          startDate: group.startDate,
+          startDateLabel: formatDateUz(group.startDate),
+        })),
+      };
+    }),
+    teachers: teacherRows.map((row) => ({
+      id: row.teacher.id,
+      slug: row.teacher.slug,
+      name: row.teacher.name,
+      photo: row.teacher.photo,
+      verified: row.teacher.verified,
+      specialization: row.teacher.specialization,
+      activeCourses: row.teacher.activeCourses,
+    })),
   };
 }
 

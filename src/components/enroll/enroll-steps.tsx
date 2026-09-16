@@ -87,8 +87,8 @@ export function StepStudent({ course, group, draft, errors, patch }: EnrollStepP
         <p className="flex items-start gap-2 rounded-lg border border-line bg-surface-muted px-3.5 py-2.5 text-sm text-ink-500">
           <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-ink-400" />
           <span>
-            <span className="font-medium text-ink-700">Prototip prefill.</span>{" "}
-            Ism va telefon shu brauzerdagi onboarding UI holatidan olindi — bu
+            <span className="font-medium text-ink-700">Qoralama prefill.</span>{" "}
+            Ism va telefon shu brauzerdagi onboarding qoralamasidan olindi — bu
             hisob ma’lumotlari emas.
           </span>
         </p>
