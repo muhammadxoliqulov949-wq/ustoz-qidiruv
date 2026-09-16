@@ -4,16 +4,29 @@ import { LoginForm } from "@/components/auth/login-form";
 import { parseSafeNext } from "@/lib/safe-next";
 
 /* -------------------------------------------------------------------------- */
-/* /login — phone + password entry for the (not yet connected) auth backend.     */
-/* The page itself is a server component; only the form is a client island.     */
+/* /login — the ONE sign-in page, for two identifier kinds.                     */
+/*                                                                              */
+/*   • students and teachers: phone number + password (unchanged);              */
+/*   • operators (role = 'admin'): email + password, for the accounts created   */
+/*     by `npm run admin:create-email`.                                         */
+/*                                                                              */
+/* The page is a server component; only the form is a client island, and it     */
+/* picks the matching server action (`loginAction` / `adminLoginAction`).       */
+/*                                                                              */
+/* This is an AUTHENTICATION surface only. Nothing here — and nothing anywhere  */
+/* else over HTTP — can create an operator account or grant the admin role:     */
+/* registration is phone-only and validates against a two-value role schema,    */
+/* and the sole writer of `users.role = 'admin'` is the server-side CLI.        */
+/*                                                                              */
 /* Auth pages are noindex by design (Phase 6 SEO rule) — marketing routes       */
-/* keep their own metadata.                                                      */
+/* keep their own metadata.                                                     */
 /* -------------------------------------------------------------------------- */
 
 export const metadata: Metadata = {
   title: "Kirish",
   description:
-    "USTOZ hisobingizga telefon raqami va parolingiz bilan kiring.",
+    "USTOZ hisobingizga kiring: o‘quvchi va ustozlar telefon raqami bilan, " +
+    "operator hisobi email va parol bilan.",
   robots: { index: false, follow: true },
 };
 
@@ -28,7 +41,7 @@ export default async function LoginPage({
   return (
     <AuthPage
       title="Hisobingizga kiring"
-      intro="Telefon raqami va parol — USTOZ’da hisob identifikatori telefon raqami."
+      intro="O‘quvchi va ustoz hisobining identifikatori — telefon raqami. Operator (administrator) hisobi email va parol bilan kiradi."
     >
       <LoginForm initialNext={next} />
     </AuthPage>

@@ -31,8 +31,13 @@ export interface SessionUser {
    * `admin`, which is settable ONLY by the operator CLI — never by any request.
    */
   role: "student" | "teacher" | "admin";
-  /** Private. Never rendered on a public page. */
-  phone: string;
+  /**
+   * Private. Never rendered on a public page. NULL for an operator account that
+   * logs in with an email instead (`admin:create-email`); the email itself is
+   * not part of the session projection, because no surface needs it — identity
+   * here is `id` + `role`, and that is all the guards consult.
+   */
+  phone: string | null;
 }
 
 function cookieOptions(expires: Date) {

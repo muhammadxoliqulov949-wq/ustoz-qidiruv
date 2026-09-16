@@ -17,6 +17,7 @@
     "admin:promote": "tsx --conditions=react-server scripts/admin.ts promote",
     "admin:demote": "tsx --conditions=react-server scripts/admin.ts demote",
     "admin:create": "tsx --conditions=react-server scripts/admin.ts create",
+    "admin:create-email": "tsx --conditions=react-server scripts/admin.ts create-email",
     "test:server": "tsx --conditions=react-server tests/server.test.ts",
     "test:enrollment": "tsx --conditions=react-server tests/enrollment.test.ts",
     "test:payments": "tsx --conditions=react-server tests/payments.test.ts",

@@ -5,6 +5,7 @@
 /*   npm run admin:promote -- +998XXXXXXXXX  existing account → admin           */
 /*   npm run admin:demote  -- +998XXXXXXXXX  admin → their previous role        */
 /*   npm run admin:create  -- +998XXXXXXXXX  NEW password-only admin account    */
+/*   npm run admin:create-email -- a@b.uz    NEW email+password operator        */
 /*                                                                              */
 /* WHY A SCRIPT AND NOT A ROUTE                                               */
 /*   • It is not reachable over HTTP at all. There is no endpoint, no server    */
@@ -13,6 +14,20 @@
 /*   • It never reads a role from a request. The operator states the target      */
 /*     phone number explicitly; the role is implied by the command.             */
 /*   • It is the ONLY writer of `users.role = 'admin'` anywhere in the codebase. */
+/*                                                                              */
+/* TWO OPERATOR IDENTITIES                                                      */
+/*   `create`       — phone + password. The original bootstrap; those accounts  */
+/*                     keep signing in with their phone number.                 */
+/*   `create-email` — email + password, for operators who should not need an    */
+/*                     Uzbek mobile number to hold the admin role. The row has  */
+/*                     `phone = NULL`, and the database ties the two identities */
+/*                     apart: `users_email_admin_only` makes an email on a      */
+/*                     student/teacher row impossible, and                      */
+/*                     `users_email_normalized` + `users_email_key` store it    */
+/*                     trimmed, lowercased and unique.                          */
+/*   Either way the operator signs in on the SAME /login page (the form asks    */
+/*   which identifier it is being given), and `loginAction` /                   */
+/*   `adminLoginAction` only ever authenticate — neither can create.            */
 /*                                                                              */
 /* WHY AN ADMIN IS ITS OWN ACCOUNT                                            */
 /*   `users(id, role)` is the target of a COMPOSITE foreign key from            */
@@ -31,16 +46,18 @@
 /* SAFETY RULES                                                                */
 /*   • No default account, no default password, no seeded admin in production.  */
 /*   • `promote` requires an EXISTING account and refuses an unknown phone.     */
-/*   • `create` requires ADMIN_PASSWORD in the environment (≥ 12 chars) and      */
-/*     refuses to run with a weaker or missing one. It is never interactive,    */
-/*     so no password is ever echoed to a terminal history or a log.            */
-/*   • No credential is printed, logged or committed.                           */
+/*   • `create` and `create-email` require ADMIN_PASSWORD in the environment    */
+/*     (≥ 12 chars) and refuse to run with a weaker or missing one. Neither is  */
+/*     ever interactive, so no password reaches a terminal history or a log.    */
+/*   • Both refuse a duplicate identifier without changing anything.            */
+/*   • No credential is printed, logged or committed; identifiers are masked.   */
 /* -------------------------------------------------------------------------- */
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "../src/server/db/client";
 import { hashPassword } from "../src/server/auth/password";
 import { newId } from "../src/server/auth/ids";
 import { describeEnv } from "../src/server/env";
+import { isValidEmail, maskEmail, normalizeEmail } from "../src/lib/email";
 
 /** The exact phone form the `users_phone_format` CHECK constraint accepts. */
 const PHONE_RE = /^\+998[0-9]{9}$/;
@@ -52,26 +69,54 @@ function usage(): never {
     [
       "usage:",
       "  npm run admin:list",
-      "  npm run admin:promote -- +998XXXXXXXXX",
-      "  npm run admin:demote  -- +998XXXXXXXXX",
-      "  npm run admin:create  -- +998XXXXXXXXX      (requires ADMIN_PASSWORD)",
+      "  npm run admin:promote      -- +998XXXXXXXXX",
+      "  npm run admin:demote       -- +998XXXXXXXXX",
+      "  npm run admin:create       -- +998XXXXXXXXX        (requires ADMIN_PASSWORD)",
+      "  npm run admin:create-email -- operator@example.uz  (requires ADMIN_PASSWORD)",
     ].join("\n"),
   );
   process.exit(1);
 }
 
 function requirePhone(): string {
-  const phone = (process.argv[3] ?? "").trim();
-  if (!PHONE_RE.test(phone)) {
+  const raw = (process.argv[3] ?? "").trim();
+  if (raw.includes("@")) {
+    console.error(
+      [
+        "That looks like an email address, but promote/demote target PHONE accounts.",
+        "An email operator account has no phone identity and no marketplace role to",
+        "return to, so it is neither promotable nor demotable — it is created once,",
+        "by `npm run admin:create-email`, and listed by `npm run admin:list`.",
+      ].join("\n"),
+    );
+    process.exit(1);
+  }
+  if (!PHONE_RE.test(raw)) {
     console.error("Target must be an existing phone number in +998XXXXXXXXX form.");
     process.exit(1);
   }
-  return phone;
+  return raw;
 }
 
 /** Never print a phone in full; the operator knows which number they typed. */
 function mask(phone: string): string {
   return `${phone.slice(0, 4)}****${phone.slice(-3)}`;
+}
+
+/**
+ * ADMIN_PASSWORD is the only password source, for both create commands: never a
+ * prompt (which would land in shell history or a CI log), never a default, and
+ * never a value this file could be tricked into printing.
+ */
+function requireAdminPassword(): string {
+  const password = process.env.ADMIN_PASSWORD ?? "";
+  if (password.length < MIN_ADMIN_PASSWORD) {
+    console.error(
+      `ADMIN_PASSWORD must be set and at least ${MIN_ADMIN_PASSWORD} characters. Nothing was created.`,
+    );
+    process.exit(1);
+  }
+  return password;
 }
 
 /**
@@ -104,15 +149,32 @@ async function findUser(phone: string) {
 async function list(): Promise<void> {
   const db = getDb();
   const rows = await db
-    .select({ id: schema.users.id, role: schema.users.role, phone: schema.users.phone })
+    .select({
+      id: schema.users.id,
+      role: schema.users.role,
+      phone: schema.users.phone,
+      email: schema.users.email,
+    })
     .from(schema.users)
     .where(eq(schema.users.role, "admin"));
   console.log(`driver: ${String(describeEnv().driver)} · admins: ${rows.length}`);
   for (const row of rows) {
-    // Masked on purpose: this output may be pasted into an issue or a log.
-    console.log(`  ${mask(row.phone)}  (${row.id})`);
+    /*
+     * Masked on purpose: this output may be pasted into an issue or a log. The
+     * identifier KIND is printed because it says which login the operator uses
+     * (email on /login's operator mode, phone on the default one).
+     */
+    const identifier =
+      row.email !== null
+        ? `${maskEmail(row.email)} · email`
+        : row.phone !== null
+          ? `${mask(row.phone)} · phone`
+          : "no identifier";
+    console.log(`  ${identifier}  (${row.id})`);
   }
-  if (rows.length === 0) console.log("  (none — use admin:promote or admin:create)");
+  if (rows.length === 0) {
+    console.log("  (none — use admin:create, admin:create-email or admin:promote)");
+  }
 }
 
 async function promote(): Promise<void> {
@@ -158,6 +220,7 @@ async function promote(): Promise<void> {
         "removing it would delete that account's marketplace data.",
         "Create a separate operator account instead:",
         "  ADMIN_PASSWORD=... npm run admin:create -- +998XXXXXXXXX",
+        "  ADMIN_PASSWORD=... npm run admin:create-email -- operator@example.uz",
       ].join("\n"),
     );
     process.exit(1);
@@ -198,13 +261,7 @@ async function demote(): Promise<void> {
 
 async function create(): Promise<void> {
   const phone = requirePhone();
-  const password = process.env.ADMIN_PASSWORD ?? "";
-  if (password.length < MIN_ADMIN_PASSWORD) {
-    console.error(
-      `ADMIN_PASSWORD must be set and at least ${MIN_ADMIN_PASSWORD} characters. Nothing was created.`,
-    );
-    process.exit(1);
-  }
+  const password = requireAdminPassword();
   const existing = await findUser(phone);
   if (existing) {
     console.error("An account with that phone number already exists. Use admin:promote.");
@@ -227,6 +284,58 @@ async function create(): Promise<void> {
   console.log(`Created admin ${mask(phone)} (${id}). Password was read from ADMIN_PASSWORD and not stored in plaintext.`);
 }
 
+/**
+ * `admin:create-email -- operator@example.uz`
+ *
+ * The operator account for people who authenticate with an email address:
+ * role='admin', `phone = NULL`, `email` normalized (trim + lowercase) so it
+ * matches the form the `users_email_normalized` CHECK demands, and hashed with
+ * the same argon2id path every other account uses.
+ *
+ * There is no profile insert, so the account has no marketplace identity — and
+ * the composite role FK keeps it that way permanently. There is equally no
+ * HTTP path here: this function can only be reached from a shell on the server.
+ */
+async function createEmail(): Promise<void> {
+  const email = normalizeEmail(process.argv[3] ?? "");
+  if (!isValidEmail(email)) {
+    console.error(
+      "Target must be a valid email address, e.g. operator@ustoz.uz. Nothing was created.",
+    );
+    process.exit(1);
+  }
+  const password = requireAdminPassword();
+
+  const db = getDb();
+  const existing = await db
+    .select({ id: schema.users.id, role: schema.users.role })
+    .from(schema.users)
+    .where(eq(schema.users.email, email))
+    .limit(1);
+  if (existing[0]) {
+    // A duplicate changes nothing and reveals nothing beyond the address the
+    // operator just typed themselves.
+    console.error(
+      `An operator account with that email already exists (${existing[0].id}). Nothing was created.`,
+    );
+    process.exit(1);
+  }
+
+  const id = newId("usr");
+  await db.insert(schema.users).values({
+    id,
+    role: "admin",
+    // Explicitly identifier-less on the phone side: an operator account is
+    // addressed by email only, and `users_has_one_identifier` is satisfied.
+    phone: null,
+    email,
+    passwordHash: await hashPassword(password),
+  });
+  console.log(
+    `Created admin ${maskEmail(email)} (${id}). Password was read from ADMIN_PASSWORD and not stored in plaintext.`,
+  );
+}
+
 const command = process.argv[2];
 const run =
   command === "list"
@@ -237,7 +346,9 @@ const run =
         ? demote
         : command === "create"
           ? create
-          : null;
+          : command === "create-email"
+            ? createEmail
+            : null;
 
 if (run === null) usage();
 
