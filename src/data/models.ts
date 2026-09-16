@@ -76,15 +76,16 @@ export interface SyllabusModule {
   lessons: number;
 }
 
-export interface CourseReview {
-  id: string;
-  courseId: string;
-  author: string;
-  rating: number;
-  text: string;
-  /** ISO date of the review. */
-  date: string;
-}
+/*
+ * PHASE 19: there is deliberately no `CourseReview` model here any more.
+ *
+ * The one that used to live here described a FIXTURE row (an invented author, an
+ * invented date) and it was consumed by two public components. A written review is
+ * now a database row with a real author and a moderation lifecycle, and its public
+ * shape is `PublicReviewView` in src/server/review-service.ts — a projection that
+ * carries NO author identity at all. Keeping a look-alike model in the data layer
+ * would invite the next fixture.
+ */
 
 export interface FaqItem {
   q: string;

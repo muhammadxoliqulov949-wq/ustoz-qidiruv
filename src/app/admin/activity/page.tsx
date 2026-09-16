@@ -36,6 +36,12 @@ const ACTION_LABEL: Record<AdminAuditAction, string> = {
   refund_approved: "Pulni qaytarish so‘rovi tasdiqlandi",
   refund_rejected: "Pulni qaytarish so‘rovi rad etildi",
   refund_failed: "Pulni qaytarish natijasi: bajarilmadi",
+  /*
+   * Phase 19. Again the DECISION is what is recorded — and this one changes a
+   * public number, which is exactly why it belongs in an append-only log.
+   */
+  review_published: "O‘quvchi fikri e’lon qilindi",
+  review_rejected: "O‘quvchi fikri e’lon qilinmadi",
 };
 
 const ACTION_TONE: Record<AdminAuditAction, "success" | "warning"> = {
@@ -46,14 +52,34 @@ const ACTION_TONE: Record<AdminAuditAction, "success" | "warning"> = {
   course_changes_requested: "warning",
   refund_rejected: "warning",
   refund_failed: "warning",
+  review_published: "success",
+  review_rejected: "warning",
 };
 
-function entityHref(entityType: "teacher" | "course" | "refund", entityId: string): string {
+/**
+ * Deep link per entity kind.
+ *
+ * A review has no detail route of its own — the moderation queue is the screen
+ * where it is read and decided — so the link goes there, and the course the review
+ * belongs to is carried in the row's own `metadata` (`course=<slug>`).
+ */
+function entityHref(
+  entityType: "teacher" | "course" | "refund" | "review",
+  entityId: string,
+): string {
   if (entityType === "refund") return `/admin/refunds/${entityId}`;
+  if (entityType === "review") return "/admin/reviews";
   return entityType === "teacher"
     ? `/admin/teachers/${entityId}`
     : `/admin/courses/${entityId}`;
 }
+
+const ENTITY_LABEL: Record<"teacher" | "course" | "refund" | "review", string> = {
+  teacher: "Ustoz",
+  course: "Kurs",
+  refund: "Qaytarish",
+  review: "Fikr",
+};
 
 export default async function AdminActivityPage() {
   /*
@@ -100,7 +126,7 @@ export default async function AdminActivityPage() {
                     href={entityHref(event.entityType, event.entityId)}
                     className="text-sm font-medium text-accent-700 underline underline-offset-2"
                   >
-                    {event.entityType === "teacher" ? "Ustoz" : "Kurs"}: {event.entityId}
+                    {ENTITY_LABEL[event.entityType]}: {event.entityId}
                   </Link>
                   <time
                     dateTime={isoDate(event.createdAt)}

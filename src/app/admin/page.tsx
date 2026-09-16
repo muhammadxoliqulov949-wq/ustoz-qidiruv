@@ -74,7 +74,7 @@ export default async function AdminOverviewPage() {
         </p>
       </header>
 
-      <dl className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
+      <dl className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
         <div className="rounded-xl border border-line bg-surface p-4 shadow-xs">
           <dt className="text-sm text-ink-500">Tasdiqlash kutilmoqda</dt>
           <dd className="mt-1 text-3xl font-semibold tabular-nums text-ink-900">
@@ -97,6 +97,12 @@ export default async function AdminOverviewPage() {
           <dt className="text-sm text-ink-500">E’lon qilingan kurslar</dt>
           <dd className="mt-1 text-3xl font-semibold tabular-nums text-ink-900">
             {overview.publishedCourses}
+          </dd>
+        </div>
+        <div className="rounded-xl border border-line bg-surface p-4 shadow-xs">
+          <dt className="text-sm text-ink-500">Fikrlar tekshiruvda</dt>
+          <dd className="mt-1 text-3xl font-semibold tabular-nums text-ink-900">
+            {overview.pendingReviews}
           </dd>
         </div>
         <div className="rounded-xl border border-line bg-surface p-4 shadow-xs">

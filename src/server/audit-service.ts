@@ -25,10 +25,13 @@ export type AdminAuditAction = (typeof schema.adminAuditAction.enumValues)[numbe
  * Which kind of record an action was performed on.
  *
  * Phase 17 adds `refund`: a refund decision has a financial consequence, so it
- * is audited exactly like a verification or a moderation decision. The database
- * CHECK lists the same three values.
+ * is audited exactly like a verification or a moderation decision.
+ *
+ * Phase 19 adds `review`: publishing or rejecting a review changes what the PUBLIC
+ * marketplace says about a course and its teacher, so it is recorded the same way.
+ * The database CHECK lists the same four values.
  */
-export type AdminAuditEntityType = "teacher" | "course" | "refund";
+export type AdminAuditEntityType = "teacher" | "course" | "refund" | "review";
 
 type Tx = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
 
@@ -64,13 +67,14 @@ export async function recordAdminEvent(tx: Tx, input: AdminAuditInput): Promise<
 }
 
 /**
- * Narrow the free-text `entity_type` column to the three values the CHECK
+ * Narrow the free-text `entity_type` column to the four values the CHECK
  * constraint allows. Anything unexpected is treated as a teacher record, which
  * is the behaviour this reader had before refunds existed.
  */
 function narrowEntityType(value: string): AdminAuditEntityType {
   if (value === "course") return "course";
   if (value === "refund") return "refund";
+  if (value === "review") return "review";
   return "teacher";
 }
 

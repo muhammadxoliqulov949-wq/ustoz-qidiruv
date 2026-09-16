@@ -12,6 +12,7 @@ import { requireAdminPage } from "@/server/auth/guards";
 import { getVerificationQueueCounts } from "@/server/verification-service";
 import { getModerationCounts } from "@/server/moderation-service";
 import { getRefundQueueCounts } from "@/server/refund-service";
+import { getReviewQueueCounts } from "@/server/review-service";
 
 /* -------------------------------------------------------------------------- */
 /* /admin — the ADMIN control-plane shell (Phase 15).                          */
@@ -87,14 +88,17 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     );
   }
 
-  const [verification, moderation, refundQueue] = await Promise.all([
+  const [verification, moderation, refundQueue, reviewQueue] = await Promise.all([
     getVerificationQueueCounts(),
     getModerationCounts(),
     getRefundQueueCounts(),
+    getReviewQueueCounts(),
   ]);
   const counts = {
     teachers: verification.pending,
     courses: moderation.pendingReviews,
+    // Phase 19: reviews an operator has not decided yet.
+    reviews: reviewQueue.pending,
     // Live refund work: a request nobody has decided yet, or an approved refund
     // the provider still has to return.
     refunds: refundQueue.live,

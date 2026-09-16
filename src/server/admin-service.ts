@@ -37,6 +37,14 @@ export interface AdminOverview {
    * Completed, rejected and failed refunds are history and are not counted here.
    */
   pendingRefunds: number;
+  /**
+   * Phase 19: student reviews waiting for a publish/reject decision. Real work —
+   * until somebody decides, the review is invisible and the course's rating does
+   * not include it.
+   */
+  pendingReviews: number;
+  /** Reviews already public; these are what the aggregates are made of. */
+  publishedReviews: number;
 }
 
 /**
@@ -57,6 +65,7 @@ export async function getAdminOverview(): Promise<AdminOverview> {
     draftCourseRows,
     auditEventRows,
     liveRefundRows,
+    reviewStatusRows,
   ] = await Promise.all([
     db
       .select({ total: count(schema.teacherVerificationRequests.id) })
@@ -83,7 +92,15 @@ export async function getAdminOverview(): Promise<AdminOverview> {
       .select({ total: count(schema.refundRequests.id) })
       .from(schema.refundRequests)
       .where(inArray(schema.refundRequests.status, ["requested", "awaiting_provider"])),
+    // One GROUP BY rather than two COUNTs: the queue needs both numbers and they
+    // must come from the same read to agree with the rail badge.
+    db
+      .select({ status: schema.courseReviews.status, total: count(schema.courseReviews.id) })
+      .from(schema.courseReviews)
+      .groupBy(schema.courseReviews.status),
   ]);
+
+  const reviewStatusByStatus = new Map(reviewStatusRows.map((row) => [row.status, Number(row.total)]));
 
   return {
     pendingVerifications: Number(pendingVerificationRows[0]?.total ?? 0),
@@ -93,6 +110,8 @@ export async function getAdminOverview(): Promise<AdminOverview> {
     draftCourses: Number(draftCourseRows[0]?.total ?? 0),
     auditEvents: Number(auditEventRows[0]?.total ?? 0),
     pendingRefunds: Number(liveRefundRows[0]?.total ?? 0),
+    pendingReviews: reviewStatusByStatus.get("pending") ?? 0,
+    publishedReviews: reviewStatusByStatus.get("published") ?? 0,
   };
 }
 

@@ -11,7 +11,10 @@ import { Rating, VerifiedMark } from "@/components/ui/rating";
 import { SectionHeader } from "@/components/ui/section-header";
 import { TeacherReviews } from "@/components/teachers/teacher-reviews";
 import { cityLabel, courseFormatLabels } from "@/data/courses";
-import { getPublicTeacherBySlug } from "@/server/public-repo";
+import {
+  getPublicTeacherBySlug,
+  listPublicTeacherReviews,
+} from "@/server/public-repo";
 import { buildTeacherFaq } from "@/data/teacher-faq";
 import { formatCount, formatPrice } from "@/lib/format";
 import { cn, focusRing } from "@/lib/utils";
@@ -66,6 +69,13 @@ export default async function TeacherProfilePage({
   const { row, courses: own } = found;
   const { teacher, formats, cities, minPriceUzs } = row;
   const faq = buildTeacherFaq(row);
+  /*
+   * PHASE 19: written reviews come from `course_reviews` (published rows of this
+   * teacher's published courses), joined by the ownership FK. The count beside the
+   * rating is `teacher_profiles.reviews_count`, which is a cached aggregate over
+   * exactly these rows — so the list and the number cannot disagree.
+   */
+  const reviews = await listPublicTeacherReviews(teacher.id);
 
   return (
     <div className="site-container pb-16 pt-8 lg:pt-12">
@@ -266,7 +276,7 @@ export default async function TeacherProfilePage({
             as="h2"
           />
           <div className="max-w-3xl">
-            <TeacherReviews courses={own} />
+            <TeacherReviews reviews={reviews} totalReviews={teacher.reviews} />
           </div>
         </section>
 

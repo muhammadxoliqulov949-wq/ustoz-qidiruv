@@ -13,7 +13,7 @@ import {
   unique,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { relations, sql } from "drizzle-orm";
+import { desc, relations, sql } from "drizzle-orm";
 
 /* -------------------------------------------------------------------------- */
 /* USTOZ core schema — Phase 11.                                               */
@@ -130,6 +130,15 @@ export const notificationType = pgEnum("notification_type", [
   "refund_completed",
   "refund_failed",
   "refund_provider_reversal",
+  /*
+   * Phase 19. A review decision changes what the PUBLIC marketplace says about a
+   * course and its teacher, so the student is told the outcome rather than left
+   * refreshing the page to discover it. Nothing is emitted for `pending` or
+   * `withdrawn`: submitting your own review needs no confirmation from the system,
+   * and withdrawing is your own action.
+   */
+  "review_published",
+  "review_rejected",
 ]);
 
 /* ---------------------------------- users ---------------------------------- */
@@ -421,8 +430,7 @@ export const courseGroups = pgTable(
   },
   (table) => [
     // Composite target so an enrollment can prove (course, group) consistency.
-    unique("course_groups_id_course_key").on(table.id, table.courseId),
-    index("course_groups_course_idx").on(table.courseId),
+    unique("course_groups_id_course_key").on(table.id, table.courseId),    index("course_groups_course_idx").on(table.courseId),
     check("course_groups_capacity_check", sql`${table.capacity} BETWEEN 1 AND 500`),
     check("course_groups_time_format", sql`${table.startTime} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'`),
     check(
@@ -492,6 +500,20 @@ export const enrollmentRequests = pgTable(
     // Capacity is derived by counting ACCEPTED rows per group, so that query
     // gets its own index.
     index("enrollment_requests_group_status_idx").on(table.groupId, table.status),
+    /*
+     * Phase 19: composite FK target for `course_reviews`.
+     *
+     * `id` is already the primary key, so these three columns are unique by
+     * definition — the constraint costs nothing and rewrites nothing. What it buys
+     * is a target a review can point at with ALL THREE of its ownership columns at
+     * once, which is how the database itself (not a `SELECT` in the service)
+     * refuses a review claiming someone else's enrollment.
+     */
+    unique("enrollment_requests_id_student_course_key").on(
+      table.id,
+      table.studentUserId,
+      table.courseId,
+    ),
     // ONE LIVE REQUEST PER STUDENT PER GROUP.
     //
     // Phase 11 keyed this on (student, group, status), which was fine with two
@@ -550,6 +572,135 @@ export const enrollmentEvents = pgTable(
       "enrollment_events_from_differs",
       sql`${table.fromStatus} IS NULL OR ${table.fromStatus} <> ${table.toStatus}`,
     ),
+  ],
+);
+
+/* ------------------------- Phase 19 · reviews ------------------------------ */
+
+/*
+ * REVIEWS AND REPUTATION — Phase 19.
+ *
+ * This table replaces a compiled-in fixture list (`src/data/reviews.ts`, deleted in
+ * this phase) as the ONLY source of a written review. Three properties matter, and
+ * all three are enforced HERE rather than in a component:
+ *
+ *   1. A review is EARNED. It names an enrollment, and the composite FK below makes
+ *      a review whose student/course pair is not that enrollment's own impossible
+ *      to insert. Whether the enrollment is `accepted` and the group has started is
+ *      checked in the service, inside the write transaction — the database cannot
+ *      see "today", but it can see everything else.
+ *   2. A review is MODERATED. Only `published` rows are read by any public query,
+ *      and `published` is reachable only through the admin action, which re-checks
+ *      the caller's role inside the same transaction.
+ *   3. A review is SINGULAR. One row per (student, course), reused rather than
+ *      replaced, so editing a published review can pull it back to `pending` and
+ *      remove its old value from the public aggregates without ever leaving two
+ *      rows arguing about the same opinion.
+ *
+ * `courses.rating_x10` / `courses.reviews_count` and the same pair on
+ * `teacher_profiles` are CACHED AGGREGATES of these rows — they are recomputed by
+ * `review-service` inside every transaction that changes visibility, so browse,
+ * sort and filter can keep reading a plain column. They are not a second opinion.
+ */
+
+/**
+ * Lifecycle of one written review.
+ *
+ *   pending   — submitted, not public, waiting for an admin decision.
+ *   published — public, and the ONLY status that feeds any aggregate.
+ *   rejected  — an admin declined it; the student may edit and resubmit.
+ *   withdrawn — THE STUDENT took it back. Not an admin decision, so it carries no
+ *               moderator.
+ */
+export const courseReviewStatus = pgEnum("course_review_status", [
+  "pending",
+  "published",
+  "rejected",
+  "withdrawn",
+]);
+
+export const courseReviews = pgTable(
+  "course_reviews",
+  {
+    id: text("id").primaryKey(),
+    courseId: text("course_id")
+      .notNull()
+      .references(() => courses.id, { onDelete: "cascade" }),
+    /** Author. FK to `student_profiles`, so a teacher or admin cannot be one. */
+    studentUserId: text("student_user_id")
+      .notNull()
+      .references(() => studentProfiles.userId, { onDelete: "cascade" }),
+    /** The accepted enrollment that earned this review. */
+    enrollmentRequestId: text("enrollment_request_id")
+      .notNull()
+      .references(() => enrollmentRequests.id, { onDelete: "restrict" }),
+    rating: integer("rating").notNull(),
+    /** Plain text. Trimmed and length-bounded; escaped at render, never HTML. */
+    body: text("body").notNull(),
+    status: courseReviewStatus("status").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Set only by an admin decision. NULL for pending AND for withdrawn. */
+    moderatedAt: timestamp("moderated_at", { withTimezone: true }),
+    /** The deciding admin. NO ACTION on delete: the trail outlives the operator. */
+    moderatedByAdminUserId: text("moderated_by_admin_user_id").references(() => users.id),
+    /** Optional plain-text explanation shown to the student on a rejection. */
+    moderationReason: text("moderation_reason"),
+  },
+  (table) => [
+    // ONE review per student per course — the row is reused, never duplicated.
+    unique("course_reviews_one_per_student_course").on(table.studentUserId, table.courseId),
+    /*
+     * THE OWNERSHIP PROOF. Every one of the review's three ownership columns must
+     * match ONE real enrollment row, so a crafted request cannot attach student A's
+     * review to student B's enrollment, or move a review onto a different course.
+     */
+    foreignKey({
+      name: "course_reviews_enrollment_owner_fk",
+      columns: [table.enrollmentRequestId, table.studentUserId, table.courseId],
+      foreignColumns: [
+        enrollmentRequests.id,
+        enrollmentRequests.studentUserId,
+        enrollmentRequests.courseId,
+      ],
+    }).onDelete("restrict"),
+    check("course_reviews_rating_range", sql`${table.rating} BETWEEN 1 AND 5`),
+    check("course_reviews_body_trimmed", sql`${table.body} = btrim(${table.body})`),
+    check("course_reviews_body_length", sql`length(${table.body}) BETWEEN 20 AND 1500`),
+    // A pending review has been decided by nobody.
+    check(
+      "course_reviews_pending_is_undecided",
+      sql`${table.status} <> 'pending' OR (${table.moderatedAt} IS NULL AND ${table.moderatedByAdminUserId} IS NULL)`,
+    ),
+    // An admin decision carries both its actor and its moment.
+    check(
+      "course_reviews_decision_has_moderator",
+      sql`${table.status} NOT IN ('published', 'rejected') OR (${table.moderatedAt} IS NOT NULL AND ${table.moderatedByAdminUserId} IS NOT NULL)`,
+    ),
+    // A withdrawal is the student's own act — it is never attributed to an admin.
+    check(
+      "course_reviews_withdrawn_by_student",
+      sql`${table.status} <> 'withdrawn' OR (${table.moderatedAt} IS NULL AND ${table.moderatedByAdminUserId} IS NULL)`,
+    ),
+    check(
+      "course_reviews_reason_only_on_rejection",
+      sql`${table.status} = 'rejected' OR ${table.moderationReason} IS NULL`,
+    ),
+    check(
+      "course_reviews_reason_length",
+      sql`${table.moderationReason} IS NULL OR length(btrim(${table.moderationReason})) BETWEEN 10 AND 300`,
+    ),
+    // The public read: one course's published reviews, newest first.
+    index("course_reviews_course_public_idx")
+      .on(table.courseId, desc(table.createdAt))
+      .where(sql`status = 'published'`),
+    index("course_reviews_student_idx").on(table.studentUserId, table.courseId),
+    // The admin queue: oldest undecided review first.
+    index("course_reviews_status_created_idx").on(table.status, table.createdAt),
+    index("course_reviews_moderator_idx").on(table.moderatedByAdminUserId),
+    index("course_reviews_enrollment_idx").on(table.enrollmentRequestId),
+    // The teacher aggregate joins courses once and filters published rows.
+    index("course_reviews_course_status_idx").on(table.courseId, table.status),
   ],
 );
 
@@ -930,6 +1081,13 @@ export const adminAuditAction = pgEnum("admin_audit_action", [
   "refund_approved",
   "refund_rejected",
   "refund_failed",
+  /*
+   * Phase 19. Publishing a review is an administrative act with a public
+   * consequence: it moves a course's and a teacher's reputation. Recording it here
+   * is what makes "who made this rating what it is" answerable later.
+   */
+  "review_published",
+  "review_rejected",
 ]);
 
 export const adminAuditEvents = pgTable(
@@ -951,7 +1109,12 @@ export const adminAuditEvents = pgTable(
     index("aae_created_idx").on(table.createdAt),
     index("aae_admin_idx").on(table.adminUserId, table.createdAt),
     index("aae_entity_idx").on(table.entityType, table.entityId),
-    check("aae_entity_type_check", sql`${table.entityType} IN ('teacher', 'course', 'refund')`),
+    // Phase 19 adds `review`: moderating a review changes public reputation, so it
+    // is audited exactly like a verification, a publication or a refund decision.
+    check(
+      "aae_entity_type_check",
+      sql`${table.entityType} IN ('teacher', 'course', 'refund', 'review')`,
+    ),
     check("aae_entity_id_check", sql`length(btrim(${table.entityId})) > 0`),
     check("aae_metadata_len", sql`${table.metadata} IS NULL OR length(${table.metadata}) <= 300`),
   ],
@@ -1515,6 +1678,7 @@ export const coursesRelations = relations(courses, ({ one, many }) => ({
   }),
   groups: many(courseGroups),
   syllabus: many(syllabusModules),
+  reviews: many(courseReviews),
 }));
 
 export const courseGroupsRelations = relations(courseGroups, ({ one }) => ({
@@ -1557,6 +1721,18 @@ export const enrollmentRequestsRelations = relations(enrollmentRequests, ({ one 
   course: one(courses, { fields: [enrollmentRequests.courseId], references: [courses.id] }),
 }));
 
+export const courseReviewsRelations = relations(courseReviews, ({ one }) => ({
+  course: one(courses, { fields: [courseReviews.courseId], references: [courses.id] }),
+  student: one(studentProfiles, {
+    fields: [courseReviews.studentUserId],
+    references: [studentProfiles.userId],
+  }),
+  enrollmentRequest: one(enrollmentRequests, {
+    fields: [courseReviews.enrollmentRequestId],
+    references: [enrollmentRequests.id],
+  }),
+}));
+
 export type UserRow = typeof users.$inferSelect;
 export type StudentProfileRow = typeof studentProfiles.$inferSelect;
 export type TeacherProfileRow = typeof teacherProfiles.$inferSelect;
@@ -1572,3 +1748,4 @@ export type AdminAuditEventRow = typeof adminAuditEvents.$inferSelect;
 export type ConversationRow = typeof conversations.$inferSelect;
 export type MessageRow = typeof messages.$inferSelect;
 export type ConversationReadRow = typeof conversationReads.$inferSelect;
+export type CourseReviewRow = typeof courseReviews.$inferSelect;
