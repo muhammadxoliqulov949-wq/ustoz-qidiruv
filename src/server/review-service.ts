@@ -512,10 +512,16 @@ export async function getCourseReviewContext(
   courseId: string,
   viewer: { id: string; role: "student" | "teacher" | "admin" } | null,
 ): Promise<CourseReviewContext> {
-  const eligibility = await getReviewEligibility(courseId, viewer);
-  const own =
-    viewer !== null && viewer.role === "student" ? await getOwnReview(courseId, viewer.id) : null;
-  const reviews = await listPublicCourseReviews(courseId);
+  // Phase 22: the three reads are independent (eligibility, the viewer's own
+  // row, the published list) — issuing them together cuts the course page's
+  // review latency to the slowest of the three instead of their sum.
+  const [eligibility, own, reviews] = await Promise.all([
+    getReviewEligibility(courseId, viewer),
+    viewer !== null && viewer.role === "student"
+      ? getOwnReview(courseId, viewer.id)
+      : Promise.resolve(null),
+    listPublicCourseReviews(courseId),
+  ]);
 
   return {
     reviews,

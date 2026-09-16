@@ -13,6 +13,13 @@ import {
   fieldErrorsFrom,
   type ActionResult,
 } from "../validation";
+import {
+  RATE_LIMIT_POLICIES,
+  RATE_LIMITED_MESSAGE,
+  consumeRateLimit,
+  rateLimitKey,
+} from "../rate-limit";
+import { isUniqueViolation } from "../log";
 
 /* -------------------------------------------------------------------------- */
 /* Enrollment submission and student withdrawal — Phase 11, extended in 13.    */
@@ -52,6 +59,15 @@ export async function submitEnrollmentRequestAction(
         message: "So‘rov ma’lumotlari noto‘g‘ri.",
         fieldErrors: fieldErrorsFrom(parsed.error),
       };
+    }
+
+    // Phase 22: per-student submit budget, before the transaction.
+    const submitBudget = await consumeRateLimit(
+      RATE_LIMIT_POLICIES.enrollmentSubmit,
+      rateLimitKey("enrollment:submit", user.id),
+    );
+    if (!submitBudget.allowed) {
+      return { ok: false, code: "rate_limited", message: RATE_LIMITED_MESSAGE };
     }
 
     const db = getDb();
@@ -163,6 +179,15 @@ export async function submitEnrollmentRequestAction(
     if (error instanceof AuthError) {
       return { ok: false, code: error.code, message: error.message };
     }
+    // Phase 22: a unique violation means a racing double-submit won between
+    // the pre-check and the insert. That is a duplicate, not a server fault.
+    if (isUniqueViolation(error)) {
+      return {
+        ok: false,
+        code: "duplicate_request",
+        message: "Bu guruhga so‘rovingiz allaqachon yuborilgan.",
+      };
+    }
     console.error("submitEnrollmentRequestAction failed", {
       code: (error as { code?: string }).code ?? "unknown",
     });
@@ -178,6 +203,15 @@ export async function cancelEnrollmentRequestAction(form: FormData): Promise<Act
     });
     if (!parsed.success) {
       return { ok: false, code: "invalid_input", message: "Noto‘g‘ri so‘rov identifikatori." };
+    }
+
+    // Phase 22: per-student cancellation budget, before the decision.
+    const cancelBudget = await consumeRateLimit(
+      RATE_LIMIT_POLICIES.enrollmentCancel,
+      rateLimitKey("enrollment:cancel", user.id),
+    );
+    if (!cancelBudget.allowed) {
+      return { ok: false, code: "rate_limited", message: RATE_LIMITED_MESSAGE };
     }
 
     // Phase 13: the service owns ownership, the transition contract, the event

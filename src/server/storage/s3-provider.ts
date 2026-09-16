@@ -173,9 +173,12 @@ export class S3StorageProvider implements StorageProvider {
    * cache and disposition policy cannot be changed by editing the URL:
    *   • `private, no-store`     — a private read must never be shared-cached;
    *   • `inline; filename="…"`  — safe preview for PDF and images, sanitized
-   *                               name only (no header injection, no path);
-   *   • `response-content-type` — pinned to the stored type, so a mislabelled
-   *                               object cannot be rendered as HTML.
+   *                               name only (no header injection, no path).
+   *
+   * The content type is the object's STORED type (set from magic-byte
+   * detection at upload and verified by `headObject` before activation), not
+   * a signed override: only PDF and raster images can ever be stored, so a
+   * private object cannot be rendered as HTML whatever the URL says.
    */
   async createPrivateReadUrl(
     key: string,

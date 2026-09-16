@@ -25,6 +25,12 @@ import {
   formatBytes,
   type FilePurpose,
 } from "@/lib/media";
+import {
+  RATE_LIMIT_POLICIES,
+  RATE_LIMITED_MESSAGE,
+  consumeRateLimit,
+  rateLimitKey,
+} from "../rate-limit";
 
 /* -------------------------------------------------------------------------- */
 /* Media actions — Phase 18.                                                   */
@@ -44,6 +50,25 @@ function failure(scope: string, error: unknown): ActionResult {
   if (error instanceof AuthError) return { ok: false, code: error.code, message: error.message };
   console.error(`${scope} failed`, { code: (error as { code?: string }).code ?? "unknown" });
   return { ok: false, code: "server_error", message: "Amal bajarilmadi." };
+}
+
+/*
+ * Phase 22: uploads of any purpose share one durable per-teacher budget, spent
+ * BEFORE the bytes are read — an upload burst must be refused before the
+ * server buffers megabytes, not after. Removals are intentionally unlimited:
+ * they write no bytes, and every upload/remove cycle is already bounded by
+ * the upload leg.
+ */
+async function consumeUploadBudget(teacherUserId: string): Promise<boolean> {
+  const decision = await consumeRateLimit(
+    RATE_LIMIT_POLICIES.upload,
+    rateLimitKey("upload", teacherUserId),
+  );
+  return decision.allowed;
+}
+
+function uploadRateLimited(): ActionResult {
+  return { ok: false, code: "rate_limited", message: RATE_LIMITED_MESSAGE };
 }
 
 function fromFileResult<T>(result: FileResult<T>, fallback: string): ActionResult<T> {
@@ -107,6 +132,7 @@ export async function uploadTeacherProfileImageAction(form: FormData): Promise<A
     if (!parsed.success) {
       return { ok: false, code: "invalid_input", message: "Ruxsat etilmagan maydon yuborildi." };
     }
+    if (!(await consumeUploadBudget(user.id))) return uploadRateLimited();
     const candidate = await readCandidate(form, "teacher_profile_image");
     if (!candidate.ok) return { ok: false, code: "invalid_input", message: candidate.message };
 
@@ -152,6 +178,7 @@ export async function uploadCourseCoverAction(form: FormData): Promise<ActionRes
     if (!parsed.success) {
       return { ok: false, code: "invalid_input", message: "Kurs identifikatori noto‘g‘ri." };
     }
+    if (!(await consumeUploadBudget(user.id))) return uploadRateLimited();
     const candidate = await readCandidate(form, "course_cover_image");
     if (!candidate.ok) return { ok: false, code: "invalid_input", message: candidate.message };
 
@@ -197,6 +224,7 @@ export async function uploadVerificationDocumentAction(form: FormData): Promise<
     if (!parsed.success) {
       return { ok: false, code: "invalid_input", message: "Hujjat turi ko‘rsatilmagan." };
     }
+    if (!(await consumeUploadBudget(user.id))) return uploadRateLimited();
     const candidate = await readCandidate(form, "teacher_verification_document");
     if (!candidate.ok) return { ok: false, code: "invalid_input", message: candidate.message };
 

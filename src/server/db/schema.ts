@@ -228,6 +228,9 @@ export const sessions = pgTable(
   (table) => [
     uniqueIndex("sessions_token_hash_key").on(table.tokenHash),
     index("sessions_user_id_idx").on(table.userId),
+    // Phase 22: the expired-session sweep deletes by this column after login.
+    // Without the index every login scanned the whole table.
+    index("sessions_expires_at_idx").on(table.expiresAt),
   ],
 );
 
@@ -1624,6 +1627,43 @@ export const teacherVerificationDocuments = pgTable(
     unique("tvd_request_asset_unique").on(table.verificationRequestId, table.fileAssetId),
     index("tvd_request_idx").on(table.verificationRequestId, table.createdAt),
     index("tvd_asset_idx").on(table.fileAssetId),
+  ],
+);
+
+/* ------------------------------ rate limiting ------------------------------ */
+
+/**
+ * Abuse-protection event log — Phase 22.
+ *
+ * ONE row per rate-limited attempt (`login:phone:+998…`, `upload:usr-…`, …),
+ * written by `consumeRateLimit()` in `server/rate-limit.ts`. The count of rows
+ * for a key inside its window IS the usage; the limiter deletes a key's expired
+ * rows on every consume, so the table holds only live windows plus rows whose
+ * keys went quiet (reaped opportunistically by the same function).
+ *
+ * WHY POSTGRES AND NOT MEMORY. Serverless production runs many instances that
+ * share nothing in-process: an in-memory counter would let an attacker spend
+ * the full budget on EVERY instance. Postgres is the only durable, shared
+ * backend this project has, so the budget is enforced where all instances can
+ * see it. No Redis is invented and none is required.
+ *
+ * The key is deliberately opaque text, not a foreign key: login attempts name
+ * identifiers that may not belong to any account (and must still be limited),
+ * and IP-derived keys name no row at all. Keys never contain secrets — phones
+ * and user ids only — and the table carries no payload besides the timestamp.
+ */
+export const rateLimitEvents = pgTable(
+  "rate_limit_events",
+  {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    key: text("key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // The limiter's only access path: a key's rows, newest first, plus the
+    // per-key expiry delete. Both are index range scans.
+    index("rate_limit_events_key_created_idx").on(table.key, table.createdAt),
+    check("rate_limit_events_key_len", sql`length(${table.key}) BETWEEN 1 AND 200`),
   ],
 );
 

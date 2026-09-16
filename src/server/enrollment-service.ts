@@ -224,24 +224,27 @@ export async function getTeacherCapacitySummary(
   teacherUserId: string,
 ): Promise<{ capacity: number; accepted: number; available: number }> {
   const db = getDb();
-  const rows = await db
-    .select({
-      capacity: sum(schema.courseGroups.capacity),
-    })
-    .from(schema.courseGroups)
-    .innerJoin(schema.courses, eq(schema.courses.id, schema.courseGroups.courseId))
-    .where(eq(schema.courses.teacherUserId, teacherUserId));
-
-  const acceptedRows = await db
-    .select({ total: count(schema.enrollmentRequests.id) })
-    .from(schema.enrollmentRequests)
-    .innerJoin(schema.courses, eq(schema.courses.id, schema.enrollmentRequests.courseId))
-    .where(
-      and(
-        eq(schema.courses.teacherUserId, teacherUserId),
-        eq(schema.enrollmentRequests.status, "accepted"),
+  // Phase 22: the capacity sum and the accepted count are independent —
+  // issuing them together halves this overview tile's database round trips.
+  const [rows, acceptedRows] = await Promise.all([
+    db
+      .select({
+        capacity: sum(schema.courseGroups.capacity),
+      })
+      .from(schema.courseGroups)
+      .innerJoin(schema.courses, eq(schema.courses.id, schema.courseGroups.courseId))
+      .where(eq(schema.courses.teacherUserId, teacherUserId)),
+    db
+      .select({ total: count(schema.enrollmentRequests.id) })
+      .from(schema.enrollmentRequests)
+      .innerJoin(schema.courses, eq(schema.courses.id, schema.enrollmentRequests.courseId))
+      .where(
+        and(
+          eq(schema.courses.teacherUserId, teacherUserId),
+          eq(schema.enrollmentRequests.status, "accepted"),
+        ),
       ),
-    );
+  ]);
 
   const capacity = Number(rows[0]?.capacity ?? 0);
   const accepted = Number(acceptedRows[0]?.total ?? 0);

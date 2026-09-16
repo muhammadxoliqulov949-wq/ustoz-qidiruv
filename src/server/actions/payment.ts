@@ -6,6 +6,12 @@ import { paymeConfig, paymentsEnabled } from "../env";
 import { ensurePaymentForEnrollment } from "../payments/payment-service";
 import { paymeProvider } from "../payments/payme-adapter";
 import { startPaymentSchema, type ActionResult } from "../validation";
+import {
+  RATE_LIMIT_POLICIES,
+  RATE_LIMITED_MESSAGE,
+  consumeRateLimit,
+  rateLimitKey,
+} from "../rate-limit";
 
 /* -------------------------------------------------------------------------- */
 /* Student payment initiation — Phase 14.                                      */
@@ -57,6 +63,15 @@ export async function startPaymentAction(
     });
     if (!parsed.success) {
       return { ok: false, code: "invalid_input", message: "Noto‘g‘ri yozilish identifikatori." };
+    }
+
+    // Phase 22: per-student initiation budget, before the obligation path runs.
+    const budget = await consumeRateLimit(
+      RATE_LIMIT_POLICIES.paymentStart,
+      rateLimitKey("payment:start", user.id),
+    );
+    if (!budget.allowed) {
+      return { ok: false, code: "rate_limited", message: RATE_LIMITED_MESSAGE };
     }
 
     // Ownership, accepted-status and free-course rules all live in the service.

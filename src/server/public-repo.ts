@@ -1,5 +1,6 @@
 import "server-only";
 import { and, asc, count, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { cache } from "react";
 import { getDb, schema } from "./db/client";
 import { publicMediaIndex, teacherPhotoUrl } from "./file-service";
 import { getAcceptedCounts } from "./enrollment-service";
@@ -353,7 +354,7 @@ export async function listPublicCourses(
 }
 
 /** Full public course by slug, including groups and ordered syllabus. */
-export async function getPublicCourseBySlug(slug: string): Promise<Course | null> {
+async function fetchPublicCourseBySlug(slug: string): Promise<Course | null> {
   const db = getDb();
   const rows = await db
     .select({ course: schema.courses, teacher: schema.teacherProfiles })
@@ -400,6 +401,15 @@ export async function getPublicCourseBySlug(slug: string): Promise<Course | null
   return course;
 }
 
+/*
+ * Phase 22: request-memoized. `generateMetadata` and the page component
+ * run in the SAME request and ask for the SAME row, so without this every
+ * detail page paid for its course/teacher read twice. `cache()` is
+ * request-scoped (a new request re-reads; revalidation still takes
+ * effect immediately) and a transparent passthrough outside React.
+ */
+export const getPublicCourseBySlug = cache(fetchPublicCourseBySlug);
+
 /* ------------------------------ teacher reads ----------------------------- */
 
 /**
@@ -435,8 +445,18 @@ export async function listPublicTeachers(): Promise<TeacherRow[]> {
   const FORMAT_ORDER: CourseFormat[] = ["online", "offline", "hybrid"];
   const rows: TeacherRow[] = [];
 
+  // Phase 22: group once (O(teachers + courses)) instead of filtering the
+  // whole course list per teacher (O(teachers × courses)). Same membership,
+  // same order — the filter below used to re-scan `courseRows` for every row.
+  const coursesByTeacher = new Map<string, typeof courseRows>();
+  for (const course of courseRows) {
+    const list = coursesByTeacher.get(course.teacherUserId);
+    if (list) list.push(course);
+    else coursesByTeacher.set(course.teacherUserId, [course]);
+  }
+
   for (const teacher of teacherRows) {
-    const own = courseRows.filter((course) => course.teacherUserId === teacher.userId);
+    const own = coursesByTeacher.get(teacher.userId) ?? [];
     if (own.length === 0) continue; // no published course → not in the directory
 
     const categoryIds: string[] = [];
@@ -468,7 +488,7 @@ export async function listPublicTeachers(): Promise<TeacherRow[]> {
   return withTeacherPhotos(rows);
 }
 
-export async function getPublicTeacherBySlug(
+async function fetchPublicTeacherBySlug(
   slug: string,
 ): Promise<{ row: TeacherRow; courses: Course[] } | null> {
   const db = getDb();
@@ -565,6 +585,15 @@ export async function getPublicTeacherBySlug(
     courses,
   };
 }
+
+/*
+ * Phase 22: request-memoized. `generateMetadata` and the page component
+ * run in the SAME request and ask for the SAME row, so without this every
+ * detail page paid for its course/teacher read twice. `cache()` is
+ * request-scoped (a new request re-reads; revalidation still takes
+ * effect immediately) and a transparent passthrough outside React.
+ */
+export const getPublicTeacherBySlug = cache(fetchPublicTeacherBySlug);
 
 /* ------------------------------ facet options ----------------------------- */
 
@@ -728,21 +757,27 @@ export async function getCategoryCourseCounts(): Promise<Map<string, number>> {
  * render the teacher block without importing the canonical teacher array.
  * Returns null when the teacher is not publicly visible.
  */
-export async function getPublicTeacherById(userId: string): Promise<Teacher | null> {
+async function fetchPublicTeacherById(userId: string): Promise<Teacher | null> {
   const db = getDb();
-  const rows = await db
-    .select()
-    .from(schema.teacherProfiles)
-    .where(and(eq(schema.teacherProfiles.userId, userId), eq(schema.teacherProfiles.isPublic, true)))
-    .limit(1);
+  // Phase 22: the profile row and the owned-course count are independent —
+  // issuing them together halves this lookup's database round trips.
+  const [rows, owned] = await Promise.all([
+    db
+      .select()
+      .from(schema.teacherProfiles)
+      .where(
+        and(eq(schema.teacherProfiles.userId, userId), eq(schema.teacherProfiles.isPublic, true)),
+      )
+      .limit(1),
+    db
+      .select({ total: count(schema.courses.id) })
+      .from(schema.courses)
+      .where(
+        and(eq(schema.courses.teacherUserId, userId), eq(schema.courses.status, PUBLIC_STATUS)),
+      ),
+  ]);
   const teacher = rows[0];
   if (!teacher) return null;
-  const owned = await db
-    .select({ total: count(schema.courses.id) })
-    .from(schema.courses)
-    .where(
-      and(eq(schema.courses.teacherUserId, userId), eq(schema.courses.status, PUBLIC_STATUS)),
-    );
   const projected = toTeacher(teacher, Number(owned[0]?.total ?? 0));
   // Managed image wins; the legacy `/media/...` path stays the fallback.
   try {
@@ -752,3 +787,12 @@ export async function getPublicTeacherById(userId: string): Promise<Teacher | nu
     return projected;
   }
 }
+
+/*
+ * Phase 22: request-memoized. `generateMetadata` and the page component
+ * run in the SAME request and ask for the SAME row, so without this every
+ * detail page paid for its course/teacher read twice. `cache()` is
+ * request-scoped (a new request re-reads; revalidation still takes
+ * effect immediately) and a transparent passthrough outside React.
+ */
+export const getPublicTeacherById = cache(fetchPublicTeacherById);

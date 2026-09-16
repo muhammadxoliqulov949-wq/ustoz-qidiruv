@@ -18,6 +18,12 @@ import {
   type ActionResult,
 } from "../validation";
 import { normalizeModerationReason } from "../review-service";
+import {
+  RATE_LIMIT_POLICIES,
+  RATE_LIMITED_MESSAGE,
+  consumeRateLimit,
+  rateLimitKey,
+} from "../rate-limit";
 
 /* -------------------------------------------------------------------------- */
 /* Review actions — Phase 19.                                                  */
@@ -73,6 +79,23 @@ function courseSlugFrom(form: FormData): string {
   return /^[a-z0-9]+(-[a-z0-9]+)*$/.test(raw) ? raw : "";
 }
 
+/*
+ * Phase 22: student review writes share one durable per-student budget, spent
+ * BEFORE the service runs. Admin moderation is intentionally unlimited —
+ * operators are trusted, few, and every decision is audit-logged.
+ */
+async function consumeStudentReviewBudget(studentUserId: string): Promise<boolean> {
+  const decision = await consumeRateLimit(
+    RATE_LIMIT_POLICIES.reviewMutation,
+    rateLimitKey("review:mutation", studentUserId),
+  );
+  return decision.allowed;
+}
+
+function reviewRateLimited(): ActionResult {
+  return { ok: false, code: "rate_limited", message: RATE_LIMITED_MESSAGE };
+}
+
 /* ------------------------------- student side ------------------------------ */
 
 /** Create a review. Lands as `pending` — no student path publishes. */
@@ -94,6 +117,8 @@ export async function createReviewAction(form: FormData): Promise<ActionResult> 
         fieldErrors: { [parsed.error.issues[0]?.path[0] ?? "body"]: message },
       };
     }
+
+    if (!(await consumeStudentReviewBudget(student.id))) return reviewRateLimited();
 
     const result = await createReview({
       // The author is the session. Nothing in the payload can change it.
@@ -137,6 +162,8 @@ export async function updateReviewAction(form: FormData): Promise<ActionResult> 
       };
     }
 
+    if (!(await consumeStudentReviewBudget(student.id))) return reviewRateLimited();
+
     const result = await updateOwnReview({
       reviewId: parsed.data.reviewId,
       studentUserId: student.id,
@@ -162,6 +189,8 @@ export async function withdrawReviewAction(form: FormData): Promise<ActionResult
     if (!parsed.success) {
       return { ok: false, code: "invalid_input", message: "Noto‘g‘ri fikr identifikatori." };
     }
+
+    if (!(await consumeStudentReviewBudget(student.id))) return reviewRateLimited();
 
     const result = await withdrawOwnReview({
       reviewId: parsed.data.reviewId,
