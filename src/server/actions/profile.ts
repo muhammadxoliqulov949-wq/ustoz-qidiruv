@@ -6,9 +6,9 @@ import { AuthError, requireRole } from "../auth/guards";
 import {
   fieldErrorsFrom,
   studentProfileSchema,
-  teacherProfileSchema,
   type ActionResult,
 } from "../validation";
+import { saveTeacherProfile, teacherProfileFormCandidate } from "../profile-service";
 
 /* -------------------------------------------------------------------------- */
 /* Profile / onboarding persistence — Phase 11.                                */
@@ -70,37 +70,14 @@ export async function saveStudentProfileAction(form: FormData): Promise<ActionRe
 export async function saveTeacherProfileAction(form: FormData): Promise<ActionResult> {
   try {
     const user = await requireRole("teacher");
-    const experienceRaw = String(form.get("experienceYears") ?? "");
-    const parsed = teacherProfileSchema.safeParse({
-      name: String(form.get("name") ?? ""),
-      city: form.get("city") === "" || form.get("city") === null ? null : String(form.get("city")),
-      district: String(form.get("district") ?? ""),
-      categories: form.getAll("categories").map(String),
-      levels: form.getAll("levels").map(String),
-      formats: form.getAll("formats").map(String),
-      languages: form.getAll("languages").map(String),
-      experienceYears: experienceRaw === "" ? null : Number(experienceRaw),
-      bio: String(form.get("bio") ?? ""),
-      approach: String(form.get("approach") ?? ""),
-      onboardingCompleted: form.get("onboardingCompleted") === "1",
-    });
-    if (!parsed.success) {
-      return {
-        ok: false,
-        code: "invalid_input",
-        message: "Ma’lumotlarni tekshiring.",
-        fieldErrors: fieldErrorsFrom(parsed.error),
-      };
-    }
-
-    const db = getDb();
-    // NOTE: `verification` and `slug` are deliberately absent from the SET —
-    // self-verification and slug hijacking are impossible through this action.
-    await db
-      .update(schema.teacherProfiles)
-      .set({ ...parsed.data, updatedAt: new Date() })
-      .where(eq(schema.teacherProfiles.userId, user.id));
-    return { ok: true };
+    /*
+     * Identity from the session, values from the form. The write lives in
+     * profile-service so the verification suite can prove the persisted fields
+     * are the ones verification reads; the schema there is `.strict()`, so a
+     * payload carrying `verification`, `slug`, `photo` or a user id is rejected
+     * rather than applied.
+     */
+    return await saveTeacherProfile(user.id, teacherProfileFormCandidate(form));
   } catch (error) {
     return toResult(error);
   }

@@ -21,7 +21,16 @@ export function TeacherSavedProfile({ profile }: { profile: TeacherProfileRow | 
     ? [
         { label: "Ism", value: profile.name.trim() === "" ? null : profile.name },
         {
-          label: "Yo‘nalishlar",
+          /* The public “Yo‘nalish” label — a verification requirement, so it is
+           * echoed here exactly as the reviewer will see it. */
+          label: "Yo‘nalish (mutaxassislik)",
+          value:
+            profile.specialization === null || profile.specialization.trim() === ""
+              ? null
+              : profile.specialization,
+        },
+        {
+          label: "Yo‘nalishlar (fanlar)",
           value:
             profile.categories.length === 0
               ? null

@@ -169,7 +169,10 @@ export default async function TeacherVerificationPage() {
             <h3 className="text-sm font-medium text-ink-700">{VERIFICATION_INELIGIBLE_NOTE}</h3>
             <ul className="mt-2 flex list-disc flex-col gap-1 ps-5 text-base text-ink-900">
               {state.missing.map((requirement) => (
-                <li key={requirement.key}>{requirement.label}</li>
+                <li key={requirement.key}>
+                  {requirement.label}
+                  <span className="text-ink-500"> — {requirement.hint}</span>
+                </li>
               ))}
             </ul>
             <p className="mt-2 text-sm">

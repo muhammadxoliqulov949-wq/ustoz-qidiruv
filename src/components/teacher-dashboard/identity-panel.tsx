@@ -50,7 +50,9 @@ export function TeacherIdentityPanel({
       </div>
       {onboardingCompleted ? null : (
         <Link
-          href="/onboarding"
+          /* The editable persisted profile lives in the teacher's own cabinet —
+           * that is where the verification fields are filled in. */
+          href="/teacher/dashboard/profile"
           className="text-sm font-medium text-accent-700 underline underline-offset-2"
         >
           Profilni to‘ldirish

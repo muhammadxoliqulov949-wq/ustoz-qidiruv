@@ -44,6 +44,9 @@ npm run test:messaging   # private conversation suite
 npm run test:admin       # admin moderation/verification/refund suite
 npm run test:reviews     # reviews + reputation suite
 npm run test:data-consistency # Phase 20 data-consistency regression suite
+npm run test:phase22      # Phase 22 hardening suite
+npm run test:phase23      # Phase 23 operations suite
+npm run test:phase23-profile # Phase 23 profile/verification regression suite
 ```
 
 ## Design system (Phase 1)
@@ -2634,3 +2637,103 @@ The product intentionally does not ship provider-backed e-mail/SMS, an admin
 account reactivation UI, hard deletion of business records, live-course content
 editing, automatic scheduling, or a background job platform. These are explicit
 boundaries rather than placeholder controls.
+# Phase 23 (QA blocker fix) — the profile a verification application actually needs
+
+Manual QA found a dead end: `/teacher/dashboard/verification` refuses an
+application until six profile fields are filled in — **Yo‘nalish, Shahar, Dars
+tillari, Tajriba (yil), O‘zingiz haqingizda, Dars o‘tish uslubi** — but
+`/teacher/dashboard/profile` had no control that wrote any of them to the
+database. Its only editor (`TeacherProfilePanel`) saved the Phase 6
+browser-local onboarding draft and said so in its own copy (“serverga hech
+narsa yuborilmaydi”), and `teacher_profiles.specialization` had no write path at
+all: it was seeded for catalogue teachers and read by the public profile, the
+admin queue and the verification predicate, but nothing a teacher could do ever
+set it. A teacher was therefore *required* to supply data they could not enter,
+and “Tasdiqlash uchun yuborish” could never become enabled for a self-registered
+account.
+
+## What changed
+
+The fix adds no new columns and no second profile model. It writes the
+`teacher_profiles` row the verification predicate already reads.
+
+| Concern | Where it lives |
+| --- | --- |
+| Editable form for the persisted profile | `src/components/teacher-dashboard/profile-editor.tsx` (new, client) |
+| Which fields the form posts, and their bounds | `src/lib/teacher-profile.ts` (new, pure) |
+| FormData → validated object, and the UPDATE | `src/server/profile-service.ts` (new) |
+| Requirement list, thresholds, row→predicate mapping, button rule | `src/lib/teacher-verification.ts` |
+| The `.strict()` write schema (now including `specialization`) | `src/server/validation.ts` |
+
+- **`TeacherProfileEditor`** renders every persisted, teacher-editable column:
+  name, specialization, city, district, languages, experience years, categories,
+  levels, formats, bio and approach. The seven verification-backed fields are
+  captioned from `VERIFICATION_REQUIREMENTS` itself, so a label cannot promise a
+  threshold the predicate does not apply, and the live “what is still missing”
+  list is `missingVerificationRequirements()` called on the form's own values —
+  the same function the verification page and the submission transaction call on
+  the stored row. Saving posts `buildTeacherProfileFormData()` to the existing
+  `saveTeacherProfileAction`, then `router.refresh()` re-reads the row, so what
+  the screen shows afterwards is the database, not local state.
+- **`specialization`** is now part of `teacherProfileSchema` (≤ 120 chars, empty
+  → `NULL`) and therefore writable by the teacher who owns the row. It is the
+  same column the public profile and the admin review screen already display.
+- **`profile-service.ts`** holds the write (`saveTeacherProfile`) and the reader
+  (`teacherProfileFormCandidate`). They are separated from the action for the
+  same reason `verification-service` exists: an action resolves the *session* and
+  so cannot be called outside a request, which made the write untestable. The
+  action is now `requireRole("teacher")` + one call.
+- **One row→predicate mapping.** `verificationProfileInput()` is the only place
+  that turns a stored profile into the predicate's input, and the verification
+  service (both the read and the submit path) and the editor's live counter all
+  go through it. “Eligibility uses the same persisted data” is now a property of
+  the code.
+- **One button rule.** `verificationSubmitEnabled({eligible, documentsReady,
+  pending})` is exported and used by the submit button, so the rendered control
+  and the tests evaluate the identical expression.
+- **Nothing was loosened.** `verification` / `slug` / `photo` are still not in
+  the write schema — `.strict()` rejects a payload carrying them instead of
+  stripping it, so self-verification and slug hijacking remain unparseable. The
+  Phase 18 evidence requirement is untouched: a complete profile *without* an
+  identity document is still refused with `missing_documents`, and completeness
+  is still re-checked inside the submission transaction. The managed profile
+  image uploader (`ProfileImageManager`) is unchanged and remains above the form.
+- **One copy fix:** the sidebar “Profilni to‘ldirish” link pointed at
+  `/onboarding`; it now points at `/teacher/dashboard/profile`, where the fields
+  actually are.
+
+## Tests
+
+`tests/phase23-profile.test.ts` (`npm run test:phase23-profile`, 62 checks) runs against
+PGlite with the committed migrations and the local storage provider:
+
+1. **The blocker as it was** — a freshly registered teacher is ineligible, the
+   six QA fields are exactly what is missing, and the submission is refused with
+   `ineligible`.
+2. **Coverage** — every requirement has an editable field, each of those names is
+   both a posted form field and a real `teacher_profiles` column, and the page
+   still renders the image uploader.
+3. **Save → reload** — through the browser's FormData builder, the server reader,
+   the schema and the UPDATE; a second save overwrites, and reopening the editor
+   shows the stored values.
+4. **Shared data source** — after the save the teacher is eligible, the predicate
+   input the service builds *is* the persisted row, and the button rule enables
+   on exactly one condition.
+5. **Not weakened** — unknown city, over-long text, bad experience values,
+   over-posted `verification` / `slug` / `photo` and field-less payloads are all
+   rejected with the row unchanged; an unknown teacher gets `not_found`; a
+   complete profile without evidence is still refused.
+6. **Empty values** decode to `NULL`, and clearing Yo‘nalish makes the teacher
+   ineligible again.
+7. **End to end** — complete profile + uploaded evidence submits, moves to
+   `pending`, and a second application is refused.
+
+The suite was mutation-checked: dropping `specialization` from the reader or from
+the UPDATE, and removing `documentsReady` from the button rule, each fail it.
+
+## Commands
+
+```bash
+npm run test:phase23-profile   # this suite (62 checks)
+npm run test:admin     # verification lifecycle, unchanged and still green
+```

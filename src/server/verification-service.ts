@@ -9,6 +9,7 @@ import {
   VERIFICATION_DOCUMENTS_REQUIRED_NOTE,
   isVerificationEligible,
   missingVerificationRequirements,
+  verificationProfileInput,
   type VerificationRequestState,
   type VerificationState,
 } from "@/lib/teacher-verification";
@@ -132,18 +133,12 @@ export async function getTeacherVerificationState(
 
   /*
    * Eligibility is computed from the SAME pure requirement list the UI shows,
-   * so the form never offers a submission the server would refuse.
+   * through the SAME row-to-predicate mapping the profile editor previews —
+   * so the form never offers a submission the server would refuse, and the
+   * fields a teacher edits are provably the fields this reads.
    */
   const missing = profile
-    ? missingVerificationRequirements({
-        name: profile.name,
-        specialization: profile.specialization,
-        city: profile.city,
-        languages: profile.languages,
-        bio: profile.bio,
-        approach: profile.approach,
-        experienceYears: profile.experienceYears,
-      })
+    ? missingVerificationRequirements(verificationProfileInput(profile))
     : [];
 
   return {
@@ -223,17 +218,7 @@ export async function submitVerificationRequest(
        * Completeness is enforced on the SERVER. `isVerificationEligible` is the
        * same pure predicate the dashboard renders, so the two cannot drift.
        */
-      if (
-        !isVerificationEligible({
-          name: profile.name,
-          specialization: profile.specialization,
-          city: profile.city,
-          languages: profile.languages,
-          bio: profile.bio,
-          approach: profile.approach,
-          experienceYears: profile.experienceYears,
-        })
-      ) {
+      if (!isVerificationEligible(verificationProfileInput(profile))) {
         return {
           ok: false as const,
           code: "ineligible" as const,

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { VERIFICATION_DOCUMENT_TYPES } from "@/lib/media";
+import { TEACHER_PROFILE_LIMITS } from "@/lib/teacher-profile";
 import { categories } from "@/data/categories";
 import { isValidEmail, normalizeEmail } from "@/lib/email";
 import {
@@ -170,17 +171,39 @@ export const studentProfileSchema = z
 export const teacherProfileSchema = z
   .object({
     name: nameSchema,
+    /*
+     * `specialization` is the public “Yo‘nalish” label AND a verification
+     * requirement, so it is part of the teacher-editable profile: an empty value
+     * is stored as NULL rather than as an empty string, which is what the
+     * verification predicate expects for "not stated".
+     */
+    specialization: z
+      .string()
+      .trim()
+      .max(
+        TEACHER_PROFILE_LIMITS.SPECIALIZATION_MAX,
+        `Yo‘nalish ${TEACHER_PROFILE_LIMITS.SPECIALIZATION_MAX} belgidan oshmasin.`,
+      )
+      .nullable()
+      .transform((value) => (value === null || value.trim() === "" ? null : value.trim())),
     city: citySchema,
-    district: z.string().trim().max(120),
+    district: z.string().trim().max(TEACHER_PROFILE_LIMITS.DISTRICT_MAX),
     categories: z
       .array(z.string().refine((slug) => CATEGORY_SET.has(slug), "Noma’lum yo‘nalish."))
-      .max(3),
-    levels: z.array(z.enum(["boshlangich", "orta", "yuqori"])).max(3),
-    formats: z.array(z.enum(["online", "offline"])).max(2),
+      .max(TEACHER_PROFILE_LIMITS.CATEGORIES_MAX),
+    levels: z
+      .array(z.enum(["boshlangich", "orta", "yuqori"]))
+      .max(TEACHER_PROFILE_LIMITS.LEVELS_MAX),
+    formats: z.array(z.enum(["online", "offline"])).max(TEACHER_PROFILE_LIMITS.FORMATS_MAX),
     languages: languagesSchema,
-    experienceYears: z.number().int().min(0).max(60).nullable(),
-    bio: z.string().trim().max(1200),
-    approach: z.string().trim().max(1200),
+    experienceYears: z
+      .number()
+      .int()
+      .min(TEACHER_PROFILE_LIMITS.EXPERIENCE_MIN)
+      .max(TEACHER_PROFILE_LIMITS.EXPERIENCE_MAX)
+      .nullable(),
+    bio: z.string().trim().max(TEACHER_PROFILE_LIMITS.BIO_MAX),
+    approach: z.string().trim().max(TEACHER_PROFILE_LIMITS.APPROACH_MAX),
     onboardingCompleted: z.boolean(),
   })
   .strict();

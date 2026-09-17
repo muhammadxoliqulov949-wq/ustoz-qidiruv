@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { demoWorkspaceEnabled } from "@/server/env";
+import { TeacherProfileEditor } from "@/components/teacher-dashboard/profile-editor";
 import { TeacherProfilePanel } from "@/components/teacher-dashboard/profile-panel";
 import { TeacherSavedProfile } from "@/components/teacher-dashboard/saved-profile";
 import { requireRolePage } from "@/server/auth/guards";
@@ -8,10 +9,18 @@ import { ProfileImageManager } from "@/components/teacher-dashboard/profile-imag
 import { teacherProfileMedia } from "@/server/file-service";
 import { storageStatus } from "@/server/storage";
 import { MEDIA_STORAGE_DISABLED_NOTE } from "@/lib/media";
+import { profileToEditValues } from "@/lib/teacher-profile";
 
 export const metadata: Metadata = { title: "Profil" };
 
-/* /teacher/dashboard/profile — catalog record (read-only) + Phase 6 teacher draft. */
+/*
+ * /teacher/dashboard/profile — the teacher's OWN persisted profile, editable.
+ *
+ * Order matters: the managed image uploader, then the form that writes the
+ * `teacher_profiles` row, then a read-only echo of what is stored, then the
+ * legacy browser-only draft panel. The editable form is not optional here — it
+ * is the only way to fill the fields /teacher/dashboard/verification requires.
+ */
 export default async function TeacherProfilePage() {
   // Demo flag resolved on the SERVER; it grants no access of any kind.
   const user = await requireRolePage("teacher", "/teacher/dashboard/profile");
@@ -48,6 +57,11 @@ export default async function TeacherProfilePage() {
         hasManagedImage={media.hasManaged}
         teacherName={profile?.name ?? "Ustoz"}
         storageNote={storageNote}
+      />
+      {/* The persisted profile, editable — the fields verification requires. */}
+      <TeacherProfileEditor
+        initialValues={profileToEditValues(profile)}
+        verificationState={profile?.verification ?? "unverified"}
       />
       <TeacherSavedProfile profile={profile} />
       <TeacherProfilePanel directory={directory} demoEnabled={demoEnabled} />
