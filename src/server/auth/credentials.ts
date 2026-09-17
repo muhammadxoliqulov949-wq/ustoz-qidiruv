@@ -1,5 +1,5 @@
 import "server-only";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb, schema } from "../db/client";
 import { normalizeEmail } from "@/lib/email";
 import { verifyPassword } from "./password";
@@ -61,7 +61,7 @@ export async function authenticatePhone(
       passwordHash: schema.users.passwordHash,
     })
     .from(schema.users)
-    .where(eq(schema.users.phone, phone))
+    .where(and(eq(schema.users.phone, phone), eq(schema.users.accountStatus, "active")))
     .limit(1);
 
   const user = rows[0];
@@ -92,7 +92,7 @@ export async function authenticateAdminEmail(
       passwordHash: schema.users.passwordHash,
     })
     .from(schema.users)
-    .where(eq(schema.users.email, normalizeEmail(email)))
+    .where(and(eq(schema.users.email, normalizeEmail(email)), eq(schema.users.accountStatus, "active")))
     .limit(1);
 
   const user = rows[0];

@@ -85,6 +85,13 @@
       "when": 1789578344284,
       "tag": "0011_phase22_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1789616956587,
+      "tag": "0012_phase23_operations",
+      "breakpoints": true
     }
   ]
 }

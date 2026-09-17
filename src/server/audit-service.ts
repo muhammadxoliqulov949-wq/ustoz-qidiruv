@@ -1,5 +1,5 @@
 import "server-only";
-import { desc, eq } from "drizzle-orm";
+import { count, desc, eq } from "drizzle-orm";
 import { getDb, schema } from "./db/client";
 import { newId } from "./auth/ids";
 
@@ -100,8 +100,12 @@ export interface AuditEventView {
  * deleted row (the log outlives its subject), so nothing here joins to the
  * entity itself.
  */
-export async function listAuditEvents(options: { limit?: number } = {}): Promise<AuditEventView[]> {
+export async function listAuditEvents(
+  options: { limit?: number; offset?: number } = {},
+): Promise<AuditEventView[]> {
   const db = getDb();
+  const limit = Math.min(Math.max(options.limit ?? 50, 1), 100);
+  const offset = Math.max(options.offset ?? 0, 0);
   const rows = await db
     .select({
       id: schema.adminAuditEvents.id,
@@ -118,8 +122,9 @@ export async function listAuditEvents(options: { limit?: number } = {}): Promise
       schema.teacherProfiles,
       eq(schema.teacherProfiles.userId, schema.adminAuditEvents.adminUserId),
     )
-    .orderBy(desc(schema.adminAuditEvents.createdAt))
-    .limit(options.limit ?? 100);
+    .orderBy(desc(schema.adminAuditEvents.createdAt), desc(schema.adminAuditEvents.id))
+    .limit(limit)
+    .offset(offset);
 
   return rows.map((row) => ({
     id: row.id,
@@ -143,7 +148,7 @@ export async function listAuditEvents(options: { limit?: number } = {}): Promise
 export async function countAuditEvents(): Promise<number> {
   const db = getDb();
   const rows = await db
-    .select({ id: schema.adminAuditEvents.id })
+    .select({ total: count(schema.adminAuditEvents.id) })
     .from(schema.adminAuditEvents);
-  return rows.length;
+  return Number(rows[0]?.total ?? 0);
 }

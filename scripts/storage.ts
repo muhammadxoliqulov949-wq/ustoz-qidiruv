@@ -66,8 +66,10 @@ async function cleanup(): Promise<void> {
   const hours = Number(flag("hours") ?? "24");
   const limit = Number(flag("limit") ?? "500");
 
-  if (!Number.isFinite(hours) || hours < 0) throw new Error("--hours must be a positive number");
-  if (!Number.isFinite(limit) || limit < 1) throw new Error("--limit must be a positive number");
+  if (!Number.isFinite(hours) || hours < 0) throw new Error("--hours must be a non-negative number");
+  if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
+    throw new Error("--limit must be an integer between 1 and 1000");
+  }
 
   const report = await cleanupStorage({
     pendingOlderThanHours: hours,
@@ -83,11 +85,15 @@ async function cleanup(): Promise<void> {
     console.log("dry run: nothing was changed. Re-run without --dry-run to apply.");
   }
   if (report.failed > 0) {
-    console.log(
+    console.error(
       `${report.failed} object operation(s) failed. Rows are already marked deleted,\n` +
         "so the next run will retry them; repeated failures point at provider\n" +
         "permissions or network access, not at the database.",
     );
+    // A cleanup command must be observable as failed by cron/CI. The report is
+    // still printed above so an operator can diagnose it without any secret
+    // payloads, but the process exits non-zero.
+    process.exitCode = 1;
   }
 }
 
@@ -129,9 +135,14 @@ if (run === null) {
 }
 
 run().catch((error: unknown) => {
-  // Never print a credential or a provider payload.
-  console.error(
-    `storage command failed: ${error instanceof Error ? error.message : "unknown error"}`,
-  );
+  // Never print a credential, connection string or provider payload. Error
+  // messages from SDKs may include deployment details, so log only a code/type.
+  const code =
+    error && typeof error === "object" && "code" in error && typeof error.code === "string"
+      ? error.code
+      : error instanceof Error
+        ? error.name
+        : "unknown";
+  console.error(`storage command failed: ${code}`);
   process.exit(1);
 });

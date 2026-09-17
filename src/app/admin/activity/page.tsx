@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { requireAdminPage } from "@/server/auth/guards";
 import Link from "next/link";
 import { AdminPanel, formatAdminDateTime, isoDate } from "@/components/admin/admin-ui";
-import { Badge } from "@/components/ui";
+import { Badge, ButtonLink } from "@/components/ui";
 import { EmptyState } from "@/components/dashboard/empty-state";
 import { countAuditEvents, listAuditEvents } from "@/server/audit-service";
 import type { AdminAuditAction } from "@/server/audit-service";
@@ -81,7 +81,11 @@ const ENTITY_LABEL: Record<"teacher" | "course" | "refund" | "review", string> =
   review: "Fikr",
 };
 
-export default async function AdminActivityPage() {
+export default async function AdminActivityPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   /*
    * DEFENCE IN DEPTH (Phase 18). The admin layout renders the refusal
    * screen for a non-admin session, but a page must never PRODUCE data for
@@ -92,7 +96,14 @@ export default async function AdminActivityPage() {
   const admin = await requireAdminPage("/admin/activity");
   if (!admin) return null;
 
-  const [events, total] = await Promise.all([listAuditEvents({ limit: 200 }), countAuditEvents()]);
+  const params = await searchParams;
+  const rawPage = Number(Array.isArray(params.page) ? params.page[0] : params.page);
+  const requestedPage = Number.isInteger(rawPage) && rawPage > 0 ? rawPage : 1;
+  const limit = 50;
+  const total = await countAuditEvents();
+  const pageCount = Math.max(1, Math.ceil(total / limit));
+  const page = Math.min(requestedPage, pageCount);
+  const events = await listAuditEvents({ limit, offset: (page - 1) * limit });
 
   return (
     <div className="flex flex-col gap-6">
@@ -142,11 +153,23 @@ export default async function AdminActivityPage() {
             ))}
           </ul>
         )}
-        {events.length < total ? (
-          <p className="text-sm text-ink-500">
-            Oxirgi {events.length} ta yozuv ko‘rsatilgan. Jami {total} ta.
-          </p>
-        ) : null}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+          <span className="text-sm text-ink-500">
+            {events.length ? `${(page - 1) * limit + 1}–${Math.min(page * limit, total)} / ${total}` : "0 / 0"}
+          </span>
+          <div className="flex gap-2">
+            {page > 1 ? (
+              <ButtonLink href={`/admin/activity?page=${page - 1}`} variant="outline" size="sm">
+                Oldingi
+              </ButtonLink>
+            ) : null}
+            {page < pageCount ? (
+              <ButtonLink href={`/admin/activity?page=${page + 1}`} variant="outline" size="sm">
+                Keyingi
+              </ButtonLink>
+            ) : null}
+          </div>
+        </div>
       </AdminPanel>
     </div>
   );

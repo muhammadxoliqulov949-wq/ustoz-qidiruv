@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BadgeCheck, Bell, BookOpen, Inbox, LayoutGrid, MessageSquare, UserRound } from "lucide-react";
+import { BadgeCheck, Bell, BookOpen, Inbox, LayoutGrid, MessageSquare, Settings, UserRound } from "lucide-react";
 import type { ComponentType } from "react";
 import { cn, focusRing } from "@/lib/utils";
 import { formatCount } from "@/lib/format";
@@ -29,21 +29,28 @@ const icons: Record<TeacherNavItem["icon"], ComponentType<{ className?: string }
   messages: MessageSquare,
   profile: UserRound,
   notifications: Bell,
+  settings: Settings,
 };
 
 /** Unread-message chip (Phase 16) — same contract as the student shell: a real
  *  count, derived from the DB read markers, announced with its meaning. */
-function UnreadChip({ count }: { count: number }) {
+function UnreadChip({ count, label = "O‘qilmagan xabarlar" }: { count: number; label?: string }) {
   if (count <= 0) return null;
   return (
     <span className="relative inline-flex min-w-[1.5rem] items-center justify-center rounded-pill bg-accent-600 px-1.5 py-px text-xs font-semibold text-white">
-      <span className="sr-only">O‘qilmagan xabarlar: </span>
+      <span className="sr-only">{label}: </span>
       {formatCount(count)}
     </span>
   );
 }
 
-export function TeacherSidebarNav({ unreadMessages = 0 }: { unreadMessages?: number }) {
+export function TeacherSidebarNav({
+  unreadMessages = 0,
+  unreadNotifications = 0,
+}: {
+  unreadMessages?: number;
+  unreadNotifications?: number;
+}) {
   const pathname = usePathname();
   return (
     <nav aria-label="Ustoz paneli" className="max-lg:hidden">
@@ -76,6 +83,8 @@ export function TeacherSidebarNav({ unreadMessages = 0 }: { unreadMessages?: num
                 {item.label}
                 {item.icon === "messages" ? (
                   <UnreadChip count={unreadMessages} />
+                ) : item.icon === "notifications" ? (
+                  <UnreadChip count={unreadNotifications} label="O‘qilmagan bildirishnomalar" />
                 ) : null}
               </Link>
             </li>
@@ -86,7 +95,13 @@ export function TeacherSidebarNav({ unreadMessages = 0 }: { unreadMessages?: num
   );
 }
 
-export function TeacherTabNav({ unreadMessages = 0 }: { unreadMessages?: number }) {
+export function TeacherTabNav({
+  unreadMessages = 0,
+  unreadNotifications = 0,
+}: {
+  unreadMessages?: number;
+  unreadNotifications?: number;
+}) {
   const pathname = usePathname();
   return (
     <nav
@@ -113,7 +128,11 @@ export function TeacherTabNav({ unreadMessages = 0 }: { unreadMessages?: number 
               >
                 <Icon className="size-[18px] shrink-0" />
                 {item.label}
-                {item.icon === "messages" ? <UnreadChip count={unreadMessages} /> : null}
+                {item.icon === "messages" ? (
+                  <UnreadChip count={unreadMessages} />
+                ) : item.icon === "notifications" ? (
+                  <UnreadChip count={unreadNotifications} label="O‘qilmagan bildirishnomalar" />
+                ) : null}
               </Link>
             </li>
           );

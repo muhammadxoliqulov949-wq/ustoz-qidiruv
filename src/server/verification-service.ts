@@ -2,6 +2,7 @@ import "server-only";
 import { and, asc, count, desc, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "./db/client";
 import { newId } from "./auth/ids";
+import { notifyActiveAdmins } from "./notification-service";
 import { recordAdminEvent } from "./audit-service";
 import {
   DOCUMENT_REVIEW_NOTICE,
@@ -288,6 +289,13 @@ export async function submitVerificationRequest(
         .set({ verification: "pending", updatedAt: new Date() })
         .where(eq(schema.teacherProfiles.userId, teacherUserId));
 
+      await notifyActiveAdmins(tx, {
+        type: "verification_submitted",
+        title: "Yangi ustoz tasdiqlash arizasi",
+        body: "Ustoz tasdiqlash uchun ariza va hujjatlarini yubordi.",
+        href: `/admin/teachers/${teacherUserId}`,
+      });
+
       return { ok: true as const, data: { requestId } };
     });
   } catch (error) {
@@ -317,10 +325,15 @@ export async function submitVerificationRequest(
  * profile needs the profile, not the account's credential identifier.
  */
 export async function listVerificationQueue(
-  options: { status?: VerificationRequestState | "all" } = {},
+  options: { status?: VerificationRequestState | "all"; limit?: number; offset?: number } = {},
 ): Promise<VerificationQueueRow[]> {
   const db = getDb();
   const status = options.status ?? "pending";
+  const limit = Math.min(Math.max(options.limit ?? 50, 1), 100);
+  const offset = Math.max(options.offset ?? 0, 0);
+  const order = status === "pending"
+    ? [asc(schema.teacherVerificationRequests.submittedAt), asc(schema.teacherVerificationRequests.id)]
+    : [desc(schema.teacherVerificationRequests.submittedAt), desc(schema.teacherVerificationRequests.id)];
 
   const rows = await db
     .select({
@@ -346,7 +359,9 @@ export async function listVerificationQueue(
         ? undefined
         : eq(schema.teacherVerificationRequests.status, status),
     )
-    .orderBy(asc(schema.teacherVerificationRequests.submittedAt));
+    .orderBy(...order)
+    .limit(limit)
+    .offset(offset);
 
   return rows;
 }

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, Bookmark, Heart, LayoutGrid, MessageSquare, UserRound } from "lucide-react";
+import { Bell, Bookmark, Heart, LayoutGrid, MessageSquare, Settings, UserRound } from "lucide-react";
 import type { ComponentType } from "react";
 import { cn, focusRing } from "@/lib/utils";
 import { formatCount } from "@/lib/format";
@@ -24,6 +24,7 @@ const icons: Record<DashNavItem["icon"], ComponentType<{ className?: string }>> 
   saved: Heart,
   profile: UserRound,
   notifications: Bell,
+  settings: Settings,
 };
 
 /**
@@ -33,7 +34,15 @@ const icons: Record<DashNavItem["icon"], ComponentType<{ className?: string }>> 
  * dot. The number is announced with its meaning, so the badge is not a colour
  * cue and not a bare digit a screen reader has to guess at.
  */
-function UnreadChip({ count, className }: { count: number; className?: string }) {
+function UnreadChip({
+  count,
+  className,
+  label = "O‘qilmagan xabarlar",
+}: {
+  count: number;
+  className?: string;
+  label?: string;
+}) {
   if (count <= 0) return null;
   return (
     <span
@@ -45,13 +54,19 @@ function UnreadChip({ count, className }: { count: number; className?: string })
         className,
       )}
     >
-      <span className="sr-only">O‘qilmagan xabarlar: </span>
+      <span className="sr-only">{label}: </span>
       {formatCount(count)}
     </span>
   );
 }
 
-export function DashboardSidebarNav({ unreadMessages = 0 }: { unreadMessages?: number }) {
+export function DashboardSidebarNav({
+  unreadMessages = 0,
+  unreadNotifications = 0,
+}: {
+  unreadMessages?: number;
+  unreadNotifications?: number;
+}) {
   const pathname = usePathname();
   return (
     <nav aria-label="O‘quvchi paneli" className="max-lg:hidden">
@@ -85,6 +100,8 @@ export function DashboardSidebarNav({ unreadMessages = 0 }: { unreadMessages?: n
                 {item.label}
                 {item.icon === "messages" ? (
                   <UnreadChip count={unreadMessages} className="ml-auto" />
+                ) : item.icon === "notifications" ? (
+                  <UnreadChip count={unreadNotifications} label="O‘qilmagan bildirishnomalar" className="ml-auto" />
                 ) : null}
               </Link>
             </li>
@@ -95,7 +112,13 @@ export function DashboardSidebarNav({ unreadMessages = 0 }: { unreadMessages?: n
   );
 }
 
-export function DashboardTabNav({ unreadMessages = 0 }: { unreadMessages?: number }) {
+export function DashboardTabNav({
+  unreadMessages = 0,
+  unreadNotifications = 0,
+}: {
+  unreadMessages?: number;
+  unreadNotifications?: number;
+}) {
   const pathname = usePathname();
   return (
     <nav
@@ -126,7 +149,11 @@ export function DashboardTabNav({ unreadMessages = 0 }: { unreadMessages?: numbe
               >
                 <Icon className="size-[18px] shrink-0" />
                 {item.label}
-                {item.icon === "messages" ? <UnreadChip count={unreadMessages} /> : null}
+                {item.icon === "messages" ? (
+                  <UnreadChip count={unreadMessages} />
+                ) : item.icon === "notifications" ? (
+                  <UnreadChip count={unreadNotifications} label="O‘qilmagan bildirishnomalar" />
+                ) : null}
               </Link>
             </li>
           );

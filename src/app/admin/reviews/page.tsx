@@ -82,10 +82,14 @@ export default async function AdminReviewsPage({
 
   const params = await searchParams;
   const status = parseStatus(params.status);
-  const [rows, counts] = await Promise.all([
-    listAdminReviewQueue({ status }),
-    getReviewQueueCounts(),
-  ]);
+  const counts = await getReviewQueueCounts();
+  const total = counts[status];
+  const rawPage = Number(Array.isArray(params.page) ? params.page[0] : params.page);
+  const requestedPage = Number.isInteger(rawPage) && rawPage > 0 ? rawPage : 1;
+  const limit = 50;
+  const pageCount = Math.max(1, Math.ceil(total / limit));
+  const page = Math.min(requestedPage, pageCount);
+  const rows = await listAdminReviewQueue({ status, limit, offset: (page - 1) * limit });
 
   return (
     <div className="flex flex-col gap-6">
@@ -199,6 +203,23 @@ export default async function AdminReviewsPage({
           <ButtonLink href="/admin/activity" variant="ghost" size="sm">
             Qarorlar jurnali
           </ButtonLink>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+          <span className="text-sm text-ink-500">
+            {rows.length ? `${(page - 1) * limit + 1}–${Math.min(page * limit, total)} / ${total}` : "0 / 0"}
+          </span>
+          <div className="flex gap-2">
+            {page > 1 ? (
+              <ButtonLink href={`/admin/reviews?status=${status}&page=${page - 1}`} variant="outline" size="sm">
+                Oldingi
+              </ButtonLink>
+            ) : null}
+            {page < pageCount ? (
+              <ButtonLink href={`/admin/reviews?status=${status}&page=${page + 1}`} variant="outline" size="sm">
+                Keyingi
+              </ButtonLink>
+            ) : null}
+          </div>
         </div>
       </AdminPanel>
     </div>

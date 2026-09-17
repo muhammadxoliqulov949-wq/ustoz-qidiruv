@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb, schema } from "./db/client";
 import { newId } from "./auth/ids";
 import { recordAdminEvent } from "./audit-service";
@@ -766,8 +766,10 @@ function adminRefundQuery() {
  * of the queue is the work that is actually waiting — not the whole history.
  */
 export async function listAdminRefunds(
-  options: { status?: RefundStatus; statuses?: readonly RefundStatus[] } = {},
+  options: { status?: RefundStatus; statuses?: readonly RefundStatus[]; limit?: number; offset?: number } = {},
 ): Promise<AdminRefundRow[]> {
+  const limit = Math.min(Math.max(options.limit ?? 50, 1), 100);
+  const offset = Math.max(options.offset ?? 0, 0);
   const query = adminRefundQuery();
   const where = options.statuses
     ? inArray(schema.refundRequests.status, [...options.statuses])
@@ -782,15 +784,17 @@ export async function listAdminRefunds(
           WHEN 'failed' THEN 2
           ELSE 3 END`,
     desc(schema.refundRequests.requestedAt),
-  );
+    desc(schema.refundRequests.id),
+  ).limit(limit).offset(offset);
   return rows;
 }
 
 export async function getRefundQueueCounts(): Promise<Record<RefundStatus | "live" | "all", number>> {
   const db = getDb();
   const rows = await db
-    .select({ status: schema.refundRequests.status })
-    .from(schema.refundRequests);
+    .select({ status: schema.refundRequests.status, total: count(schema.refundRequests.id) })
+    .from(schema.refundRequests)
+    .groupBy(schema.refundRequests.status);
 
   const counts: Record<RefundStatus | "live" | "all", number> = {
     requested: 0,
@@ -799,11 +803,12 @@ export async function getRefundQueueCounts(): Promise<Record<RefundStatus | "liv
     rejected: 0,
     failed: 0,
     live: 0,
-    all: rows.length,
+    all: 0,
   };
   for (const row of rows) {
-    counts[row.status] += 1;
-    if (isLiveRefundStatus(row.status)) counts.live += 1;
+    counts[row.status] = Number(row.total);
+    counts.all += Number(row.total);
+    if (isLiveRefundStatus(row.status)) counts.live += Number(row.total);
   }
   return counts;
 }

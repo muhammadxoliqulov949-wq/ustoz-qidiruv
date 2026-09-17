@@ -32,8 +32,9 @@ import { cn, focusRing } from "@/lib/utils";
 /* NO generateStaticParams: this profile is runtime PostgreSQL data, so slug        */
 /* enumeration at build time would make `npm run build` require a reachable          */
 /* database. The slug is resolved on demand by getPublicTeacherBySlug(), which       */
-/* only ever returns a public profile that owns a published course; anything         */
-/* else 404s at request time.                                                       */
+/* only ever returns an active public profile; draft, paused and archived courses  */
+/* are excluded from its course list, and an unknown/private slug 404s at request   */
+/* time.                                                                           */
 /* -------------------------------------------------------------------------- */
 
 export const dynamic = "force-dynamic";

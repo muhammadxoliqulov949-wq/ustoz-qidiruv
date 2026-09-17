@@ -119,10 +119,12 @@ export default function HelpPage() {
 
       <InfoSection id="aloqa" title="Yana yordam kerakmi?">
         <p>
-          Javobini topa olmagan savolingiz bo‘lsa —{" "}
-          <InfoLink href="/contacts">aloqa sahifasi</InfoLink> orqali biz bilan
-          bog‘laning. Yozilish bo‘yicha savollar uchun qabul qilingan so‘rov
-          kartasidagi “Ustozga yozish” tugmasidan foydalaning.
+          Javobini topa olmagan savolingiz bo‘lsa, hisobingizga kirgach{" "}
+          <InfoLink href="/support">ilova ichidagi murojaat shakli</InfoLink>{" "}
+          orqali operator navbatiga yozing. Umumiy savollar uchun{" "}
+          <InfoLink href="/contacts">aloqa sahifasi</InfoLink> ham mavjud.
+          Yozilish bo‘yicha savollar uchun qabul qilingan so‘rov kartasidagi
+          “Ustozga yozish” tugmasidan foydalaning.
         </p>
       </InfoSection>
     </InfoPage>

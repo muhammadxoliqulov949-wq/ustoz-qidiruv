@@ -33,6 +33,13 @@ import {
   REVIEW_REASON_MIN_LENGTH,
   normalizeReviewBody,
 } from "@/lib/reviews";
+import {
+  SUPPORT_CATEGORIES,
+  SUPPORT_MESSAGE_MAX_LENGTH,
+  SUPPORT_MESSAGE_MIN_LENGTH,
+  SUPPORT_RELATED_TYPES,
+  SUPPORT_STATUSES,
+} from "@/lib/support";
 
 /* -------------------------------------------------------------------------- */
 /* Server-side input schemas — Phase 11.                                       */
@@ -262,6 +269,61 @@ export const requestCourseChangesSchema = z
 
 /** Teacher submits an owned course for moderation ("ready"). */
 export const submitCourseForReviewSchema = z.object({ courseId: idSchema }).strict();
+
+/** Teacher lifecycle intent. The target status is deliberately not accepted. */
+export const courseLifecycleSchema = z
+  .object({
+    courseId: idSchema,
+    action: z.enum(["pause", "resume", "archive"]),
+  })
+  .strict();
+
+/* ----------------------------- Phase 23 support ---------------------------- */
+
+export const supportTicketSchema = z
+  .object({
+    category: z.enum(SUPPORT_CATEGORIES),
+    message: z
+      .string()
+      .trim()
+      .min(SUPPORT_MESSAGE_MIN_LENGTH, `Murojaat kamida ${SUPPORT_MESSAGE_MIN_LENGTH} belgi bo‘lsin.`)
+      .max(SUPPORT_MESSAGE_MAX_LENGTH, `Murojaat ${SUPPORT_MESSAGE_MAX_LENGTH} belgidan oshmasin.`),
+    relatedEntityType: z.enum(SUPPORT_RELATED_TYPES).nullable(),
+    relatedEntityId: idSchema.nullable(),
+  })
+  .strict()
+  .refine(
+    (value) => (value.relatedEntityType === null) === (value.relatedEntityId === null),
+    { message: "Bog‘liq yozuv turi va identifikatorini birga kiriting yoki ikkalasini ham bo‘sh qoldiring." },
+  );
+
+export const supportTicketTransitionSchema = z
+  .object({
+    ticketId: idSchema,
+    status: z.enum(SUPPORT_STATUSES),
+  })
+  .strict();
+
+/* ----------------------------- account security --------------------------- */
+
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1).max(72),
+    newPassword: passwordSchema,
+    confirmPassword: z.string().min(1).max(72),
+  })
+  .strict()
+  .refine((value) => value.newPassword === value.confirmPassword, {
+    path: ["confirmPassword"],
+    message: "Yangi parollar bir xil emas.",
+  });
+
+export const deactivateAccountSchema = z
+  .object({
+    password: z.string().min(1).max(72),
+    confirmation: z.literal("DEACTIVATE"),
+  })
+  .strict();
 
 /* --------------------------------- payments --------------------------------- */
 

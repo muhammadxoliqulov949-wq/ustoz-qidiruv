@@ -9,17 +9,17 @@
 /*   admin   : ready ──► published        (approve)                             */
 /*   admin   : ready ──► draft            (request changes, with feedback)      */
 /*                                                                              */
-/* `published` is a one-way door in Phase 15: a published course is NOT         */
-/* editable from the teacher authoring flow and cannot be unpublished by the    */
-/* teacher. Editing a live listing and re-moderating it is a future workflow    */
-/* and is documented as absent rather than half-built.                          */
+/* `published` remains content-locked: a teacher may pause a live listing or   */
+/* resume it after a pause, but may not edit or silently re-moderate it.        */
+/* Archiving is terminal. This keeps lifecycle visibility real without          */
+/* inventing a live-content editing workflow.                                   */
 /*                                                                              */
 /* Course status carries NO `rejected` value. A returned course is a `draft`    */
 /* again; the decision itself lives on `course_moderation_reviews`, so the      */
 /* course column stays a current state instead of an accumulating scar.         */
 /* -------------------------------------------------------------------------- */
 
-export const COURSE_STATES = ["draft", "ready", "published"] as const;
+export const COURSE_STATES = ["draft", "ready", "published", "paused", "archived"] as const;
 export type CourseState = (typeof COURSE_STATES)[number];
 
 export const MODERATION_REVIEW_STATES = ["pending", "approved", "changes_requested"] as const;
@@ -40,10 +40,14 @@ export type ModerationActor = "teacher" | "admin";
 
 const TRANSITIONS: Record<ModerationActor, Partial<Record<CourseState, CourseState[]>>> = {
   teacher: {
-    draft: ["ready"],
+    draft: ["ready", "archived"],
     // Withdrawing a submission is legitimate: the teacher may spot a mistake
     // while waiting. Occupancy-style side effects do not exist here.
     ready: ["draft"],
+    // Pausing is an unpublish operation, not an edit. Resuming is allowed only
+    // through the guarded service path, which re-checks teacher verification.
+    published: ["paused"],
+    paused: ["published", "archived"],
   },
   admin: {
     ready: ["published", "draft"],
@@ -74,15 +78,23 @@ export function isUnderReview(status: CourseState): boolean {
   return status === "ready";
 }
 
-/** A live listing. Read-only from the teacher authoring flow in Phase 15. */
+/** A live or retired listing. Read-only from the teacher authoring flow. */
 export function isLockedForTeacher(status: CourseState): boolean {
-  return status === "published";
+  return status === "published" || status === "paused" || status === "archived";
 }
 
 /** May the teacher edit course content right now? */
 export function canTeacherEdit(status: CourseState): boolean {
-  return !isUnderReview(status) && !isLockedForTeacher(status);
+  return status === "draft";
 }
+
+export type CourseLifecycleAction = "pause" | "resume" | "archive";
+
+export const COURSE_LIFECYCLE_ACTION_LABEL: Record<CourseLifecycleAction, string> = {
+  pause: "Kursni vaqtincha to‘xtatish",
+  resume: "Kursni katalogga qaytarish",
+  archive: "Kursni arxivlash",
+};
 
 /* --------------------------------- display --------------------------------- */
 
@@ -92,12 +104,16 @@ export const COURSE_STATE_LABEL: Record<CourseState, string> = {
   // Deliberately NOT "published" — submission is a request, not an outcome.
   ready: "Ko‘rib chiqish uchun yuborilgan",
   published: "Katalogda e’lon qilingan",
+  paused: "Vaqtincha to‘xtatilgan",
+  archived: "Arxivlangan",
 };
 
-export const COURSE_STATE_TONE: Record<CourseState, "success" | "accent" | "neutral"> = {
+export const COURSE_STATE_TONE: Record<CourseState, "success" | "accent" | "neutral" | "danger"> = {
   draft: "neutral",
   ready: "accent",
   published: "success",
+  paused: "accent",
+  archived: "neutral",
 };
 
 export const MODERATION_REVIEW_STATE_LABEL: Record<ModerationReviewState, string> = {
@@ -121,7 +137,13 @@ export const COURSE_UNDER_REVIEW_NOTE =
   "Kurs administrator ko‘rib chiqishini kutmoqda. Ko‘rib chiqish davomida kurs tahrirlanmaydi — avval arizani qaytarib olishingiz mumkin.";
 
 export const COURSE_PUBLISHED_EDIT_LOCKED_NOTE =
-  "E’lon qilingan kursni tahrirlash bu bosqichda qo‘llab-quvvatlanmaydi. O‘zgartirish uchun nusxa yarating yoki administrator bilan bog‘laning.";
+  "E’lon qilingan yoki vaqtincha to‘xtatilgan kursni tahrirlash bu bosqichda qo‘llab-quvvatlanmaydi. O‘zgartirish uchun nusxa yarating yoki administrator bilan bog‘laning.";
+
+export const COURSE_PAUSED_NOTE =
+  "Kurs katalogdan vaqtincha olib tashlandi. Mavjud yozilishlar, to‘lovlar va xabarlar tarixi saqlanadi.";
+
+export const COURSE_ARCHIVED_NOTE =
+  "Kurs arxivlangan va katalogga qaytmaydi. Tarix, yozilishlar va to‘lov ma’lumotlari saqlanadi.";
 
 export const COURSE_CHANGES_REQUESTED_NOTE =
   "Administrator o‘zgartirish so‘radi. Kurs yana qoralama holatida va katalogda ko‘rinmaydi.";

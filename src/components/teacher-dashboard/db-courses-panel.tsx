@@ -5,13 +5,17 @@ import { EmptyState } from "@/components/dashboard/empty-state";
 import { courseFormatLabels, courseLevelLabels } from "@/data/courses";
 import { formatPrice } from "@/lib/format";
 import { CopyCourseButton } from "./copy-course-button";
+import { CourseLifecycleActions } from "./course-lifecycle-actions";
 import {
   COURSE_CHANGES_REQUESTED_NOTE,
   COURSE_PUBLISHED_EDIT_LOCKED_NOTE,
+  COURSE_PAUSED_NOTE,
+  COURSE_ARCHIVED_NOTE,
   COURSE_STATE_LABEL,
   COURSE_STATE_TONE,
   COURSE_UNDER_REVIEW_NOTE,
   canTeacherEdit,
+  type CourseState,
 } from "@/lib/course-moderation";
 
 /* -------------------------------------------------------------------------- */
@@ -43,7 +47,7 @@ export interface DashboardCourse {
   id: string;
   slug: string;
   title: string;
-  status: string;
+  status: CourseState;
   format: "online" | "offline" | "hybrid";
   level: "boshlangich" | "orta" | "yuqori";
   priceUzs: number;
@@ -66,7 +70,7 @@ function CourseItem({
   moderation: CourseModerationView | null;
 }) {
   const isPublic = course.status === "published";
-  const editable = canTeacherEdit(course.status as "draft" | "ready" | "published");
+  const editable = canTeacherEdit(course.status);
   const seats = course.groups.reduce((sum, group) => sum + group.capacity, 0);
 
   return (
@@ -77,8 +81,8 @@ function CourseItem({
         <div className="flex flex-wrap items-center gap-2 text-sm text-ink-500">
           <Badge variant="neutral">{courseFormatLabels[course.format]}</Badge>
           <Badge variant="neutral">{courseLevelLabels[course.level]}</Badge>
-          <Badge variant={COURSE_STATE_TONE[course.status as "draft" | "ready" | "published"]}>
-            {COURSE_STATE_LABEL[course.status as "draft" | "ready" | "published"]}
+          <Badge variant={COURSE_STATE_TONE[course.status]}>
+            {COURSE_STATE_LABEL[course.status]}
           </Badge>
           {course.location ? (
             <span className="inline-flex min-w-0 items-center gap-1">
@@ -124,9 +128,9 @@ function CourseItem({
       {!editable ? (
         <p className="rounded-lg border border-line bg-surface-muted px-4 py-3 text-sm leading-relaxed text-ink-700">
           <span className="font-medium text-ink-900">
-            {isPublic ? "Tahrirlash yopilgan. " : "Ko‘rib chiqish davomida tahrirlash yopiq. "}
+            {isPublic ? "Tahrirlash yopilgan. " : course.status === "ready" ? "Ko‘rib chiqish davomida tahrirlash yopiq. " : "Kurs boshqaruv holatida. "}
           </span>
-          {isPublic ? COURSE_PUBLISHED_EDIT_LOCKED_NOTE : COURSE_UNDER_REVIEW_NOTE}
+          {isPublic ? COURSE_PUBLISHED_EDIT_LOCKED_NOTE : course.status === "ready" ? COURSE_UNDER_REVIEW_NOTE : course.status === "paused" ? COURSE_PAUSED_NOTE : course.status === "archived" ? COURSE_ARCHIVED_NOTE : ""}
         </p>
       ) : null}
 
@@ -154,6 +158,7 @@ function CourseItem({
           </ButtonLink>
         )}
         <CopyCourseButton courseId={course.id} />
+        <CourseLifecycleActions courseId={course.id} status={course.status} />
       </div>
     </Card>
   );
@@ -208,7 +213,7 @@ export function DbCoursesPanel({
       <section aria-labelledby="db-drafts" className="flex flex-col gap-4">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <h2 id="db-drafts" className="text-xl font-semibold text-ink-900">
-            Serverdagi qoralamalarim{" "}
+            Katalogdan tashqaridagi kurslarim{" "}
             <span className="text-base font-normal text-ink-500">({drafts.length})</span>
           </h2>
           <ButtonLink href="/teacher/dashboard/courses/new" size="sm">
@@ -217,15 +222,16 @@ export function DbCoursesPanel({
         </div>
 
         <p className="text-sm leading-relaxed text-ink-500">
-          Bu yerda hali e’lon qilinmagan kurslar: qoralamalar va moderatsiyaga
-          yuborilganlar. Ular hisobingizga bog‘langan holda serverda saqlanadi.
-          Ko‘rib chiqishga yuborilgan kurs ham ommaviy saytda ko‘rinmaydi —
-          uni administrator tasdiqlagachgina e’lon qilinadi.
+          Bu yerda katalogda ko‘rinmayotgan kurslar: qoralamalar, moderatsiyaga
+          yuborilgan, vaqtincha to‘xtatilgan va arxivlangan yozuvlar. Ular
+          hisobingizga bog‘langan holda serverda saqlanadi. Ko‘rib chiqishga
+          yuborilgan kurs ham ommaviy saytda ko‘rinmaydi — uni administrator
+          tasdiqlagachgina e’lon qilinadi.
         </p>
 
         {drafts.length === 0 ? (
-          <EmptyState title="Qoralama yo‘q">
-            Hali server qoralamasi yaratmagansiz.
+          <EmptyState title="Katalogdan tashqarida kurs yo‘q">
+            Hali serverda katalogdan tashqari kurs yozuvi yo‘q.
           </EmptyState>
         ) : (
           <ul className="flex flex-col gap-4">

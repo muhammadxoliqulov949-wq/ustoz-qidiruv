@@ -2566,3 +2566,71 @@ npm run test:phase22       # Phase 22 hardening suite (91 checks)
 npm run db:migrate         # applies 0011_phase22_hardening.sql with the rest
 ```
 
+
+# Phase 23 — Product Completion & Operations
+
+Phase 23 closes the operational gaps found in the Phase 22 audit without adding
+an external help-desk, messaging provider or broad architectural rewrite.
+
+## Support and reports
+
+- Signed-in users can submit an account, teacher/course, payment, inappropriate-
+  content or technical report at `/support`.
+- Tickets are stored in PostgreSQL and show the reporter only their own history.
+  Active administrators receive an in-app `support_submitted` notification; no
+  SMS or e-mail delivery is implied.
+- Administrators work the bounded `/admin/support` queue. The queue is
+  paginated, status-filtered and ordered oldest-first for live work. Transitions
+  are `open → in_progress/resolved/closed`, with a closed ticket terminal;
+  every transition is authorized, row-locked, idempotent and notifies the
+  reporter in-app.
+- Admin projections exclude password hashes, session tokens, payment-provider
+  credentials and signed private-media URLs. Do not put secrets or card data in
+  a report message.
+
+## Account and course lifecycle
+
+- `/account` provides password rotation (current-password verification and
+  all-session revocation) and explicit account deactivation. Deactivation is a
+  data-preserving state: authentication and sessions stop, teacher directory
+  visibility stops, and enrollments, payments, courses and audit history remain
+  for reconciliation. There is no in-app reactivation or destructive delete.
+- Teacher listings now have explicit `published → paused → published` and
+  `paused → archived` controls. Archival is terminal; content, enrollment and
+  payment records are retained. Draft, review and archived courses never enter
+  the public catalog, and deactivated accounts cannot expose their courses.
+- Course and verification submissions notify active administrators in-app. The
+  existing moderation and verification decisions remain separate, audited
+  workflows; approval never silently publishes a course.
+
+## Health and maintenance
+
+- `/api/health` and `/api/health/live` are dependency-free liveness checks.
+  `/api/health/ready` runs `select 1` against PostgreSQL and returns only
+  `ready` or `not_ready`; URLs, credentials and stack traces are never returned.
+- `npm run ops:cleanup -- --dry-run --limit=500` previews a bounded sweep of
+  expired session rows. Re-run without `--dry-run` to apply it. The command
+  prints counts only, never secrets, and exits non-zero on an operational
+  failure. It never deletes users, enrollments, payments, support tickets,
+  audit history or media.
+- `npm run storage:cleanup` remains the separate bounded media cleanup command;
+  its failure exit status is preserved for cron/CI observability.
+
+## Phase 23 schema and QA commands
+
+Migration `0012_phase23_operations.sql` is additive: it adds account/support
+status enums, the course archive timestamp, the support ticket table and
+notification enum values. Support status/reporter/related/assignee indexes,
+plus the existing session and queue indexes, support growing operational reads.
+No data migration or remote database operation is performed by the build.
+
+```bash
+npm run test:phase23       # support, lifecycle, account, cleanup and health checks
+npm run db:generate        # should report no schema changes after generation
+npm run ops:cleanup -- --dry-run --limit=500
+```
+
+The product intentionally does not ship provider-backed e-mail/SMS, an admin
+account reactivation UI, hard deletion of business records, live-course content
+editing, automatic scheduling, or a background job platform. These are explicit
+boundaries rather than placeholder controls.

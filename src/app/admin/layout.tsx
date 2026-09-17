@@ -13,6 +13,8 @@ import { getVerificationQueueCounts } from "@/server/verification-service";
 import { getModerationCounts } from "@/server/moderation-service";
 import { getRefundQueueCounts } from "@/server/refund-service";
 import { getReviewQueueCounts } from "@/server/review-service";
+import { getSupportQueueCounts } from "@/server/support-service";
+import { countUnreadNotifications } from "@/server/notification-service";
 
 /* -------------------------------------------------------------------------- */
 /* /admin — the ADMIN control-plane shell (Phase 15).                          */
@@ -88,11 +90,13 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     );
   }
 
-  const [verification, moderation, refundQueue, reviewQueue] = await Promise.all([
+  const [verification, moderation, refundQueue, reviewQueue, supportQueue, unreadNotifications] = await Promise.all([
     getVerificationQueueCounts(),
     getModerationCounts(),
     getRefundQueueCounts(),
     getReviewQueueCounts(),
+    getSupportQueueCounts(),
+    countUnreadNotifications(admin.id),
   ]);
   const counts = {
     teachers: verification.pending,
@@ -102,6 +106,8 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     // Live refund work: a request nobody has decided yet, or an approved refund
     // the provider still has to return.
     refunds: refundQueue.live,
+    support: supportQueue.live,
+    notifications: unreadNotifications,
   };
 
   return (

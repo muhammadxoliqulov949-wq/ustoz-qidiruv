@@ -2,6 +2,7 @@ import "server-only";
 import { and, asc, count, desc, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "./db/client";
 import { newId } from "./auth/ids";
+import { notifyActiveAdmins } from "./notification-service";
 import { recordAdminEvent } from "./audit-service";
 import type { CourseState, ModerationReviewState } from "@/lib/course-moderation";
 import { courseCoverUrl } from "./file-service";
@@ -123,6 +124,12 @@ export async function ensureModerationReview(
     submittedByTeacherUserId: input.teacherUserId,
     status: "pending",
   });
+  await notifyActiveAdmins(tx, {
+    type: "moderation_required",
+    title: "Yangi kurs moderatsiyasi",
+    body: "Ustoz kursni ko‘rib chiqish uchun yubordi.",
+    href: `/admin/courses/${input.courseId}`,
+  });
   return { reviewId, created: true };
 }
 
@@ -203,10 +210,12 @@ export async function getTeacherModerationStates(
 
 /** The moderation queue: oldest submission first, like the verification queue. */
 export async function listModerationQueue(
-  options: { status?: ModerationReviewState | "all" } = {},
+  options: { status?: ModerationReviewState | "all"; limit?: number; offset?: number } = {},
 ): Promise<ModerationQueueRow[]> {
   const db = getDb();
   const status = options.status ?? "pending";
+  const limit = Math.min(Math.max(options.limit ?? 50, 1), 100);
+  const offset = Math.max(options.offset ?? 0, 0);
 
   return db
     .select({
@@ -236,7 +245,36 @@ export async function listModerationQueue(
     .where(
       status === "all" ? undefined : eq(schema.courseModerationReviews.status, status),
     )
-    .orderBy(asc(schema.courseModerationReviews.submittedAt));
+    .orderBy(
+      ...(status === "pending"
+        ? [asc(schema.courseModerationReviews.submittedAt), asc(schema.courseModerationReviews.id)]
+        : [desc(schema.courseModerationReviews.submittedAt), desc(schema.courseModerationReviews.id)]),
+    )
+    .limit(limit)
+    .offset(offset);
+}
+
+/**
+ * Factual queue counts, used to paginate every moderation status without
+ * loading the queue rows just to discover how many pages exist.
+ */
+export async function getModerationQueueCounts(): Promise<Record<ModerationReviewState | "all", number>> {
+  const db = getDb();
+  const rows = await db
+    .select({ status: schema.courseModerationReviews.status, total: count(schema.courseModerationReviews.id) })
+    .from(schema.courseModerationReviews)
+    .groupBy(schema.courseModerationReviews.status);
+  const counts: Record<ModerationReviewState | "all", number> = {
+    pending: 0,
+    approved: 0,
+    changes_requested: 0,
+    all: 0,
+  };
+  for (const row of rows) {
+    counts[row.status] = Number(row.total);
+    counts.all += Number(row.total);
+  }
+  return counts;
 }
 
 /**

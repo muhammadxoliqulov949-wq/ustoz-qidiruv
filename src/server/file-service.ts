@@ -461,19 +461,14 @@ export async function uploadCourseCover(
   if (!course) {
     return { ok: false, code: "not_found", message: "Kurs topilmadi." };
   }
-  if (course.status === "ready") {
+  if (course.status !== "draft") {
     return {
       ok: false,
       code: "locked",
       message:
-        "Kurs moderatsiyada — muqovani o‘zgartirish uchun avval arizani qaytarib oling.",
-    };
-  }
-  if (course.status === "published") {
-    return {
-      ok: false,
-      code: "locked",
-      message: "E’lon qilingan kurs muqovasi Phase 15 qoidasi bo‘yicha qulflangan.",
+        course.status === "ready"
+          ? "Kurs moderatsiyada — muqovani o‘zgartirish uchun avval arizani qaytarib oling."
+          : "Kurs faol qoralama holatida emas — muqovani o‘zgartirib bo‘lmaydi.",
     };
   }
 
@@ -912,7 +907,10 @@ export async function cleanupStorage(input: {
   dryRun?: boolean;
 }): Promise<CleanupReport> {
   const db = getDb();
-  const limit = input.limit ?? 100;
+  const requestedLimit = input.limit ?? 100;
+  const limit = Number.isInteger(requestedLimit) && requestedLimit >= 1
+    ? Math.min(requestedLimit, 1000)
+    : 100;
   const dryRun = input.dryRun ?? false;
   const cutoff = new Date(Date.now() - input.pendingOlderThanHours * 60 * 60 * 1000);
   const report: CleanupReport = {

@@ -44,6 +44,27 @@ import { desc, relations, sql } from "drizzle-orm";
  */
 export const userRole = pgEnum("user_role", ["student", "teacher", "admin"]);
 
+/** Account lifecycle. Deactivation is reversible only through an operator
+ * procedure; business rows remain intact for payment and audit integrity. */
+export const accountStatus = pgEnum("account_status", ["active", "deactivated"]);
+
+/** Support/report categories kept deliberately small: this is an internal
+ * production queue, not a full help-desk product. */
+export const supportTicketCategory = pgEnum("support_ticket_category", [
+  "account",
+  "teacher_course",
+  "payment",
+  "inappropriate_content",
+  "technical",
+]);
+
+export const supportTicketStatus = pgEnum("support_ticket_status", [
+  "open",
+  "in_progress",
+  "resolved",
+  "closed",
+]);
+
 /**
  * Teacher trust state. Honest states only — a teacher is NEVER auto-verified.
  *
@@ -77,7 +98,13 @@ export const courseLevel = pgEnum("course_level", ["boshlangich", "orta", "yuqor
  * on `course_moderation_reviews`. A permanent status for "was sent back once"
  * would describe history, and history belongs in the history table.
  */
-export const courseStatus = pgEnum("course_status", ["draft", "ready", "published"]);
+export const courseStatus = pgEnum("course_status", [
+  "draft",
+  "ready",
+  "published",
+  "paused",
+  "archived",
+]);
 
 /** Representative lesson time-of-day — drives the Phase 3 schedule facet. */
 export const courseSchedule = pgEnum("course_schedule", ["morning", "day", "evening"]);
@@ -139,6 +166,12 @@ export const notificationType = pgEnum("notification_type", [
    */
   "review_published",
   "review_rejected",
+  // Phase 23 operations. These are in-app only; no external delivery is implied.
+  "verification_submitted",
+  "moderation_required",
+  "support_submitted",
+  "support_status_changed",
+  "payment_failed",
 ]);
 
 /* ---------------------------------- users ---------------------------------- */
@@ -183,6 +216,9 @@ export const users = pgTable(
     email: text("email"),
     /** argon2id hash. Never a plaintext password, never reversible. */
     passwordHash: text("password_hash").notNull(),
+    accountStatus: accountStatus("account_status").notNull().default("active"),
+    /** Set when an account is deactivated; business rows are retained. */
+    deactivatedAt: timestamp("deactivated_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -207,6 +243,10 @@ export const users = pgTable(
     check(
       "users_email_format",
       sql`${table.email} IS NULL OR ${table.email} ~ '^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$'`,
+    ),
+    check(
+      "users_deactivation_consistency",
+      sql`(${table.accountStatus} = 'deactivated') = (${table.deactivatedAt} IS NOT NULL)`,
     ),
   ],
 );
@@ -370,6 +410,8 @@ export const courses = pgTable(
     keywords: text("keywords").array().notNull().default(sql`'{}'::text[]`),
     image: text("image"),
     pricePeriod: text("price_period").notNull().default("month"),
+    /** Set when a teacher archives the listing or their account is deactivated. */
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -704,6 +746,51 @@ export const courseReviews = pgTable(
     index("course_reviews_enrollment_idx").on(table.enrollmentRequestId),
     // The teacher aggregate joins courses once and filters published rows.
     index("course_reviews_course_status_idx").on(table.courseId, table.status),
+  ],
+);
+
+/* ---------------------------- Phase 23 · support --------------------------- */
+
+/**
+ * Small internal support/report queue. A ticket is an operational record, not
+ * an email promise: the reporter, category, message and optional related
+ * entity stay in PostgreSQL and operators move the status through the guarded
+ * service transition table.
+ */
+export const supportTickets = pgTable(
+  "support_tickets",
+  {
+    id: text("id").primaryKey(),
+    /** Nullable for future unauthenticated intake; the product UI requires auth. */
+    reporterUserId: text("reporter_user_id").references(() => users.id, { onDelete: "set null" }),
+    category: supportTicketCategory("category").notNull(),
+    message: text("message").notNull(),
+    relatedEntityType: text("related_entity_type"),
+    relatedEntityId: text("related_entity_id"),
+    status: supportTicketStatus("status").notNull().default("open"),
+    assignedAdminUserId: text("assigned_admin_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("support_tickets_status_created_idx").on(table.status, table.createdAt, table.id),
+    index("support_tickets_reporter_created_idx").on(table.reporterUserId, table.createdAt),
+    index("support_tickets_related_idx").on(table.relatedEntityType, table.relatedEntityId),
+    index("support_tickets_assignee_idx").on(table.assignedAdminUserId, table.status),
+    check("support_tickets_message_len", sql`length(btrim(${table.message})) BETWEEN 10 AND 4000`),
+    check(
+      "support_tickets_related_type_check",
+      sql`${table.relatedEntityType} IS NULL OR ${table.relatedEntityType} IN ('account','teacher','course','payment','enrollment','review','refund','message')`,
+    ),
+    check(
+      "support_tickets_related_pair_check",
+      sql`(${table.relatedEntityType} IS NULL) = (${table.relatedEntityId} IS NULL)`,
+    ),
+    check("support_tickets_related_id_len", sql`${table.relatedEntityId} IS NULL OR length(${table.relatedEntityId}) BETWEEN 1 AND 64`),
   ],
 );
 
@@ -1789,3 +1876,4 @@ export type ConversationRow = typeof conversations.$inferSelect;
 export type MessageRow = typeof messages.$inferSelect;
 export type ConversationReadRow = typeof conversationReads.$inferSelect;
 export type CourseReviewRow = typeof courseReviews.$inferSelect;
+export type SupportTicketRow = typeof supportTickets.$inferSelect;

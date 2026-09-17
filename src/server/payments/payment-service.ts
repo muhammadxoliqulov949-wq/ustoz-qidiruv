@@ -6,6 +6,7 @@ import { somToTiyin, SUPPORTED_CURRENCY } from "@/lib/money";
 import { LIVE_PAYMENT_STATUSES, type PaymentStatus } from "@/lib/payment-status";
 import { paymentFailure, type PaymentResult } from "./provider";
 import { PAYME_STATE } from "./payme-protocol";
+import { insertNotification } from "../notification-service";
 
 /* -------------------------------------------------------------------------- */
 /* Payment service — Phase 14. Provider-agnostic payment domain logic.         */
@@ -308,6 +309,55 @@ export async function ensurePaymentForEnrollment(
       code: (error as { code?: string }).code ?? "unknown",
     });
     return paymentFailure("server_error", "To‘lovni boshlab bo‘lmadi.");
+  }
+}
+
+/**
+ * Mark a pending obligation failed only when a server-side checkout operation
+ * has a confirmed local failure. Provider protocol failures are not guessed here
+ * and a Payme cancellation remains `cancelled`; this event is for a broken
+ * checkout boundary that the student can safely retry. It is idempotent and
+ * writes the in-app notice in the same transaction.
+ */
+export async function markPaymentFailed(input: {
+  paymentId: string;
+  reason: string;
+}): Promise<PaymentResult<{ alreadyFailed: boolean }>> {
+  const db = getDb();
+  try {
+    return await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM payments WHERE id = ${input.paymentId} FOR UPDATE`);
+      const rows = await tx
+        .select({ id: schema.payments.id, status: schema.payments.status, studentUserId: schema.payments.studentUserId })
+        .from(schema.payments)
+        .where(eq(schema.payments.id, input.paymentId))
+        .limit(1);
+      const payment = rows[0];
+      if (!payment) return paymentFailure("not_found", "To‘lov topilmadi.");
+      if (payment.status === "failed") return { ok: true as const, alreadyFailed: true };
+      if (payment.status !== "pending") return paymentFailure("invalid_state", "To‘lov holati mos emas.");
+
+      await tx
+        .update(schema.payments)
+        .set({ status: "failed", updatedAt: new Date() })
+        .where(eq(schema.payments.id, input.paymentId));
+      await recordPaymentEvent(tx, {
+        paymentId: input.paymentId,
+        type: "payment_failed",
+        metadata: input.reason.replace(/[\r\n]+/g, " ").slice(0, 240),
+      });
+      await insertNotification(tx, {
+        userId: payment.studentUserId,
+        type: "payment_failed",
+        title: "To‘lovni boshlashda xatolik",
+        body: "To‘lovni boshlashda texnik xatolik yuz berdi. Qayta urinib ko‘rishingiz mumkin.",
+        href: `/dashboard/payments/${input.paymentId}`,
+      });
+      return { ok: true as const, alreadyFailed: false };
+    });
+  } catch (error) {
+    console.error("markPaymentFailed failed", { code: (error as { code?: string }).code ?? "unknown" });
+    return paymentFailure("server_error", "To‘lov holatini saqlab bo‘lmadi.");
   }
 }
 

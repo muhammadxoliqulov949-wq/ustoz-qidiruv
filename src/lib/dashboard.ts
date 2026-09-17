@@ -246,7 +246,7 @@ export interface DashNavItem {
   href: string;
   label: string;
   /** Icon key resolved at the presentation layer (plain-serializable model). */
-  icon: "overview" | "requests" | "messages" | "saved" | "profile" | "notifications";
+  icon: "overview" | "requests" | "messages" | "saved" | "profile" | "notifications" | "settings";
   /** Short description used by the mobile/overview surfaces. */
   description: string;
 }
@@ -290,6 +290,12 @@ export const STUDENT_NAV: readonly DashNavItem[] = [
     label: "Profil",
     icon: "profile",
     description: "O‘quvchi ma’lumotlari va o‘qish afzalliklari.",
+  },
+  {
+    href: "/account",
+    label: "Hisob xavfsizligi",
+    icon: "settings",
+    description: "Parol va hisob holatini boshqarish.",
   },
 ];
 

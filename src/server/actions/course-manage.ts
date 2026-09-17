@@ -19,6 +19,7 @@ import {
   COURSE_UNDER_REVIEW_NOTE,
   isLockedForTeacher,
   isUnderReview,
+  type CourseState,
 } from "@/lib/course-moderation";
 
 /* -------------------------------------------------------------------------- */
@@ -96,7 +97,7 @@ async function requireOwnedCourse(courseId: string, teacherUserId: string) {
  * Every content mutation below calls this, so the rule cannot be applied in one
  * route and forgotten in another.
  */
-function assertEditable(owned: { status: "draft" | "ready" | "published" }): ActionResult | null {
+function assertEditable(owned: { status: CourseState }): ActionResult | null {
   if (isUnderReview(owned.status)) {
     return { ok: false, code: "invalid_input", message: COURSE_UNDER_REVIEW_NOTE };
   }
@@ -215,10 +216,19 @@ export async function setCourseReadyAction(form: FormData): Promise<ActionResult
         // Already a draft: nothing to do, and not an error.
         return { ok: true };
       }
-      await db.transaction(async (tx) => {
+      const withdrawal = await db.transaction(async (tx) => {
         await tx.execute(
           sql`SELECT id FROM courses WHERE id = ${courseId} AND teacher_user_id = ${user.id} FOR UPDATE`,
         );
+        const currentRows = await tx
+          .select({ status: schema.courses.status })
+          .from(schema.courses)
+          .where(and(eq(schema.courses.id, courseId), eq(schema.courses.teacherUserId, user.id)))
+          .limit(1);
+        if (!currentRows[0]) return { ok: false as const, code: "not_found" as const };
+        if (currentRows[0].status !== "ready") {
+          return { ok: false as const, code: "not_reviewable" as const };
+        }
         await tx
           .update(schema.courses)
           .set({ status: "draft", updatedAt: new Date() })
@@ -232,7 +242,14 @@ export async function setCourseReadyAction(form: FormData): Promise<ActionResult
               eq(schema.courseModerationReviews.status, "pending"),
             ),
           );
+        return { ok: true as const };
       });
+      if (!withdrawal.ok) {
+        if (withdrawal.code === "not_found") {
+          return { ok: false, code: "not_found", message: "Kurs topilmadi." };
+        }
+        return invalid("Kurs endi ko‘rib chiqish holatida emas.");
+      }
       revalidateCourse(owned.slug);
       revalidateModerationSurfaces(courseId);
       return { ok: true };
@@ -253,7 +270,9 @@ export async function setCourseReadyAction(form: FormData): Promise<ActionResult
       const current = currentRows[0];
       if (!current) return { ok: false as const, code: "not_found" as const };
 
-      if (current.status === "published") return { ok: false as const, code: "published" as const };
+      if (current.status !== "draft") {
+        return { ok: false as const, code: "not_draft" as const };
+      }
 
       const [groupRows, moduleRows] = await Promise.all([
         tx
@@ -285,8 +304,8 @@ export async function setCourseReadyAction(form: FormData): Promise<ActionResult
       if (result.code === "not_found") {
         return { ok: false, code: "not_found", message: "Kurs topilmadi." };
       }
-      if (result.code === "published") {
-        return invalid(COURSE_PUBLISHED_EDIT_LOCKED_NOTE);
+      if (result.code === "not_draft") {
+        return invalid("Kursning hozirgi holatidan ko‘rib chiqishga yuborib bo‘lmaydi.");
       }
       if (result.code === "no_groups") {
         return invalid("Kamida bitta guruh qo‘shing — guruhsiz kursni ko‘rib chiqishga yuborib bo‘lmaydi.");

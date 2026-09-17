@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Badge } from "@/components/ui";
+import { Badge, ButtonLink } from "@/components/ui";
 import { EmptyState } from "@/components/dashboard/empty-state";
 import {
   MarkAllReadButton,
   MarkOneReadButton,
 } from "@/components/notifications/mark-read-buttons";
 import { requireUserPage } from "@/server/auth/guards";
-import { countUnreadNotifications, listNotifications } from "@/server/notification-service";
+import { countNotifications, countUnreadNotifications, listNotifications } from "@/server/notification-service";
 import { cn, focusRing } from "@/lib/utils";
 
 export const metadata: Metadata = {
@@ -36,12 +36,26 @@ function formatDate(value: Date): string {
   return value.toISOString().slice(0, 16).replace("T", " ");
 }
 
-export default async function NotificationsPage() {
+export default async function NotificationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const user = await requireUserPage("/notifications");
-  const [notifications, unread] = await Promise.all([
-    listNotifications(user.id),
+  const params = await searchParams;
+  const rawPage = Number(Array.isArray(params.page) ? params.page[0] : params.page);
+  const requestedPage = Number.isInteger(rawPage) && rawPage > 0 ? rawPage : 1;
+  const limit = 50;
+  const [total, unread] = await Promise.all([
+    countNotifications(user.id),
     countUnreadNotifications(user.id),
   ]);
+  const pageCount = Math.max(1, Math.ceil(total / limit));
+  const page = Math.min(requestedPage, pageCount);
+  const notifications = await listNotifications(user.id, {
+    limit,
+    offset: (page - 1) * limit,
+  });
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-10 sm:px-6">
@@ -106,6 +120,15 @@ export default async function NotificationsPage() {
               </li>
             ))}
           </ul>
+          {total > limit ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+              <span className="text-sm text-ink-500">{(page - 1) * limit + 1}–{Math.min(page * limit, total)} / {total}</span>
+              <div className="flex gap-2">
+                {page > 1 ? <ButtonLink href={`/notifications?page=${page - 1}`} variant="outline" size="sm">Oldingi</ButtonLink> : null}
+                {page < pageCount ? <ButtonLink href={`/notifications?page=${page + 1}`} variant="outline" size="sm">Keyingi</ButtonLink> : null}
+              </div>
+            </div>
+          ) : null}
         </>
       )}
     </main>

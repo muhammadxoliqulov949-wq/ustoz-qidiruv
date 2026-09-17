@@ -21,7 +21,7 @@ export interface CourseCoverManagerProps {
   courseId: string;
   coverUrl: string | null;
   editable: boolean;
-  /** Why editing is locked right now (under review, or published). */
+  /** Why editing is locked right now (under review, published, paused, or archived). */
   lockedNote: string | null;
   /** Honest explanation when uploads are not configured in this deployment. */
   storageNote: string | null;

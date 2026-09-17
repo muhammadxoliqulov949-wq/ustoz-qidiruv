@@ -71,17 +71,22 @@ export default async function AdminRefundsPage({
 
   const params = await searchParams;
   const filter = parseStatus(params.status);
-
-  const [counts, rows] = await Promise.all([
-    getRefundQueueCounts(),
-    listAdminRefunds(
-      filter === "all"
-        ? {}
-        : filter === "live"
-          ? { statuses: ["requested", "awaiting_provider"] }
-          : { status: filter },
-    ),
-  ]);
+  const counts = await getRefundQueueCounts();
+  const total = filter === "all" ? counts.all : filter === "live" ? counts.live : counts[filter];
+  const rawPage = Number(Array.isArray(params.page) ? params.page[0] : params.page);
+  const requestedPage = Number.isInteger(rawPage) && rawPage > 0 ? rawPage : 1;
+  const limit = 50;
+  const pageCount = Math.max(1, Math.ceil(total / limit));
+  const page = Math.min(requestedPage, pageCount);
+  const rows = await listAdminRefunds({
+    ...(filter === "all"
+      ? {}
+      : filter === "live"
+        ? { statuses: ["requested", "awaiting_provider"] as const }
+        : { status: filter }),
+    limit,
+    offset: (page - 1) * limit,
+  });
 
   const filterCount = (value: Filter): number => {
     if (value === "all") return counts.all;
@@ -122,7 +127,7 @@ export default async function AdminRefundsPage({
         description={
           filter === "live"
             ? `${counts.requested} ta qaror kutmoqda, ${counts.awaiting_provider} ta provayderda.`
-            : `${rows.length} ta yozuv.`
+            : `${total} ta yozuv · sahifa ${page}.`
         }
       >
         {rows.length === 0 ? (
@@ -166,6 +171,23 @@ export default async function AdminRefundsPage({
             ))}
           </ul>
         )}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+          <span className="text-sm text-ink-500">
+            {rows.length ? `${(page - 1) * limit + 1}–${Math.min(page * limit, total)} / ${total}` : "0 / 0"}
+          </span>
+          <div className="flex gap-2">
+            {page > 1 ? (
+              <ButtonLink href={`/admin/refunds?status=${filter}&page=${page - 1}`} variant="outline" size="sm">
+                Oldingi
+              </ButtonLink>
+            ) : null}
+            {page < pageCount ? (
+              <ButtonLink href={`/admin/refunds?status=${filter}&page=${page + 1}`} variant="outline" size="sm">
+                Keyingi
+              </ButtonLink>
+            ) : null}
+          </div>
+        </div>
       </AdminPanel>
     </div>
   );

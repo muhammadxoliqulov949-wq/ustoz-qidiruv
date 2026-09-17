@@ -319,7 +319,8 @@ export interface TeacherNavItem {
     | "verification"
     | "messages"
     | "profile"
-    | "notifications";
+    | "notifications"
+    | "settings";
   description: string;
 }
 
@@ -367,6 +368,12 @@ export const TEACHER_NAV: readonly TeacherNavItem[] = [
     label: "Profil",
     icon: "profile",
     description: "Ustoz profili va onboarding qoralamasi.",
+  },
+  {
+    href: "/account",
+    label: "Hisob xavfsizligi",
+    icon: "settings",
+    description: "Parol va hisob holatini boshqarish.",
   },
 ];
 

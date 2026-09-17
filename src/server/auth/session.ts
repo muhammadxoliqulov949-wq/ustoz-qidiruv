@@ -53,6 +53,7 @@ export interface SessionUser {
    * here is `id` + `role`, and that is all the guards consult.
    */
   phone: string | null;
+  accountStatus: "active" | "deactivated";
 }
 
 export interface SessionCookieFlags {
@@ -164,6 +165,7 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
       id: schema.users.id,
       role: schema.users.role,
       phone: schema.users.phone,
+      accountStatus: schema.users.accountStatus,
     })
     .from(schema.sessions)
     .innerJoin(schema.users, eq(schema.users.id, schema.sessions.userId))
@@ -171,6 +173,7 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
       and(
         eq(schema.sessions.tokenHash, hashToken(token)),
         gt(schema.sessions.expiresAt, new Date()),
+        eq(schema.users.accountStatus, "active"),
       ),
     )
     .limit(1);
