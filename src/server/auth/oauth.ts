@@ -1,6 +1,11 @@
 import "server-only";
 import { and, eq } from "drizzle-orm";
-import { createHash, randomBytes } from "node:crypto";
+import {
+  createHash,
+  createPublicKey,
+  randomBytes,
+  verify as cryptoVerify,
+} from "node:crypto";
 import { cookies } from "next/headers";
 import { getDb, schema } from "../db/client";
 import { isProduction, serverEnv } from "../env";
@@ -16,7 +21,9 @@ import { logError } from "../log";
 /*   • state, nonce, and code_verifier generated cryptographically server-side; */
 /*   • stored in an HttpOnly, SameSite=Lax, Secure cookie during the flow;      */
 /*   • server exchanges authorization code directly with Google token endpoint; */
-/*   • ID token claims verified: iss, aud, exp, nonce, email_verified;          */
+/*   • CRYPTOGRAPHIC SIGNATURE VERIFICATION: ID token signature verified using  */
+/*     trusted Google JWKS public keys (RSA-SHA256 / RS256);                    */
+/*   • claims verified: iss, aud, exp, nonce, email_verified;                   */
 /*   • Google stable account id (`sub`) is the authoritative provider identity; */
 /*   • admin accounts are NEVER accessible or linkable via Google OAuth;        */
 /*   • public Google auth cannot escalate or alter an existing user's role.     */
@@ -44,9 +51,65 @@ export interface GoogleIdTokenClaims {
   nonce?: string;
 }
 
+export interface GoogleJwk extends Record<string, unknown> {
+  kty: string;
+  alg?: string;
+  use?: string;
+  kid: string;
+  n: string;
+  e: string;
+}
+
+interface JwksCache {
+  keys: Map<string, GoogleJwk>;
+  expiresAt: number;
+}
+
 export type GoogleAuthResult =
   | { ok: true; userId: string; role: "student" | "teacher" | "admin"; next?: string | null }
   | { ok: false; code: string; message: string };
+
+/* ------------------------------- JWKS Cache -------------------------------- */
+
+let jwksCache: JwksCache | null = null;
+let mockJwks: GoogleJwk[] | null = null;
+
+/** Hook for tests to inject trusted test keys without calling Google. */
+export function setMockGoogleJwks(keys: GoogleJwk[] | null): void {
+  mockJwks = keys;
+  jwksCache = null;
+}
+
+/** Fetch and cache Google's public JWKS keys. */
+export async function getGoogleJwks(): Promise<Map<string, GoogleJwk>> {
+  if (mockJwks !== null) {
+    return new Map(mockJwks.map((k) => [k.kid, k]));
+  }
+
+  const now = Date.now();
+  if (jwksCache && jwksCache.expiresAt > now) {
+    return jwksCache.keys;
+  }
+
+  const response = await fetch("https://www.googleapis.com/oauth2/v3/certs");
+  if (!response.ok) {
+    throw new Error(`Failed to fetch Google JWKS: ${response.status}`);
+  }
+
+  const data = (await response.json()) as { keys?: GoogleJwk[] };
+  const keyMap = new Map<string, GoogleJwk>();
+  for (const key of data.keys ?? []) {
+    if (key.kid && key.kty === "RSA") {
+      keyMap.set(key.kid, key);
+    }
+  }
+
+  // Cache for 1 hour
+  jwksCache = { keys: keyMap, expiresAt: now + 3600 * 1000 };
+  return keyMap;
+}
+
+/* ------------------------- Authorization Request --------------------------- */
 
 /** Build Google OAuth Authorization URL and store state cookie. */
 export async function createGoogleAuthRedirect(options: {
@@ -166,40 +229,134 @@ export async function exchangeGoogleCode(
   return { id_token: data.id_token };
 }
 
-/** Validate ID token claims against standard OIDC constraints. */
-export function validateGoogleIdToken(
+/* ------------------- Cryptographic Signature Verification ------------------ */
+
+/**
+ * Cryptographically verify the Google ID token signature against trusted Google JWKS.
+ *
+ * Algorithm restrictions:
+ *   • strictly RS256 only (rejects symmetric "HS*", "none", or unapproved algos);
+ *   • validates kid against Google's published JWKS;
+ *   • verifies RSA-SHA256 digital signature over `header.payload`.
+ */
+export async function verifyGoogleIdTokenSignature(
   idToken: string,
-  expectedNonce: string,
-  expectedClientId: string,
-): { ok: true; claims: GoogleIdTokenClaims } | { ok: false; code: string; message: string } {
-  const claims = parseJwtPayload<GoogleIdTokenClaims>(idToken);
-  if (!claims) {
+): Promise<
+  | { ok: true; header: { alg: string; kid: string }; payload: GoogleIdTokenClaims }
+  | { ok: false; code: string; message: string }
+> {
+  const parts = idToken.split(".");
+  if (parts.length !== 3) {
     return { ok: false, code: "malformed_token", message: "Google tokeni formati noto‘g‘ri." };
   }
 
-  // 1. Issuer check
+  let header: { alg?: string; kid?: string };
+  let payload: GoogleIdTokenClaims;
+  try {
+    header = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
+    payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+  } catch {
+    return { ok: false, code: "malformed_token", message: "Google tokeni qismlarini ochib bo‘lmadi." };
+  }
+
+  // 1. Strict algorithm restriction: RS256 only
+  if (header.alg !== "RS256") {
+    return {
+      ok: false,
+      code: "unsupported_algorithm",
+      message: "Faqat RS256 algoritmi bilan imzolangan Google tokenlari qabul qilinadi.",
+    };
+  }
+
+  if (!header.kid) {
+    return { ok: false, code: "missing_kid", message: "Token sarlavhasida kalit identifikatori (kid) topilmadi." };
+  }
+
+  // 2. Fetch trusted Google public keys
+  let jwks: Map<string, GoogleJwk>;
+  try {
+    jwks = await getGoogleJwks();
+  } catch (err) {
+    logError("Failed to fetch Google JWKS", err);
+    return { ok: false, code: "jwks_fetch_failed", message: "Google imzo kalitlarini yuklab bo‘lmadi." };
+  }
+
+  let key = jwks.get(header.kid);
+  if (!key && mockJwks === null) {
+    // Retry once with fresh fetch for key rotation
+    jwksCache = null;
+    try {
+      jwks = await getGoogleJwks();
+      key = jwks.get(header.kid);
+    } catch {
+      // Ignore
+    }
+  }
+
+  if (!key) {
+    return { ok: false, code: "unknown_signing_key", message: "Google imzo kaliti topilmadi." };
+  }
+
+  // 3. Cryptographically verify signature using Node.js crypto
+  try {
+    const publicKey = createPublicKey({ key, format: "jwk" });
+    const signedData = Buffer.from(`${parts[0]}.${parts[1]}`);
+    const signature = Buffer.from(parts[2], "base64url");
+    const isValid = cryptoVerify("RSA-SHA256", signedData, publicKey, signature);
+
+    if (!isValid) {
+      return {
+        ok: false,
+        code: "invalid_signature",
+        message: "Google tokeni imzosi haqiqiy emas (soxtalashtirilgan yoki o‘zgartirilgan).",
+      };
+    }
+  } catch (err) {
+    logError("Cryptographic signature verification failed", err);
+    return { ok: false, code: "signature_verification_error", message: "Imzoni tekshirishda xatolik yuz berdi." };
+  }
+
+  return { ok: true, header: { alg: header.alg, kid: header.kid }, payload };
+}
+
+/** Validate ID token cryptographic signature and standard OIDC claims. */
+export async function validateGoogleIdToken(
+  idToken: string,
+  expectedNonce: string,
+  expectedClientId: string,
+): Promise<{ ok: true; claims: GoogleIdTokenClaims } | { ok: false; code: string; message: string }> {
+  // A. Cryptographic Signature Verification
+  const sigResult = await verifyGoogleIdTokenSignature(idToken);
+  if (!sigResult.ok) {
+    return sigResult;
+  }
+
+  const claims = sigResult.payload;
+
+  // B. Standard Claims Checks
+  // 1. Issuer check (strict)
   const validIssuers = ["accounts.google.com", "https://accounts.google.com"];
   if (!validIssuers.includes(claims.iss)) {
     return { ok: false, code: "invalid_issuer", message: "Google tokeni emitenti noto‘g‘ri." };
   }
 
-  // 2. Audience check
+  // 2. Audience check (strict)
   if (claims.aud !== expectedClientId) {
     return { ok: false, code: "invalid_audience", message: "Google tokeni auditoriyasi mos kelmadi." };
   }
 
-  // 3. Expiration check
+  // 3. Expiration check (strict)
   const nowSec = Math.floor(Date.now() / 1000);
   if (claims.exp <= nowSec) {
     return { ok: false, code: "token_expired", message: "Google tokenining muddati tugagan." };
   }
 
-  // 4. Nonce check
+  // 4. Nonce check (constant-time)
   if (!claims.nonce || !safeEqual(claims.nonce, expectedNonce)) {
     return { ok: false, code: "invalid_nonce", message: "Google sessiya xavfsizlik kodi mos kelmadi." };
   }
 
-  // 5. Email verified check
+  // 5. Email verified check (strict)
   if (claims.email_verified !== true) {
     return {
       ok: false,
@@ -218,6 +375,8 @@ export function validateGoogleIdToken(
 
   return { ok: true, claims };
 }
+
+/* ----------------------- User Resolution / Linking ------------------------- */
 
 /**
  * Resolve or link a verified Google identity to an application user.

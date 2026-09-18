@@ -74,7 +74,7 @@ async function main(): Promise<void> {
   const contracts = await import("../src/lib/course-moderation");
   const verifyCopy = await import("../src/lib/teacher-verification");
   const validation = await import("../src/server/validation");
-  const { authenticateAdminEmail, authenticatePhone } = await import(
+  const { authenticateAdminEmail, authenticateMarketplaceEmail, authenticatePhone } = await import(
     "../src/server/auth/credentials"
   );
   const emailLib = await import("../src/lib/email");
@@ -387,6 +387,22 @@ async function main(): Promise<void> {
   check(
     "a student with an email cannot authenticate via authenticateAdminEmail",
     (await authenticateAdminEmail("student@ustoz.uz", "supersecret-qa")).ok === false,
+  );
+  const teacherWithEmail = newId("usr");
+  await db.insert(schema.users).values({
+    id: teacherWithEmail,
+    role: "teacher",
+    phone: "+998902220082",
+    email: "teacher.isolated@ustoz.uz",
+    passwordHash,
+  });
+  check(
+    "a teacher with an email cannot authenticate via authenticateAdminEmail",
+    (await authenticateAdminEmail("teacher.isolated@ustoz.uz", "supersecret-qa")).ok === false,
+  );
+  check(
+    "the operator login is isolated: marketplace login cannot authenticate an operator email",
+    (await authenticateMarketplaceEmail(ADMIN_EMAIL, adminEmailPassword)).ok === false,
   );
   await rejects("an email must be stored normalized (users_email_normalized)", () =>
     db.insert(schema.users).values({

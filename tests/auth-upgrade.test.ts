@@ -42,12 +42,7 @@ async function rejects(name: string, fn: () => Promise<unknown>): Promise<void> 
   }
 }
 
-function makeJwt(payload: Record<string, unknown>): string {
-  const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
-  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  const sig = Buffer.from("mock-sig").toString("base64url");
-  return `${header}.${body}.${sig}`;
-}
+
 
 async function main(): Promise<void> {
   const { PGlite } = await import("@electric-sql/pglite");
@@ -73,7 +68,9 @@ async function main(): Promise<void> {
   const {
     validateGoogleIdToken,
     resolveGoogleUser,
+    setMockGoogleJwks,
   } = await import("../src/server/auth/oauth");
+  type GoogleJwk = import("../src/server/auth/oauth").GoogleJwk;
   const {
     createVerificationToken,
     verifyEmailToken,
@@ -95,8 +92,46 @@ async function main(): Promise<void> {
 
   const CLIENT_ID = process.env.GOOGLE_CLIENT_ID!;
 
-  /* ==================== 1. GOOGLE ID TOKEN CLAIMS ==================== */
-  console.log("\n# 1. Google ID token validation & claims");
+  /* ==================== 1. GOOGLE ID TOKEN CRYPTO & CLAIMS ==================== */
+  console.log("\n# 1. Google ID token cryptographic signature & claims");
+
+  const { generateKeyPairSync, createSign } = await import("node:crypto");
+  const { publicKey: testPublicKey, privateKey: testPrivateKey } = generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+  });
+  const { privateKey: attackerPrivateKey } = generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+  });
+
+  const testJwk = {
+    ...testPublicKey.export({ format: "jwk" }),
+    kid: "google-test-kid-1",
+    alg: "RS256",
+    use: "sig",
+  } as GoogleJwk;
+
+  // Inject trusted test JWK (simulating Google's certs endpoint)
+  setMockGoogleJwks([testJwk]);
+
+  function makeSignedJwt(
+    payload: Record<string, unknown>,
+    options: { kid?: string; alg?: string; key?: import("node:crypto").KeyObject } = {},
+  ): string {
+    const kid = options.kid ?? "google-test-kid-1";
+    const alg = options.alg ?? "RS256";
+    const header = Buffer.from(JSON.stringify({ alg, typ: "JWT", kid })).toString("base64url");
+    const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+    const data = Buffer.from(`${header}.${body}`);
+
+    if (alg === "none") {
+      return `${header}.${body}.`;
+    }
+
+    const signer = createSign("RSA-SHA256");
+    signer.update(data);
+    const sig = signer.sign(options.key ?? testPrivateKey).toString("base64url");
+    return `${header}.${body}.${sig}`;
+  }
 
   const validNonce = "secure-nonce-123456";
   const validClaims = {
@@ -110,32 +145,64 @@ async function main(): Promise<void> {
     nonce: validNonce,
   };
 
-  const validJwt = makeJwt(validClaims);
-  const validResult = validateGoogleIdToken(validJwt, validNonce, CLIENT_ID);
-  check("valid Google ID token passes validation", validResult.ok === true);
+  const validJwt = makeSignedJwt(validClaims);
+  const validResult = await validateGoogleIdToken(validJwt, validNonce, CLIENT_ID);
+  check("valid Google ID token passes cryptographic signature & validation", validResult.ok === true);
 
-  // Invalid issuer
-  const badIssuerJwt = makeJwt({ ...validClaims, iss: "https://untrusted-issuer.com" });
-  const badIssuerResult = validateGoogleIdToken(badIssuerJwt, validNonce, CLIENT_ID);
+  // 1. Forged signature: tampered body
+  const tamperedJwt = `${validJwt.slice(0, -10)}abcdefghij`;
+  const tamperedResult = await validateGoogleIdToken(tamperedJwt, validNonce, CLIENT_ID);
+  check(
+    "tampered signature is cryptographically rejected",
+    !tamperedResult.ok && tamperedResult.code === "invalid_signature",
+  );
+
+  // 2. Forged signature: signed by attacker key
+  const forgedJwt = makeSignedJwt(validClaims, { key: attackerPrivateKey });
+  const forgedResult = await validateGoogleIdToken(forgedJwt, validNonce, CLIENT_ID);
+  check(
+    "token signed by untrusted key is cryptographically rejected",
+    !forgedResult.ok && forgedResult.code === "invalid_signature",
+  );
+
+  // 3. Algorithm restriction: alg=none rejected
+  const algNoneJwt = makeSignedJwt(validClaims, { alg: "none" });
+  const algNoneResult = await validateGoogleIdToken(algNoneJwt, validNonce, CLIENT_ID);
+  check(
+    "alg=none is rejected by algorithm restriction",
+    !algNoneResult.ok && algNoneResult.code === "unsupported_algorithm",
+  );
+
+  // 4. Unknown kid rejected
+  const unknownKidJwt = makeSignedJwt(validClaims, { kid: "non-existent-kid" });
+  const unknownKidResult = await validateGoogleIdToken(unknownKidJwt, validNonce, CLIENT_ID);
+  check(
+    "unknown kid rejected against trusted JWKS",
+    !unknownKidResult.ok && unknownKidResult.code === "unknown_signing_key",
+  );
+
+  // 5. Invalid issuer
+  const badIssuerJwt = makeSignedJwt({ ...validClaims, iss: "https://untrusted-issuer.com" });
+  const badIssuerResult = await validateGoogleIdToken(badIssuerJwt, validNonce, CLIENT_ID);
   check("wrong issuer rejected", !badIssuerResult.ok && badIssuerResult.code === "invalid_issuer");
 
-  // Invalid audience
-  const badAudJwt = makeJwt({ ...validClaims, aud: "wrong-client-id" });
-  const badAudResult = validateGoogleIdToken(badAudJwt, validNonce, CLIENT_ID);
+  // 6. Invalid audience
+  const badAudJwt = makeSignedJwt({ ...validClaims, aud: "wrong-client-id" });
+  const badAudResult = await validateGoogleIdToken(badAudJwt, validNonce, CLIENT_ID);
   check("wrong audience rejected", !badAudResult.ok && badAudResult.code === "invalid_audience");
 
-  // Expired token
-  const expiredJwt = makeJwt({ ...validClaims, exp: Math.floor(Date.now() / 1000) - 60 });
-  const expiredResult = validateGoogleIdToken(expiredJwt, validNonce, CLIENT_ID);
+  // 7. Expired token
+  const expiredJwt = makeSignedJwt({ ...validClaims, exp: Math.floor(Date.now() / 1000) - 60 });
+  const expiredResult = await validateGoogleIdToken(expiredJwt, validNonce, CLIENT_ID);
   check("expired ID token rejected", !expiredResult.ok && expiredResult.code === "token_expired");
 
-  // Invalid nonce
-  const badNonceResult = validateGoogleIdToken(validJwt, "wrong-nonce", CLIENT_ID);
+  // 8. Invalid nonce
+  const badNonceResult = await validateGoogleIdToken(validJwt, "wrong-nonce", CLIENT_ID);
   check("nonce mismatch rejected", !badNonceResult.ok && badNonceResult.code === "invalid_nonce");
 
-  // Unverified email
-  const unverifiedEmailJwt = makeJwt({ ...validClaims, email_verified: false });
-  const unverifiedEmailResult = validateGoogleIdToken(unverifiedEmailJwt, validNonce, CLIENT_ID);
+  // 9. Unverified email
+  const unverifiedEmailJwt = makeSignedJwt({ ...validClaims, email_verified: false });
+  const unverifiedEmailResult = await validateGoogleIdToken(unverifiedEmailJwt, validNonce, CLIENT_ID);
   check(
     "unverified Google email rejected",
     !unverifiedEmailResult.ok && unverifiedEmailResult.code === "email_not_verified",

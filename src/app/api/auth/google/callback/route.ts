@@ -72,8 +72,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       redirectUri,
     );
 
-    // 2. Validate ID token claims
-    const validation = validateGoogleIdToken(id_token, oauthState.nonce, clientId);
+    // 2. Validate ID token cryptographic signature & claims
+    const validation = await validateGoogleIdToken(id_token, oauthState.nonce, clientId);
     if (!validation.ok) {
       logError("Google ID token validation failed", { code: validation.code });
       loginUrl.searchParams.set("error", validation.code);
