@@ -5,7 +5,10 @@ import { useRouter } from "next/navigation";
 import { Send } from "lucide-react";
 import { Button } from "@/components/ui";
 import { submitTeacherVerificationAction } from "@/server/actions/teacher-verification";
-import { VERIFICATION_SUBMIT_NOTE } from "@/lib/teacher-verification";
+import {
+  verificationSubmitEnabled,
+  VERIFICATION_SUBMIT_NOTE,
+} from "@/lib/teacher-verification";
 import { MEDIA_DOCUMENTS_REQUIRED_NOTE } from "@/lib/media";
 
 /* -------------------------------------------------------------------------- */
@@ -35,6 +38,15 @@ export function VerificationSubmitForm({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+
+  /*
+   * One expression, exported from lib/teacher-verification so the regression
+   * suite evaluates the same rule the button does: a complete profile AND the
+   * required evidence AND nothing already in flight. It is a preview of the
+   * server's answer — the submission action re-checks all three inside its
+   * transaction — so this can only ever hide a refusal, never grant one.
+   */
+  const enabled = verificationSubmitEnabled({ eligible, documentsReady, pending });
 
   function submit() {
     setError(null);
@@ -73,7 +85,7 @@ export function VerificationSubmitForm({
       ) : null}
 
       <div>
-        <Button type="button" onClick={submit} disabled={pending || !eligible || !documentsReady}>
+        <Button type="button" onClick={submit} disabled={!enabled}>
           <Send aria-hidden="true" className="size-4" />
           Tasdiqlash uchun yuborish
         </Button>

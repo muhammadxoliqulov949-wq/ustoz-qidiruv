@@ -87,11 +87,15 @@ export async function submitEnrollmentRequestAction(
         })
         .from(schema.courseGroups)
         .innerJoin(schema.courses, eq(schema.courses.id, schema.courseGroups.courseId))
+        .innerJoin(schema.teacherProfiles, eq(schema.teacherProfiles.userId, schema.courses.teacherUserId))
+        .innerJoin(schema.users, eq(schema.users.id, schema.courses.teacherUserId))
         .where(
           and(
             eq(schema.courseGroups.id, parsed.data.groupId),
             eq(schema.courseGroups.courseId, parsed.data.courseId),
             eq(schema.courses.status, "published"),
+            eq(schema.teacherProfiles.isPublic, true),
+            eq(schema.users.accountStatus, "active"),
           ),
         )
         .limit(1);

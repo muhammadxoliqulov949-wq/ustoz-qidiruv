@@ -4,7 +4,12 @@ import { courseAuthoringOptions } from "@/data/course-authoring";
 import { CourseEditor } from "@/components/teacher-dashboard/course-editor";
 import { DbCourseEditor } from "@/components/teacher-dashboard/db-course-editor";
 import { isLocalDraftId } from "@/lib/course-draft";
-import { COURSE_PUBLISHED_EDIT_LOCKED_NOTE, COURSE_UNDER_REVIEW_NOTE } from "@/lib/course-moderation";
+import {
+  COURSE_ARCHIVED_NOTE,
+  COURSE_PAUSED_NOTE,
+  COURSE_PUBLISHED_EDIT_LOCKED_NOTE,
+  COURSE_UNDER_REVIEW_NOTE,
+} from "@/lib/course-moderation";
 import { categories } from "@/data/categories";
 import { onboardingCities } from "@/lib/onboarding";
 import { requireRolePage } from "@/server/auth/guards";
@@ -117,7 +122,11 @@ export default async function EditCoursePage({
             lockedNote: coverLocked
               ? detail.course.status === "published"
                 ? COURSE_PUBLISHED_EDIT_LOCKED_NOTE
-                : COURSE_UNDER_REVIEW_NOTE
+                : detail.course.status === "ready"
+                  ? COURSE_UNDER_REVIEW_NOTE
+                  : detail.course.status === "paused"
+                    ? COURSE_PAUSED_NOTE
+                    : COURSE_ARCHIVED_NOTE
               : null,
             storageNote: storage.enabled ? null : MEDIA_STORAGE_DISABLED_NOTE,
           }}

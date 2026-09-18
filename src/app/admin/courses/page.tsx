@@ -12,7 +12,10 @@ import {
   isoDate,
 } from "@/components/admin/admin-ui";
 import { EmptyState } from "@/components/dashboard/empty-state";
-import { getModerationCounts, listModerationQueue } from "@/server/moderation-service";
+import {
+  getModerationQueueCounts,
+  listModerationQueue,
+} from "@/server/moderation-service";
 import { getCourseStateCounts } from "@/server/admin-service";
 import { canTransitionCourse } from "@/lib/course-moderation";
 import { COURSE_STATE_LABEL } from "@/lib/course-moderation";
@@ -59,17 +62,23 @@ export default async function AdminCoursesPage({
 
   const params = await searchParams;
   const status = parseStatus(params.status);
-  const [rows, counts, stateCounts] = await Promise.all([
-    listModerationQueue({ status }),
-    getModerationCounts(),
+  const [queueCounts, stateCounts] = await Promise.all([
+    getModerationQueueCounts(),
     getCourseStateCounts(),
   ]);
+  const total = queueCounts[status];
+  const rawPage = Number(Array.isArray(params.page) ? params.page[0] : params.page);
+  const requestedPage = Number.isInteger(rawPage) && rawPage > 0 ? rawPage : 1;
+  const limit = 50;
+  const pageCount = Math.max(1, Math.ceil(total / limit));
+  const page = Math.min(requestedPage, pageCount);
+  const rows = await listModerationQueue({ status, limit, offset: (page - 1) * limit });
 
   const filters: { value: StatusParam; label: string; count: number | undefined }[] = [
-    { value: "pending", label: "Kutilmoqda", count: counts.pendingReviews },
-    { value: "approved", label: "E’lon qilingan", count: stateCounts.published },
-    { value: "changes_requested", label: "Qaytarilgan", count: undefined },
-    { value: "all", label: "Barchasi", count: undefined },
+    { value: "pending", label: "Kutilmoqda", count: queueCounts.pending },
+    { value: "approved", label: "E’lon qilingan", count: queueCounts.approved },
+    { value: "changes_requested", label: "Qaytarilgan", count: queueCounts.changes_requested },
+    { value: "all", label: "Barchasi", count: queueCounts.all },
   ];
 
   return (
@@ -174,6 +183,23 @@ export default async function AdminCoursesPage({
             })}
           </ul>
         )}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+          <span className="text-sm text-ink-500">
+            {rows.length ? `${(page - 1) * limit + 1}–${Math.min(page * limit, total)} / ${total}` : "0 / 0"}
+          </span>
+          <div className="flex gap-2">
+            {page > 1 ? (
+              <ButtonLink href={`/admin/courses?status=${status}&page=${page - 1}`} variant="outline" size="sm">
+                Oldingi
+              </ButtonLink>
+            ) : null}
+            {page < pageCount ? (
+              <ButtonLink href={`/admin/courses?status=${status}&page=${page + 1}`} variant="outline" size="sm">
+                Keyingi
+              </ButtonLink>
+            ) : null}
+          </div>
+        </div>
       </AdminPanel>
 
       <p className="text-sm leading-relaxed text-ink-500">

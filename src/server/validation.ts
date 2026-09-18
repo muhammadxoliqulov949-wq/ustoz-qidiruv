@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { VERIFICATION_DOCUMENT_TYPES } from "@/lib/media";
+import { TEACHER_PROFILE_LIMITS } from "@/lib/teacher-profile";
 import { categories } from "@/data/categories";
 import { isValidEmail, normalizeEmail } from "@/lib/email";
 import {
@@ -33,6 +34,13 @@ import {
   REVIEW_REASON_MIN_LENGTH,
   normalizeReviewBody,
 } from "@/lib/reviews";
+import {
+  SUPPORT_CATEGORIES,
+  SUPPORT_MESSAGE_MAX_LENGTH,
+  SUPPORT_MESSAGE_MIN_LENGTH,
+  SUPPORT_RELATED_TYPES,
+  SUPPORT_STATUSES,
+} from "@/lib/support";
 
 /* -------------------------------------------------------------------------- */
 /* Server-side input schemas — Phase 11.                                       */
@@ -163,17 +171,39 @@ export const studentProfileSchema = z
 export const teacherProfileSchema = z
   .object({
     name: nameSchema,
+    /*
+     * `specialization` is the public “Yo‘nalish” label AND a verification
+     * requirement, so it is part of the teacher-editable profile: an empty value
+     * is stored as NULL rather than as an empty string, which is what the
+     * verification predicate expects for "not stated".
+     */
+    specialization: z
+      .string()
+      .trim()
+      .max(
+        TEACHER_PROFILE_LIMITS.SPECIALIZATION_MAX,
+        `Yo‘nalish ${TEACHER_PROFILE_LIMITS.SPECIALIZATION_MAX} belgidan oshmasin.`,
+      )
+      .nullable()
+      .transform((value) => (value === null || value.trim() === "" ? null : value.trim())),
     city: citySchema,
-    district: z.string().trim().max(120),
+    district: z.string().trim().max(TEACHER_PROFILE_LIMITS.DISTRICT_MAX),
     categories: z
       .array(z.string().refine((slug) => CATEGORY_SET.has(slug), "Noma’lum yo‘nalish."))
-      .max(3),
-    levels: z.array(z.enum(["boshlangich", "orta", "yuqori"])).max(3),
-    formats: z.array(z.enum(["online", "offline"])).max(2),
+      .max(TEACHER_PROFILE_LIMITS.CATEGORIES_MAX),
+    levels: z
+      .array(z.enum(["boshlangich", "orta", "yuqori"]))
+      .max(TEACHER_PROFILE_LIMITS.LEVELS_MAX),
+    formats: z.array(z.enum(["online", "offline"])).max(TEACHER_PROFILE_LIMITS.FORMATS_MAX),
     languages: languagesSchema,
-    experienceYears: z.number().int().min(0).max(60).nullable(),
-    bio: z.string().trim().max(1200),
-    approach: z.string().trim().max(1200),
+    experienceYears: z
+      .number()
+      .int()
+      .min(TEACHER_PROFILE_LIMITS.EXPERIENCE_MIN)
+      .max(TEACHER_PROFILE_LIMITS.EXPERIENCE_MAX)
+      .nullable(),
+    bio: z.string().trim().max(TEACHER_PROFILE_LIMITS.BIO_MAX),
+    approach: z.string().trim().max(TEACHER_PROFILE_LIMITS.APPROACH_MAX),
     onboardingCompleted: z.boolean(),
   })
   .strict();
@@ -262,6 +292,61 @@ export const requestCourseChangesSchema = z
 
 /** Teacher submits an owned course for moderation ("ready"). */
 export const submitCourseForReviewSchema = z.object({ courseId: idSchema }).strict();
+
+/** Teacher lifecycle intent. The target status is deliberately not accepted. */
+export const courseLifecycleSchema = z
+  .object({
+    courseId: idSchema,
+    action: z.enum(["pause", "resume", "archive"]),
+  })
+  .strict();
+
+/* ----------------------------- Phase 23 support ---------------------------- */
+
+export const supportTicketSchema = z
+  .object({
+    category: z.enum(SUPPORT_CATEGORIES),
+    message: z
+      .string()
+      .trim()
+      .min(SUPPORT_MESSAGE_MIN_LENGTH, `Murojaat kamida ${SUPPORT_MESSAGE_MIN_LENGTH} belgi bo‘lsin.`)
+      .max(SUPPORT_MESSAGE_MAX_LENGTH, `Murojaat ${SUPPORT_MESSAGE_MAX_LENGTH} belgidan oshmasin.`),
+    relatedEntityType: z.enum(SUPPORT_RELATED_TYPES).nullable(),
+    relatedEntityId: idSchema.nullable(),
+  })
+  .strict()
+  .refine(
+    (value) => (value.relatedEntityType === null) === (value.relatedEntityId === null),
+    { message: "Bog‘liq yozuv turi va identifikatorini birga kiriting yoki ikkalasini ham bo‘sh qoldiring." },
+  );
+
+export const supportTicketTransitionSchema = z
+  .object({
+    ticketId: idSchema,
+    status: z.enum(SUPPORT_STATUSES),
+  })
+  .strict();
+
+/* ----------------------------- account security --------------------------- */
+
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1).max(72),
+    newPassword: passwordSchema,
+    confirmPassword: z.string().min(1).max(72),
+  })
+  .strict()
+  .refine((value) => value.newPassword === value.confirmPassword, {
+    path: ["confirmPassword"],
+    message: "Yangi parollar bir xil emas.",
+  });
+
+export const deactivateAccountSchema = z
+  .object({
+    password: z.string().min(1).max(72),
+    confirmation: z.literal("DEACTIVATE"),
+  })
+  .strict();
 
 /* --------------------------------- payments --------------------------------- */
 

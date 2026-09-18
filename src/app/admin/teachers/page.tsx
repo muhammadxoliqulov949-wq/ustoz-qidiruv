@@ -63,10 +63,20 @@ export default async function AdminTeachersPage({
 
   const params = await searchParams;
   const status = parseStatus(params.status);
-  const [rows, counts] = await Promise.all([
-    listVerificationQueue({ status }),
-    getVerificationQueueCounts(),
-  ]);
+  const counts = await getVerificationQueueCounts();
+  const total = status === "pending"
+    ? counts.pending
+    : status === "approved"
+      ? counts.approved
+      : status === "rejected"
+        ? counts.rejected
+        : counts.pending + counts.approved + counts.rejected;
+  const rawPage = Number(Array.isArray(params.page) ? params.page[0] : params.page);
+  const requestedPage = Number.isInteger(rawPage) && rawPage > 0 ? rawPage : 1;
+  const limit = 50;
+  const pageCount = Math.max(1, Math.ceil(total / limit));
+  const page = Math.min(requestedPage, pageCount);
+  const rows = await listVerificationQueue({ status, limit, offset: (page - 1) * limit });
 
   const filters: { value: StatusParam; label: string; count: number }[] = [
     { value: "pending", label: VERIFICATION_REQUEST_STATE_LABEL.pending, count: counts.pending },
@@ -193,6 +203,23 @@ export default async function AdminTeachersPage({
             </table>
           </div>
         )}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+          <span className="text-sm text-ink-500">
+            {rows.length ? `${(page - 1) * limit + 1}–${Math.min(page * limit, total)} / ${total}` : "0 / 0"}
+          </span>
+          <div className="flex gap-2">
+            {page > 1 ? (
+              <ButtonLink href={`/admin/teachers?status=${status}&page=${page - 1}`} variant="outline" size="sm">
+                Oldingi
+              </ButtonLink>
+            ) : null}
+            {page < pageCount ? (
+              <ButtonLink href={`/admin/teachers?status=${status}&page=${page + 1}`} variant="outline" size="sm">
+                Keyingi
+              </ButtonLink>
+            ) : null}
+          </div>
+        </div>
       </AdminPanel>
 
       <p className="text-sm leading-relaxed text-ink-500">

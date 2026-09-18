@@ -9,6 +9,7 @@ import {
 } from "@/components/teacher-dashboard/teacher-nav";
 import { requireRolePage } from "@/server/auth/guards";
 import { countUnreadMessages } from "@/server/messaging-service";
+import { countUnreadNotifications } from "@/server/notification-service";
 import { getTeacherProfile } from "@/server/repo";
 
 /* -------------------------------------------------------------------------- */
@@ -49,9 +50,10 @@ export default async function TeacherDashboardLayout({
 }) {
   const user = await requireRolePage("teacher", "/teacher/dashboard");
   // Phase 16: unread-message badge, derived from the read markers on the server.
-  const [profile, unreadMessages] = await Promise.all([
+  const [profile, unreadMessages, unreadNotifications] = await Promise.all([
     getTeacherProfile(user.id),
     countUnreadMessages(user.id),
+    countUnreadNotifications(user.id),
   ]);
   return (
     <OnboardingProvider>
@@ -66,7 +68,7 @@ export default async function TeacherDashboardLayout({
                 onboardingCompleted={profile?.onboardingCompleted ?? false}
               />
             </div>
-            <TeacherSidebarNav unreadMessages={unreadMessages} />
+            <TeacherSidebarNav unreadMessages={unreadMessages} unreadNotifications={unreadNotifications} />
             <p className="text-sm leading-relaxed text-ink-500 max-lg:hidden">
               Panel hisobingizga bog‘langan. Yozilish so‘rovlarini shu yerda
               qabul qilasiz yoki rad etasiz. To‘lovlar o‘quvchi tomonidan
@@ -82,7 +84,7 @@ export default async function TeacherDashboardLayout({
 
           {/* ------------------------------ content ------------------------------ */}
           <div className="flex min-w-0 flex-col gap-6">
-            <TeacherTabNav unreadMessages={unreadMessages} />
+            <TeacherTabNav unreadMessages={unreadMessages} unreadNotifications={unreadNotifications} />
             {children}
           </div>
         </div>

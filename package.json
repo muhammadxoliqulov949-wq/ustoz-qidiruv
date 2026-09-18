@@ -14,6 +14,7 @@
     "storage:status": "tsx --conditions=react-server scripts/storage.ts status",
     "storage:cleanup": "tsx --conditions=react-server scripts/storage.ts cleanup",
     "storage:smoke": "tsx --conditions=react-server scripts/storage.ts smoke",
+    "ops:cleanup": "tsx --conditions=react-server scripts/operations.ts cleanup",
     "admin:list": "tsx --conditions=react-server scripts/admin.ts list",
     "admin:promote": "tsx --conditions=react-server scripts/admin.ts promote",
     "admin:demote": "tsx --conditions=react-server scripts/admin.ts demote",
@@ -28,7 +29,9 @@
     "test:admin": "tsx --conditions=react-server tests/admin.test.ts",
     "test:reviews": "tsx --conditions=react-server tests/reviews.test.ts",
     "test:data-consistency": "tsx --conditions=react-server tests/data-consistency.test.ts",
-    "test:phase22": "tsx --conditions=react-server tests/phase22-hardening.test.ts"
+    "test:phase22": "tsx --conditions=react-server tests/phase22-hardening.test.ts",
+    "test:phase23": "tsx --conditions=react-server tests/phase23-operations.test.ts",
+    "test:phase23-profile": "tsx --conditions=react-server tests/phase23-profile.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1131.0",

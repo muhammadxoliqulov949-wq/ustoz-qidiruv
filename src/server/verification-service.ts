@@ -2,12 +2,14 @@ import "server-only";
 import { and, asc, count, desc, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "./db/client";
 import { newId } from "./auth/ids";
+import { notifyActiveAdmins } from "./notification-service";
 import { recordAdminEvent } from "./audit-service";
 import {
   DOCUMENT_REVIEW_NOTICE,
   VERIFICATION_DOCUMENTS_REQUIRED_NOTE,
   isVerificationEligible,
   missingVerificationRequirements,
+  verificationProfileInput,
   type VerificationRequestState,
   type VerificationState,
 } from "@/lib/teacher-verification";
@@ -131,18 +133,12 @@ export async function getTeacherVerificationState(
 
   /*
    * Eligibility is computed from the SAME pure requirement list the UI shows,
-   * so the form never offers a submission the server would refuse.
+   * through the SAME row-to-predicate mapping the profile editor previews —
+   * so the form never offers a submission the server would refuse, and the
+   * fields a teacher edits are provably the fields this reads.
    */
   const missing = profile
-    ? missingVerificationRequirements({
-        name: profile.name,
-        specialization: profile.specialization,
-        city: profile.city,
-        languages: profile.languages,
-        bio: profile.bio,
-        approach: profile.approach,
-        experienceYears: profile.experienceYears,
-      })
+    ? missingVerificationRequirements(verificationProfileInput(profile))
     : [];
 
   return {
@@ -222,17 +218,7 @@ export async function submitVerificationRequest(
        * Completeness is enforced on the SERVER. `isVerificationEligible` is the
        * same pure predicate the dashboard renders, so the two cannot drift.
        */
-      if (
-        !isVerificationEligible({
-          name: profile.name,
-          specialization: profile.specialization,
-          city: profile.city,
-          languages: profile.languages,
-          bio: profile.bio,
-          approach: profile.approach,
-          experienceYears: profile.experienceYears,
-        })
-      ) {
+      if (!isVerificationEligible(verificationProfileInput(profile))) {
         return {
           ok: false as const,
           code: "ineligible" as const,
@@ -288,6 +274,13 @@ export async function submitVerificationRequest(
         .set({ verification: "pending", updatedAt: new Date() })
         .where(eq(schema.teacherProfiles.userId, teacherUserId));
 
+      await notifyActiveAdmins(tx, {
+        type: "verification_submitted",
+        title: "Yangi ustoz tasdiqlash arizasi",
+        body: "Ustoz tasdiqlash uchun ariza va hujjatlarini yubordi.",
+        href: `/admin/teachers/${teacherUserId}`,
+      });
+
       return { ok: true as const, data: { requestId } };
     });
   } catch (error) {
@@ -317,10 +310,15 @@ export async function submitVerificationRequest(
  * profile needs the profile, not the account's credential identifier.
  */
 export async function listVerificationQueue(
-  options: { status?: VerificationRequestState | "all" } = {},
+  options: { status?: VerificationRequestState | "all"; limit?: number; offset?: number } = {},
 ): Promise<VerificationQueueRow[]> {
   const db = getDb();
   const status = options.status ?? "pending";
+  const limit = Math.min(Math.max(options.limit ?? 50, 1), 100);
+  const offset = Math.max(options.offset ?? 0, 0);
+  const order = status === "pending"
+    ? [asc(schema.teacherVerificationRequests.submittedAt), asc(schema.teacherVerificationRequests.id)]
+    : [desc(schema.teacherVerificationRequests.submittedAt), desc(schema.teacherVerificationRequests.id)];
 
   const rows = await db
     .select({
@@ -346,7 +344,9 @@ export async function listVerificationQueue(
         ? undefined
         : eq(schema.teacherVerificationRequests.status, status),
     )
-    .orderBy(asc(schema.teacherVerificationRequests.submittedAt));
+    .orderBy(...order)
+    .limit(limit)
+    .offset(offset);
 
   return rows;
 }

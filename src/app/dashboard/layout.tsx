@@ -11,6 +11,7 @@ import { RoleNotice } from "@/components/dashboard/role-notice";
 import { requireRolePage } from "@/server/auth/guards";
 import { getStudentProfile } from "@/server/repo";
 import { countUnreadMessages } from "@/server/messaging-service";
+import { countUnreadNotifications } from "@/server/notification-service";
 
 /* -------------------------------------------------------------------------- */
 /* /dashboard — the STUDENT application shell (Phase 8).                        */
@@ -49,9 +50,10 @@ export default async function DashboardLayout({ children }: { children: ReactNod
    * so it updates on navigation, on a refresh and after any mutation that
    * revalidates the surface.
    */
-  const [profile, unreadMessages] = await Promise.all([
+  const [profile, unreadMessages, unreadNotifications] = await Promise.all([
     getStudentProfile(user.id),
     countUnreadMessages(user.id),
+    countUnreadNotifications(user.id),
   ]);
   return (
     <OnboardingProvider>
@@ -65,7 +67,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
                 onboardingCompleted={profile?.onboardingCompleted ?? false}
               />
             </div>
-            <DashboardSidebarNav unreadMessages={unreadMessages} />
+            <DashboardSidebarNav unreadMessages={unreadMessages} unreadNotifications={unreadNotifications} />
             <p className="text-sm leading-relaxed text-ink-500 max-lg:hidden">
               Kabinet hisobingizga bog‘langan. Saqlangan kurslar hozircha shu
               brauzerda saqlanadi. Pullik kurslarga to‘lov so‘rovingiz qabul
@@ -81,7 +83,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
 
           {/* ------------------------------ content ------------------------------ */}
           <div className="flex min-w-0 flex-col gap-6">
-            <DashboardTabNav unreadMessages={unreadMessages} />
+            <DashboardTabNav unreadMessages={unreadMessages} unreadNotifications={unreadNotifications} />
             <RoleNotice />
             {children}
           </div>

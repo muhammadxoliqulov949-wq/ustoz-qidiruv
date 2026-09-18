@@ -27,6 +27,7 @@ import {
   VERIFICATION_MEANS_NOTE,
   VERIFICATION_STATE_NOTE,
 } from "@/lib/teacher-verification";
+import type { CourseState } from "@/lib/course-moderation";
 
 /* -------------------------------------------------------------------------- */
 /* /admin/teachers/[teacherId] — one applicant, decided here (Phase 15).       */
@@ -315,7 +316,7 @@ export default async function AdminTeacherDetailPage({
               <li key={course.id} className="flex flex-wrap items-center justify-between gap-2 py-3">
                 <span className="font-medium text-ink-900">{course.title}</span>
                 <span className="flex items-center gap-3">
-                  <CourseStateBadge state={course.status as "draft" | "ready" | "published"} />
+                  <CourseStateBadge state={course.status as CourseState} />
                   <ButtonLink href={`/admin/courses/${course.id}`} variant="outline" size="sm">
                     Ko‘rish
                   </ButtonLink>

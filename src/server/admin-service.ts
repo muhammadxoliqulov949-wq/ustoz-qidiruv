@@ -1,5 +1,5 @@
 import "server-only";
-import { count, eq, inArray } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "./db/client";
 
 /* -------------------------------------------------------------------------- */
@@ -74,7 +74,8 @@ export async function getAdminOverview(): Promise<AdminOverview> {
     db
       .select({ total: count(schema.teacherProfiles.userId) })
       .from(schema.teacherProfiles)
-      .where(eq(schema.teacherProfiles.verification, "verified")),
+      .innerJoin(schema.users, eq(schema.users.id, schema.teacherProfiles.userId))
+      .where(and(eq(schema.teacherProfiles.verification, "verified"), eq(schema.users.accountStatus, "active"))),
     db
       .select({ total: count(schema.courseModerationReviews.id) })
       .from(schema.courseModerationReviews)
@@ -82,7 +83,8 @@ export async function getAdminOverview(): Promise<AdminOverview> {
     db
       .select({ total: count(schema.courses.id) })
       .from(schema.courses)
-      .where(eq(schema.courses.status, "published")),
+      .innerJoin(schema.users, eq(schema.users.id, schema.courses.teacherUserId))
+      .where(and(eq(schema.courses.status, "published"), eq(schema.users.accountStatus, "active"))),
     db
       .select({ total: count(schema.courses.id) })
       .from(schema.courses)
@@ -176,7 +178,7 @@ export async function getCourseStateCounts(): Promise<Record<string, number>> {
  */
 export async function countTeacherCoursesByState(
   teacherUserId: string,
-): Promise<{ draft: number; ready: number; published: number }> {
+ ): Promise<{ draft: number; ready: number; published: number; paused: number; archived: number }> {
   const db = getDb();
   const rows = await db
     .select({ status: schema.courses.status, total: count(schema.courses.id) })
@@ -188,5 +190,7 @@ export async function countTeacherCoursesByState(
     draft: byStatus.get("draft") ?? 0,
     ready: byStatus.get("ready") ?? 0,
     published: byStatus.get("published") ?? 0,
+    paused: byStatus.get("paused") ?? 0,
+    archived: byStatus.get("archived") ?? 0,
   };
 }

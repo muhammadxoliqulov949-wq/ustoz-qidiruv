@@ -11,7 +11,17 @@
 export interface AdminNavItem {
   href: string;
   label: string;
-  icon: "overview" | "teachers" | "courses" | "reviews" | "refunds" | "activity";
+  icon:
+    | "overview"
+    | "teachers"
+    | "courses"
+    | "reviews"
+    | "refunds"
+    | "support"
+    | "users"
+    | "notifications"
+    | "settings"
+    | "activity";
   description: string;
 }
 
@@ -47,6 +57,30 @@ export const ADMIN_NAV: readonly AdminNavItem[] = [
     icon: "refunds",
     description:
       "O‘quvchilarning pulni qaytarish so‘rovlari. Tasdiqlash — bu qaror, to‘lovni qaytarishni esa provayder bajaradi.",
+  },
+  {
+    href: "/admin/support",
+    label: "Yordam",
+    icon: "support",
+    description: "Hisob, kurs, to‘lov va nomaqbul kontent murojaatlari.",
+  },
+  {
+    href: "/admin/users",
+    label: "Hisoblar",
+    icon: "users",
+    description: "Foydalanuvchi va operator hisoblarining xavfsiz ko‘rinishi.",
+  },
+  {
+    href: "/notifications",
+    label: "Bildirishnomalar",
+    icon: "notifications",
+    description: "Operatorga yuborilgan ichki ish xabarlari.",
+  },
+  {
+    href: "/account",
+    label: "Hisob xavfsizligi",
+    icon: "settings",
+    description: "Operator parolini va sessiyalarini boshqarish.",
   },
   {
     href: "/admin/activity",

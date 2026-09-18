@@ -54,21 +54,31 @@ export interface VerificationRequirement {
 
 /*
  * Substantive minimums, not cosmetic ones: a reviewer cannot make an honest
- * trust decision from "I teach English". The thresholds are stated in the
- * labels so the teacher is never guessing what is missing.
+ * trust decision from "I teach English". The numbers are exported as well as
+ * applied, because the profile editor has to print the SAME thresholds in its
+ * field hints — a hint that disagrees with the predicate is how a teacher ends
+ * up writing 39 characters and being told the field is still empty.
  */
+export const VERIFICATION_MIN_LENGTH = {
+  name: 2,
+  specialization: 3,
+  bio: 40,
+  approach: 30,
+} as const;
+
 export const VERIFICATION_REQUIREMENTS: readonly VerificationRequirement[] = [
   {
     key: "name",
     label: "To‘liq ism",
-    hint: "Kamida 2 belgi.",
-    satisfied: (profile) => profile.name.trim().length >= 2,
+    hint: `Kamida ${VERIFICATION_MIN_LENGTH.name} belgi.`,
+    satisfied: (profile) => profile.name.trim().length >= VERIFICATION_MIN_LENGTH.name,
   },
   {
     key: "specialization",
     label: "Yo‘nalish",
     hint: "Masalan: “IELTS va umumiy ingliz tili”.",
-    satisfied: (profile) => (profile.specialization ?? "").trim().length >= 3,
+    satisfied: (profile) =>
+      (profile.specialization ?? "").trim().length >= VERIFICATION_MIN_LENGTH.specialization,
   },
   {
     key: "city",
@@ -91,15 +101,97 @@ export const VERIFICATION_REQUIREMENTS: readonly VerificationRequirement[] = [
   {
     key: "bio",
     label: "O‘zingiz haqingizda",
-    hint: "Kamida 40 belgi — o‘quvchi nimani o‘qishini shu yerdan biladi.",
-    satisfied: (profile) => (profile.bio ?? "").trim().length >= 40,
+    hint: `Kamida ${VERIFICATION_MIN_LENGTH.bio} belgi — o‘quvchi nimani o‘qishini shu yerdan biladi.`,
+    satisfied: (profile) =>
+      (profile.bio ?? "").trim().length >= VERIFICATION_MIN_LENGTH.bio,
   },
   {
     key: "approach",
     label: "Dars o‘tish uslubi",
-    hint: "Kamida 30 belgi — darslar qanday o‘tadi.",
-    satisfied: (profile) => (profile.approach ?? "").trim().length >= 30,
+    hint: `Kamida ${VERIFICATION_MIN_LENGTH.approach} belgi — darslar qanday o‘tadi.`,
+    satisfied: (profile) =>
+      (profile.approach ?? "").trim().length >= VERIFICATION_MIN_LENGTH.approach,
   },
+];
+
+/** Label of one requirement, for the editor's field captions. */
+export function verificationRequirementLabel(key: VerificationRequirementKey): string {
+  return VERIFICATION_REQUIREMENTS.find((requirement) => requirement.key === key)?.label ?? key;
+}
+
+/** Hint of one requirement, for the editor's field hints. */
+export function verificationRequirementHint(key: VerificationRequirementKey): string {
+  return VERIFICATION_REQUIREMENTS.find((requirement) => requirement.key === key)?.hint ?? "";
+}
+
+/* ------------------------- persisted row → predicate ------------------------ */
+
+/**
+ * The columns of `teacher_profiles` the predicate reads. Structurally a subset
+ * of the row, so the row itself can be passed straight in — no second profile
+ * model, and no chance of the read path and the write path disagreeing about
+ * which column a requirement means.
+ */
+export interface PersistedVerificationFields {
+  name: string | null;
+  specialization: string | null;
+  city: string | null;
+  languages: readonly string[] | null;
+  bio: string | null;
+  approach: string | null;
+  experienceYears: number | null;
+}
+
+/**
+ * ONE mapping from the persisted row to the predicate input.
+ *
+ * Every caller that asks "may this teacher apply?" — the verification page, the
+ * submission transaction, the profile editor's live counter — goes through this
+ * function. That is what makes "verification eligibility uses the same
+ * persisted data the profile form saves" a property of the code rather than a
+ * convention somebody has to remember.
+ */
+export function verificationProfileInput(
+  profile: PersistedVerificationFields,
+): VerificationProfileInput {
+  return {
+    name: profile.name ?? "",
+    specialization: profile.specialization ?? null,
+    city: profile.city ?? null,
+    languages: profile.languages ?? [],
+    bio: profile.bio ?? null,
+    approach: profile.approach ?? null,
+    experienceYears: profile.experienceYears ?? null,
+  };
+}
+
+/* --------------------- requirement → editable form field -------------------- */
+
+export type VerificationFieldControl = "text" | "select" | "chips" | "number" | "textarea";
+
+export interface VerificationEditableField {
+  key: VerificationRequirementKey;
+  /** FormData field name — the same name as the persisted column. */
+  formField: string;
+  control: VerificationFieldControl;
+}
+
+/**
+ * Every requirement has a field the teacher can actually edit, and this list is
+ * the proof: the profile editor renders its inputs from these form field names,
+ * and the regression suite asserts that (a) the list covers every requirement
+ * and (b) a form built from it round-trips through the server schema into the
+ * columns the predicate reads. A requirement added without an editable field
+ * therefore fails the suite instead of shipping a dead end.
+ */
+export const VERIFICATION_EDITABLE_FIELDS: readonly VerificationEditableField[] = [
+  { key: "name", formField: "name", control: "text" },
+  { key: "specialization", formField: "specialization", control: "text" },
+  { key: "city", formField: "city", control: "select" },
+  { key: "languages", formField: "languages", control: "chips" },
+  { key: "experienceYears", formField: "experienceYears", control: "number" },
+  { key: "bio", formField: "bio", control: "textarea" },
+  { key: "approach", formField: "approach", control: "textarea" },
 ];
 
 /** Which requirements are still missing. Empty array ⇒ eligible to submit. */
@@ -111,6 +203,25 @@ export function missingVerificationRequirements(
 
 export function isVerificationEligible(profile: VerificationProfileInput): boolean {
   return missingVerificationRequirements(profile).length === 0;
+}
+
+/**
+ * May the “Tasdiqlash uchun yuborish” button be pressed?
+ *
+ * Exported because the answer has three parts and the button used to spell them
+ * out inline: the profile must be complete (`eligible`, from the persisted row),
+ * the Phase 18 evidence must be present (`documentsReady`), and no submission may
+ * already be in flight (`pending`). Keeping it here means the rendered button and
+ * the regression suite evaluate the identical expression — and it does NOT relax
+ * anything: the server re-checks all three inside the submission transaction, so
+ * this is a preview of a refusal, never the gate itself.
+ */
+export function verificationSubmitEnabled(input: {
+  eligible: boolean;
+  documentsReady: boolean;
+  pending: boolean;
+}): boolean {
+  return input.eligible && input.documentsReady && !input.pending;
 }
 
 /* --------------------------------- display --------------------------------- */

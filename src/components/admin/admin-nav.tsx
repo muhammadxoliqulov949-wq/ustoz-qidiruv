@@ -3,12 +3,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  Bell,
   BookOpen,
   History,
   LayoutGrid,
+  LifeBuoy,
   MessageSquareQuote,
   RotateCcw,
+  Settings,
   UserRoundCheck,
+  Users,
 } from "lucide-react";
 import type { ComponentType } from "react";
 import { cn, focusRing } from "@/lib/utils";
@@ -37,6 +41,10 @@ const icons: Record<AdminNavItem["icon"], ComponentType<{ className?: string }>>
   // Phase 17 — the refund queue, which is work nobody can do by waiting: the
   // provider performs the money movement only after an admin approves it.
   refunds: RotateCcw,
+  support: LifeBuoy,
+  users: Users,
+  notifications: Bell,
+  settings: Settings,
   activity: History,
 };
 
@@ -47,6 +55,8 @@ export interface AdminNavCounts {
   reviews?: number;
   /** Live refund requests: `requested` + `awaiting_provider`. */
   refunds?: number;
+  support?: number;
+  notifications?: number;
 }
 
 function badgeFor(item: AdminNavItem, counts: AdminNavCounts | undefined): number | null {
@@ -55,14 +65,16 @@ function badgeFor(item: AdminNavItem, counts: AdminNavCounts | undefined): numbe
   if (item.icon === "courses") return counts.courses && counts.courses > 0 ? counts.courses : null;
   if (item.icon === "reviews") return counts.reviews && counts.reviews > 0 ? counts.reviews : null;
   if (item.icon === "refunds") return counts.refunds && counts.refunds > 0 ? counts.refunds : null;
+  if (item.icon === "support") return counts.support && counts.support > 0 ? counts.support : null;
+  if (item.icon === "notifications") return counts.notifications && counts.notifications > 0 ? counts.notifications : null;
   return null;
 }
 
-function CountBadge({ value }: { value: number }) {
+function CountBadge({ value, label = "kutilmoqda" }: { value: number; label?: string }) {
   return (
     <span className="ms-auto rounded-pill bg-accent-600 px-2 py-px text-xs font-semibold text-white tabular-nums">
       {value}
-      <span className="sr-only"> ta kutilmoqda</span>
+      <span className="sr-only"> ta {label}</span>
     </span>
   );
 }
@@ -99,7 +111,7 @@ export function AdminSidebarNav({ counts }: { counts?: AdminNavCounts }) {
                 />
                 <Icon className="size-[18px] shrink-0" />
                 {item.label}
-                {pending ? <CountBadge value={pending} /> : null}
+                {pending ? <CountBadge value={pending} label={item.icon === "notifications" ? "o‘qilmagan bildirishnoma" : undefined} /> : null}
               </Link>
             </li>
           );
@@ -137,7 +149,7 @@ export function AdminTabNav({ counts }: { counts?: AdminNavCounts }) {
               >
                 <Icon className="size-[18px] shrink-0" />
                 {item.label}
-                {pending ? <CountBadge value={pending} /> : null}
+                {pending ? <CountBadge value={pending} label={item.icon === "notifications" ? "o‘qilmagan bildirishnoma" : undefined} /> : null}
               </Link>
             </li>
           );

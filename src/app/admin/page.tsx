@@ -12,6 +12,8 @@ import { REFUND_STATUS_LABEL, refundStatusTone } from "@/lib/refund";
 import { formatTiyin } from "@/lib/money";
 import { ADMIN_AREA_TITLE } from "@/lib/admin-workspace";
 import { formatAdminDate } from "@/components/admin/admin-ui";
+import { getSupportQueueCounts, listSupportTickets } from "@/server/support-service";
+import { SUPPORT_STATUS_TONE } from "@/lib/support";
 
 /* -------------------------------------------------------------------------- */
 /* /admin — the control-plane overview (Phase 15).                             */
@@ -53,11 +55,13 @@ export default async function AdminOverviewPage() {
   const admin = await requireAdminPage("/admin");
   if (!admin) return null;
 
-  const [overview, verificationQueue, moderationQueue, refundQueue] = await Promise.all([
+  const [overview, verificationQueue, moderationQueue, refundQueue, supportCounts, supportQueue] = await Promise.all([
     getAdminOverview(),
-    listVerificationQueue({ status: "pending" }),
-    listModerationQueue({ status: "pending" }),
-    listAdminRefunds({ statuses: ["requested", "awaiting_provider"] }),
+    listVerificationQueue({ status: "pending", limit: PREVIEW_LIMIT }),
+    listModerationQueue({ status: "pending", limit: PREVIEW_LIMIT }),
+    listAdminRefunds({ statuses: ["requested", "awaiting_provider"], limit: PREVIEW_LIMIT }),
+    getSupportQueueCounts(),
+    listSupportTickets({ status: "live", limit: PREVIEW_LIMIT }),
   ]);
 
   const oldestWaiting = verificationQueue[0] ?? null;
@@ -251,6 +255,25 @@ export default async function AdminOverviewPage() {
                     Ko‘rib chiqish
                   </ButtonLink>
                 </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </AdminPanel>
+
+      <AdminPanel
+        title="Yordam navbati"
+        description={`${supportCounts.open} ta ochiq, ${supportCounts.in_progress} ta ishlanmoqda · ${supportCounts.live} ta faol murojaat.`}
+        action={<ButtonLink href="/admin/support" variant="outline" size="sm">Butun navbat</ButtonLink>}
+      >
+        {supportQueue.length === 0 ? (
+          <EmptyState title="Faol murojaat yo‘q" as="h3">Yangi murojaat yuborilganda faol administratorlarga ilova ichidagi bildirishnoma keladi.</EmptyState>
+        ) : (
+          <ul className="flex flex-col divide-y divide-line">
+            {supportQueue.map((ticket) => (
+              <li key={ticket.id} className="flex flex-wrap items-center justify-between gap-2 py-3">
+                <div className="min-w-0"><Link href={`/admin/support/${ticket.id}`} className="font-medium text-accent-700 underline underline-offset-2">{ticket.categoryLabel}</Link><p className="text-sm text-ink-500">{ticket.reporterName ?? "Foydalanuvchi ko‘rsatilmagan"} · {formatAdminDate(ticket.createdAt)}</p></div>
+                <Badge variant={SUPPORT_STATUS_TONE[ticket.status]}>{ticket.statusLabel}</Badge>
               </li>
             ))}
           </ul>

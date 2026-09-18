@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { AuthError, requireRole } from "../auth/guards";
 import { paymeConfig, paymentsEnabled } from "../env";
-import { ensurePaymentForEnrollment } from "../payments/payment-service";
+import { ensurePaymentForEnrollment, markPaymentFailed } from "../payments/payment-service";
 import { paymeProvider } from "../payments/payme-adapter";
 import { startPaymentSchema, type ActionResult } from "../validation";
 import {
@@ -92,11 +92,24 @@ export async function startPaymentAction(
       ? `${config.appBaseUrl.replace(/\/+$/, "")}/dashboard/payments/${result.payment.id}`
       : null;
 
-    const checkoutUrl = paymeProvider.buildCheckoutUrl({
-      paymentId: result.payment.id,
-      amountTiyin: result.payment.amountTiyin,
-      returnUrl,
-    });
+    let checkoutUrl: string;
+    try {
+      checkoutUrl = paymeProvider.buildCheckoutUrl({
+        paymentId: result.payment.id,
+        amountTiyin: result.payment.amountTiyin,
+        returnUrl,
+      });
+    } catch (error) {
+      // A locally confirmed checkout construction failure is terminal for this
+      // obligation, but it is not a fake provider failure. Record it and tell
+      // the student through the in-app channel; a later attempt gets a new
+      // obligation because failed rows are not live.
+      await markPaymentFailed({
+        paymentId: result.payment.id,
+        reason: `checkout_build_failed:${(error as { code?: string }).code ?? "unknown"}`,
+      });
+      return { ok: false, code: "server_error", message: "To‘lov oynasini ochib bo‘lmadi." };
+    }
 
     revalidatePath("/dashboard/courses");
     revalidatePath(`/dashboard/payments/${result.payment.id}`);

@@ -1046,10 +1046,12 @@ export interface AdminReviewQueueRow {
 }
 
 export async function listAdminReviewQueue(
-  options: { status?: ReviewStatus | "all"; limit?: number } = {},
+  options: { status?: ReviewStatus | "all"; limit?: number; offset?: number } = {},
 ): Promise<AdminReviewQueueRow[]> {
   const db = getDb();
   const status = options.status ?? "pending";
+  const limit = Math.min(Math.max(options.limit ?? 50, 1), 100);
+  const offset = Math.max(options.offset ?? 0, 0);
   const rows = await db
     .select({
       review: schema.courseReviews,
@@ -1065,8 +1067,13 @@ export async function listAdminReviewQueue(
     )
     .where(status === "all" ? undefined : eq(schema.courseReviews.status, status))
     // The queue is worked oldest-first, exactly like the other admin queues.
-    .orderBy(asc(schema.courseReviews.createdAt), asc(schema.courseReviews.id))
-    .limit(options.limit ?? 200);
+    .orderBy(
+      ...(status === "pending"
+        ? [asc(schema.courseReviews.createdAt), asc(schema.courseReviews.id)]
+        : [desc(schema.courseReviews.createdAt), desc(schema.courseReviews.id)]),
+    )
+    .limit(limit)
+    .offset(offset);
 
   return rows.map((row) => ({
     id: row.review.id,

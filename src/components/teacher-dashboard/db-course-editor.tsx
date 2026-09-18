@@ -17,13 +17,15 @@ import {
 } from "@/server/actions/course-manage";
 import { CourseCoverManager } from "@/components/teacher-dashboard/course-cover-manager";
 import {
+  COURSE_ARCHIVED_NOTE,
+  COURSE_PAUSED_NOTE,
   COURSE_PUBLISHED_EDIT_LOCKED_NOTE,
   COURSE_STATE_LABEL,
   COURSE_SUBMITTED_NOTE,
   COURSE_UNDER_REVIEW_NOTE,
   canTeacherEdit,
-  isLockedForTeacher,
   isUnderReview,
+  type CourseState,
 } from "@/lib/course-moderation";
 import { formatUzDate } from "@/lib/uz-date";
 
@@ -65,7 +67,7 @@ export interface DbCourseEditorProps {
     id: string;
     slug: string;
     /** Narrowed to the real lifecycle: the DB column is this enum. */
-    status: "draft" | "ready" | "published";
+    status: CourseState;
     title: string;
     categoryId: string;
     level: string;
@@ -143,7 +145,7 @@ export function DbCourseEditor({
    */
   const editable = canTeacherEdit(course.status);
   const underReview = isUnderReview(course.status);
-  const published = isLockedForTeacher(course.status);
+  const published = course.status === "published";
   const missingForSubmission = groups.length === 0 || modules.length === 0;
 
   return (
@@ -168,6 +170,14 @@ export function DbCourseEditor({
       ) : underReview ? (
         <AuthNotice title="Kurs ko‘rib chiqish uchun yuborilgan">
           {COURSE_UNDER_REVIEW_NOTE}
+        </AuthNotice>
+      ) : course.status === "paused" ? (
+        <AuthNotice title="Bu kurs vaqtincha to‘xtatilgan">
+          {COURSE_PAUSED_NOTE}
+        </AuthNotice>
+      ) : course.status === "archived" ? (
+        <AuthNotice title="Bu kurs arxivlangan">
+          {COURSE_ARCHIVED_NOTE}
         </AuthNotice>
       ) : (
         <AuthNotice title="Bu kurs hali ommaviy emas">
@@ -522,6 +532,14 @@ export function DbCourseEditor({
                 Ommaviy sahifani ko‘rish
               </ButtonLink>
             </div>
+          </div>
+        ) : course.status === "paused" ? (
+          <div id="course-lock-reason" className="mt-3">
+            <p className="text-base leading-relaxed text-ink-700">{COURSE_PAUSED_NOTE}</p>
+          </div>
+        ) : course.status === "archived" ? (
+          <div id="course-lock-reason" className="mt-3">
+            <p className="text-base leading-relaxed text-ink-700">{COURSE_ARCHIVED_NOTE}</p>
           </div>
         ) : (
           <div className="mt-3 flex flex-col gap-3">

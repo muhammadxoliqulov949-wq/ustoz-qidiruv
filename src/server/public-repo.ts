@@ -273,7 +273,11 @@ export async function listPublicCourses(
   options: { categoryId?: string | null; limit?: number | null } = {},
 ): Promise<Course[]> {
   const db = getDb();
-  const where = [eq(schema.courses.status, PUBLIC_STATUS)];
+  const where = [
+    eq(schema.courses.status, PUBLIC_STATUS),
+    // Account lifecycle, not profile-directory promotion, owns visibility here.
+    eq(schema.users.accountStatus, "active"),
+  ];
 
   if (options.categoryId) where.push(eq(schema.courses.categoryId, options.categoryId));
   if (params.format) where.push(eq(schema.courses.format, params.format));
@@ -308,6 +312,7 @@ export async function listPublicCourses(
       schema.teacherProfiles,
       eq(schema.teacherProfiles.userId, schema.courses.teacherUserId),
     )
+    .innerJoin(schema.users, eq(schema.users.id, schema.courses.teacherUserId))
     .where(and(...where))
     .orderBy(...order);
 
@@ -363,7 +368,14 @@ async function fetchPublicCourseBySlug(slug: string): Promise<Course | null> {
       schema.teacherProfiles,
       eq(schema.teacherProfiles.userId, schema.courses.teacherUserId),
     )
-    .where(and(eq(schema.courses.slug, slug), eq(schema.courses.status, PUBLIC_STATUS)))
+    .innerJoin(schema.users, eq(schema.users.id, schema.courses.teacherUserId))
+    .where(
+      and(
+        eq(schema.courses.slug, slug),
+        eq(schema.courses.status, PUBLIC_STATUS),
+        eq(schema.users.accountStatus, "active"),
+      ),
+    )
     .limit(1);
 
   const found = rows[0];
@@ -422,9 +434,10 @@ export const getPublicCourseBySlug = cache(fetchPublicCourseBySlug);
 export async function listPublicTeachers(): Promise<TeacherRow[]> {
   const db = getDb();
   const teacherRows = await db
-    .select()
+    .select({ teacher: schema.teacherProfiles })
     .from(schema.teacherProfiles)
-    .where(eq(schema.teacherProfiles.isPublic, true))
+    .innerJoin(schema.users, eq(schema.users.id, schema.teacherProfiles.userId))
+    .where(and(eq(schema.teacherProfiles.isPublic, true), eq(schema.users.accountStatus, "active")))
     .orderBy(asc(schema.teacherProfiles.userId));
 
   if (teacherRows.length === 0) return [];
@@ -439,7 +452,15 @@ export async function listPublicTeachers(): Promise<TeacherRow[]> {
       priceUzs: schema.courses.priceUzs,
     })
     .from(schema.courses)
-    .where(eq(schema.courses.status, PUBLIC_STATUS))
+    .innerJoin(schema.teacherProfiles, eq(schema.teacherProfiles.userId, schema.courses.teacherUserId))
+    .innerJoin(schema.users, eq(schema.users.id, schema.courses.teacherUserId))
+    .where(
+      and(
+        eq(schema.courses.status, PUBLIC_STATUS),
+        eq(schema.teacherProfiles.isPublic, true),
+        eq(schema.users.accountStatus, "active"),
+      ),
+    )
     .orderBy(asc(schema.courses.id));
 
   const FORMAT_ORDER: CourseFormat[] = ["online", "offline", "hybrid"];
@@ -455,7 +476,8 @@ export async function listPublicTeachers(): Promise<TeacherRow[]> {
     else coursesByTeacher.set(course.teacherUserId, [course]);
   }
 
-  for (const teacher of teacherRows) {
+  for (const row of teacherRows) {
+    const teacher = row.teacher;
     const own = coursesByTeacher.get(teacher.userId) ?? [];
     if (own.length === 0) continue; // no published course → not in the directory
 
@@ -493,12 +515,19 @@ async function fetchPublicTeacherBySlug(
 ): Promise<{ row: TeacherRow; courses: Course[] } | null> {
   const db = getDb();
   const found = await db
-    .select()
+    .select({ teacher: schema.teacherProfiles })
     .from(schema.teacherProfiles)
-    .where(and(eq(schema.teacherProfiles.slug, slug), eq(schema.teacherProfiles.isPublic, true)))
+    .innerJoin(schema.users, eq(schema.users.id, schema.teacherProfiles.userId))
+    .where(
+      and(
+        eq(schema.teacherProfiles.slug, slug),
+        eq(schema.teacherProfiles.isPublic, true),
+        eq(schema.users.accountStatus, "active"),
+      ),
+    )
     .limit(1);
 
-  const teacher = found[0];
+  const teacher = found[0]?.teacher;
   if (!teacher) return null;
 
   // Ownership comes from the FK, so there is exactly one course→teacher link.
@@ -513,6 +542,9 @@ async function fetchPublicTeacherBySlug(
     )
     .orderBy(asc(schema.courses.id));
 
+  // A public teacher profile remains a valid page even when it currently has no
+  // live courses; the directory intentionally filters those profiles out, while
+  // a direct link can render an honest zero-course state.
   const courseIds = courseRows.map((row) => row.course.id);
   const groupRows =
     courseIds.length === 0
@@ -618,12 +650,16 @@ export async function getPublicFacets(): Promise<{
   const directoryTeachers = db
     .selectDistinct({ teacherUserId: schema.courses.teacherUserId })
     .from(schema.courses)
-    .where(eq(schema.courses.status, PUBLIC_STATUS));
+    .innerJoin(schema.teacherProfiles, eq(schema.teacherProfiles.userId, schema.courses.teacherUserId))
+    .innerJoin(schema.users, eq(schema.users.id, schema.courses.teacherUserId))
+    .where(and(eq(schema.courses.status, PUBLIC_STATUS), eq(schema.teacherProfiles.isPublic, true), eq(schema.users.accountStatus, "active")));
   const [cityRows, langRows, categoryCounts] = await Promise.all([
     db
       .selectDistinct({ city: schema.courses.city })
       .from(schema.courses)
-      .where(and(eq(schema.courses.status, PUBLIC_STATUS), sql`${schema.courses.city} IS NOT NULL`))
+      .innerJoin(schema.teacherProfiles, eq(schema.teacherProfiles.userId, schema.courses.teacherUserId))
+      .innerJoin(schema.users, eq(schema.users.id, schema.courses.teacherUserId))
+      .where(and(eq(schema.courses.status, PUBLIC_STATUS), eq(schema.users.accountStatus, "active"), sql`${schema.courses.city} IS NOT NULL`))
       .orderBy(asc(schema.courses.city)),
     db
       .select({ languages: schema.teacherProfiles.languages })
@@ -747,7 +783,9 @@ export async function getCategoryCourseCounts(): Promise<Map<string, number>> {
   const rows = await db
     .select({ categoryId: schema.courses.categoryId, total: count(schema.courses.id) })
     .from(schema.courses)
-    .where(eq(schema.courses.status, PUBLIC_STATUS))
+    .innerJoin(schema.teacherProfiles, eq(schema.teacherProfiles.userId, schema.courses.teacherUserId))
+    .innerJoin(schema.users, eq(schema.users.id, schema.courses.teacherUserId))
+    .where(and(eq(schema.courses.status, PUBLIC_STATUS), eq(schema.users.accountStatus, "active")))
     .groupBy(schema.courses.categoryId);
   return new Map(rows.map((row) => [row.categoryId, Number(row.total)]));
 }
@@ -763,20 +801,30 @@ async function fetchPublicTeacherById(userId: string): Promise<Teacher | null> {
   // issuing them together halves this lookup's database round trips.
   const [rows, owned] = await Promise.all([
     db
-      .select()
+      .select({ teacher: schema.teacherProfiles })
       .from(schema.teacherProfiles)
+      .innerJoin(schema.users, eq(schema.users.id, schema.teacherProfiles.userId))
       .where(
-        and(eq(schema.teacherProfiles.userId, userId), eq(schema.teacherProfiles.isPublic, true)),
+        and(
+          eq(schema.teacherProfiles.userId, userId),
+          eq(schema.teacherProfiles.isPublic, true),
+          eq(schema.users.accountStatus, "active"),
+        ),
       )
       .limit(1),
     db
       .select({ total: count(schema.courses.id) })
       .from(schema.courses)
+      .innerJoin(schema.users, eq(schema.users.id, schema.courses.teacherUserId))
       .where(
-        and(eq(schema.courses.teacherUserId, userId), eq(schema.courses.status, PUBLIC_STATUS)),
+        and(
+          eq(schema.courses.teacherUserId, userId),
+          eq(schema.courses.status, PUBLIC_STATUS),
+          eq(schema.users.accountStatus, "active"),
+        ),
       ),
   ]);
-  const teacher = rows[0];
+  const teacher = rows[0]?.teacher;
   if (!teacher) return null;
   const projected = toTeacher(teacher, Number(owned[0]?.total ?? 0));
   // Managed image wins; the legacy `/media/...` path stays the fallback.
