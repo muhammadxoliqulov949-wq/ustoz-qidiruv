@@ -300,8 +300,8 @@ async function main(): Promise<void> {
   );
   check(
     "the operator password is stored as an argon2id hash, never in plaintext",
-    emailAdminRow.passwordHash.startsWith("$argon2id$") &&
-      !emailAdminRow.passwordHash.includes(adminEmailPassword),
+    Boolean(emailAdminRow.passwordHash?.startsWith("$argon2id$")) &&
+      !emailAdminRow.passwordHash?.includes(adminEmailPassword),
   );
   const sessionProjection = (
     await db
@@ -375,23 +375,18 @@ async function main(): Promise<void> {
     (await authenticatePhone(ADMIN_EMAIL, adminEmailPassword)).ok === false,
   );
 
-  // --- the wall: an email identifier may exist ONLY on an admin -----------
-  await rejects(
-    "an existing teacher cannot be given an email identifier (users_email_admin_only)",
-    () =>
-      db
-        .update(schema.users)
-        .set({ email: "teacher@ustoz.uz" })
-        .where(eq(schema.users.id, teacherA)),
-  );
-  await rejects("a student row cannot carry an email (users_email_admin_only)", () =>
-    db.insert(schema.users).values({
-      id: newId("usr"),
-      role: "student",
-      phone: "+998902220081",
-      email: "student@ustoz.uz",
-      passwordHash,
-    }),
+  // --- the wall: operator auth is strictly isolated from marketplace accounts ---
+  const studentWithEmail = newId("usr");
+  await db.insert(schema.users).values({
+    id: studentWithEmail,
+    role: "student",
+    phone: "+998902220081",
+    email: "student@ustoz.uz",
+    passwordHash,
+  });
+  check(
+    "a student with an email cannot authenticate via authenticateAdminEmail",
+    (await authenticateAdminEmail("student@ustoz.uz", "supersecret-qa")).ok === false,
   );
   await rejects("an email must be stored normalized (users_email_normalized)", () =>
     db.insert(schema.users).values({
@@ -439,9 +434,9 @@ async function main(): Promise<void> {
     passwordHash: emailAdminHash,
   });
   const operators = await db
-    .select({ id: schema.users.id, email: schema.users.email, phone: schema.users.phone })
+    .select({ id: schema.users.id, role: schema.users.role, email: schema.users.email, phone: schema.users.phone })
     .from(schema.users);
-  const emailOperators = operators.filter((row) => row.email !== null);
+  const emailOperators = operators.filter((row) => row.role === "admin" && row.email !== null);
   check(
     "two email operators coexist — a NULL phone never collides on users_phone_key",
     emailOperators.length === 2 &&
@@ -469,7 +464,7 @@ async function main(): Promise<void> {
       }),
   );
   await rejects(
-    "a marketplace account still needs its phone (users_has_one_identifier)",
+    "a marketplace account without phone or email is refused (users_has_one_identifier)",
     () =>
       db.insert(schema.users).values({
         id: newId("usr"),
@@ -478,16 +473,8 @@ async function main(): Promise<void> {
         passwordHash,
       }),
   );
-  await rejects(
-    "an operator cannot be demoted into a marketplace role while holding an email",
-    () =>
-      db
-        .update(schema.users)
-        .set({ role: "student" })
-        .where(eq(schema.users.id, emailAdmin)),
-  );
   check(
-    "the operator row survived every rejected write unchanged",
+    "the operator row survived unchanged with role admin",
     (
       await db
         .select({ role: schema.users.role, email: schema.users.email, phone: schema.users.phone })

@@ -104,3 +104,66 @@ export async function authenticateAdminEmail(
     ? { ok: true, id: user.id, role: user.role }
     : { ok: false };
 }
+
+export type MarketplaceEmailResult =
+  | { ok: true; id: string; role: "student" | "teacher" }
+  | { ok: false; code: "invalid_credentials" | "unverified_email"; email?: string };
+
+/**
+ * Email + password — the MARKETPLACE login (students and teachers) — Phase 23.5.
+ *
+ * Rules:
+ *   • operator accounts (role='admin') are strictly refused and return the same
+ *     generic error as unknown accounts (enumeration safe);
+ *   • OAuth-only accounts without a password hash burn a dummy verification
+ *     and return invalid credentials;
+ *   • unverified email accounts are blocked from receiving a session until
+ *     their address has been verified through the token lifecycle;
+ *   • returns the user id and verified student/teacher role on success.
+ */
+export async function authenticateMarketplaceEmail(
+  email: string,
+  password: string,
+): Promise<MarketplaceEmailResult> {
+  const db = getDb();
+  const normalized = normalizeEmail(email);
+
+  const rows = await db
+    .select({
+      id: schema.users.id,
+      role: schema.users.role,
+      passwordHash: schema.users.passwordHash,
+      emailVerifiedAt: schema.users.emailVerifiedAt,
+      email: schema.users.email,
+    })
+    .from(schema.users)
+    .where(and(eq(schema.users.email, normalized), eq(schema.users.accountStatus, "active")))
+    .limit(1);
+
+  const user = rows[0];
+  // Admins must use authenticateAdminEmail; marketplace login treats them as non-existent
+  if (!user || user.role === "admin" || !user.passwordHash) {
+    await verify(null, password);
+    return { ok: false, code: "invalid_credentials" };
+  }
+
+  const isValidPassword = await verify(user.passwordHash, password);
+  if (!isValidPassword) {
+    return { ok: false, code: "invalid_credentials" };
+  }
+
+  // Email verification policy: must have verified email
+  if (!user.emailVerifiedAt) {
+    return {
+      ok: false,
+      code: "unverified_email",
+      email: user.email ?? normalized,
+    };
+  }
+
+  return {
+    ok: true,
+    id: user.id,
+    role: user.role as "student" | "teacher",
+  };
+}

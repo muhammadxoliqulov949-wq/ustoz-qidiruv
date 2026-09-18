@@ -65,7 +65,7 @@ export async function changePassword(input: {
       if (!user || user.accountStatus !== "active") {
         return { ok: false as const, code: "not_found" as const, message: "Hisob topilmadi." };
       }
-      if (!(await verifyPassword(user.passwordHash, input.currentPassword))) {
+      if (!user.passwordHash || !(await verifyPassword(user.passwordHash, input.currentPassword))) {
         return { ok: false as const, code: "invalid_credentials" as const, message: "Joriy parol noto‘g‘ri." };
       }
       if (input.currentPassword === input.newPassword) {
@@ -105,7 +105,7 @@ export async function deactivateAccount(input: {
       if (user.role === "admin") {
         return { ok: false as const, code: "forbidden" as const, message: "Administrator hisobini bu sahifadan deaktivasiyalab bo‘lmaydi." };
       }
-      if (!(await verifyPassword(user.passwordHash, input.password))) {
+      if (!user.passwordHash || !(await verifyPassword(user.passwordHash, input.password))) {
         return { ok: false as const, code: "invalid_credentials" as const, message: "Parol noto‘g‘ri." };
       }
 

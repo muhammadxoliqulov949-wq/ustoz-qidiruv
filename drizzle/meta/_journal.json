@@ -92,6 +92,13 @@
       "when": 1789616956587,
       "tag": "0012_phase23_operations",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1789700000000,
+      "tag": "0013_auth_upgrade",
+      "breakpoints": true
     }
   ]
 }

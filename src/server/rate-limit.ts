@@ -133,6 +133,14 @@ export const RATE_LIMIT_POLICIES = {
   registerByPhone: { name: "register:phone", limit: 5, windowSeconds: 3600 },
   /** Registrations, per client IP. */
   registerByIp: { name: "register:ip", limit: 20, windowSeconds: 3600 },
+  /** Registrations, per normalized email. */
+  registerByEmail: { name: "register:email", limit: 5, windowSeconds: 3600 },
+  /** Email verification resend cooldown (1 attempt per 60 seconds). */
+  verifyResendCooldown: { name: "verify:cooldown", limit: 1, windowSeconds: 60 },
+  /** Email verification resend daily budget (5 attempts per 24 hours). */
+  verifyResendDaily: { name: "verify:daily", limit: 5, windowSeconds: 86400 },
+  /** Email verification attempts per IP. */
+  verifyByIp: { name: "verify:ip", limit: 20, windowSeconds: 3600 },
   /** Enrollment submits, per student. */
   enrollmentSubmit: { name: "enrollment:submit", limit: 20, windowSeconds: 3600 },
   /** Enrollment cancellations, per student. */

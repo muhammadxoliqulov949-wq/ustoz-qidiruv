@@ -35,15 +35,17 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const params = await searchParams;
   // ?next= is whitelist-validated server-side (internal paths only — an
   // open redirect is impossible) and only ever rendered as a plain link.
-  const next = parseSafeNext((await searchParams).next);
+  const next = parseSafeNext(params.next);
+  const error = typeof params.error === "string" ? params.error : null;
   return (
     <AuthPage
       title="Hisobingizga kiring"
-      intro="O‘quvchi va ustoz hisobining identifikatori — telefon raqami. Operator (administrator) hisobi email va parol bilan kiradi."
+      intro="Google yoki emailingiz bilan kiring. Telefon orqali ochilgan mavjud hisoblar ham qo‘llab-quvvatlanadi."
     >
-      <LoginForm initialNext={next} />
+      <LoginForm initialNext={next} initialError={error} />
     </AuthPage>
   );
 }

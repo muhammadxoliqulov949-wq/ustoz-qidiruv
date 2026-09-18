@@ -209,16 +209,20 @@ export const users = pgTable(
      */
     phone: text("phone"),
     /**
-     * Operator (admin) login identifier: normalized lowercase, unique, and
-     * structurally unavailable to any non-admin role. NULL for every
-     * student/teacher account.
+     * Normalized lowercase email. Available to marketplace accounts (students,
+     * teachers) as well as operator (admin) accounts.
      */
     email: text("email"),
-    /** argon2id hash. Never a plaintext password, never reversible. */
-    passwordHash: text("password_hash").notNull(),
+    /**
+     * argon2id hash. Nullable for OAuth-authenticated users (e.g. Google Sign-In)
+     * who do not possess a password credential.
+     */
+    passwordHash: text("password_hash"),
     accountStatus: accountStatus("account_status").notNull().default("active"),
     /** Set when an account is deactivated; business rows are retained. */
     deactivatedAt: timestamp("deactivated_at", { withTimezone: true }),
+    /** Set when the user's email address is verified. */
+    emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -230,12 +234,14 @@ export const users = pgTable(
     // Target for the composite role FKs used by the profile tables.
     unique("users_id_role_key").on(table.id, table.role),
     check("users_phone_format", sql`${table.phone} ~ '^\\+998[0-9]{9}$'`),
-    check("users_password_hash_not_plain", sql`${table.passwordHash} LIKE '$argon2%'`),
+    check(
+      "users_password_hash_not_plain",
+      sql`${table.passwordHash} IS NULL OR ${table.passwordHash} LIKE '$argon2%'`,
+    ),
     check(
       "users_has_one_identifier",
       sql`${table.phone} IS NOT NULL OR ${table.email} IS NOT NULL`,
     ),
-    check("users_email_admin_only", sql`${table.email} IS NULL OR ${table.role} = 'admin'`),
     check(
       "users_email_normalized",
       sql`${table.email} IS NULL OR (${table.email} = lower(btrim(${table.email})) AND length(${table.email}) BETWEEN 6 AND 254)`,
@@ -248,6 +254,62 @@ export const users = pgTable(
       "users_deactivation_consistency",
       sql`(${table.accountStatus} = 'deactivated') = (${table.deactivatedAt} IS NOT NULL)`,
     ),
+  ],
+);
+
+/* ----------------------------- auth accounts ------------------------------- */
+
+/**
+ * External OAuth provider identities — Phase 23.5.
+ *
+ * Stores provider-specific identifiers (e.g. Google `sub`) mapped to an internal
+ * user. The pair (provider, providerAccountId) is strictly unique.
+ */
+export const authAccounts = pgTable(
+  "auth_accounts",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    providerAccountId: text("provider_account_id").notNull(),
+    providerEmail: text("provider_email"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("auth_accounts_provider_account_unique").on(table.provider, table.providerAccountId),
+    index("auth_accounts_user_id_idx").on(table.userId),
+    index("auth_accounts_provider_email_idx").on(table.provider, table.providerEmail),
+  ],
+);
+
+/* ----------------------- email verification tokens ------------------------ */
+
+/**
+ * Email verification token lifecycle — Phase 23.5.
+ *
+ * Single-use, expiring tokens for verifying ownership of an email address.
+ * Only the SHA-256 hash of the token is persisted; the raw secret is delivered
+ * via transactional email.
+ */
+export const emailVerificationTokens = pgTable(
+  "email_verification_tokens",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    email: text("email").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("evt_token_hash_unique").on(table.tokenHash),
+    index("evt_user_id_idx").on(table.userId),
+    index("evt_expires_at_idx").on(table.expiresAt),
   ],
 );
 
@@ -1786,7 +1848,20 @@ export const usersRelations = relations(users, ({ one, many }) => ({
     references: [teacherProfiles.userId],
   }),
   sessions: many(sessions),
+  authAccounts: many(authAccounts),
+  emailVerificationTokens: many(emailVerificationTokens),
 }));
+
+export const authAccountsRelations = relations(authAccounts, ({ one }) => ({
+  user: one(users, { fields: [authAccounts.userId], references: [users.id] }),
+}));
+
+export const emailVerificationTokensRelations = relations(
+  emailVerificationTokens,
+  ({ one }) => ({
+    user: one(users, { fields: [emailVerificationTokens.userId], references: [users.id] }),
+  }),
+);
 
 export const teacherProfilesRelations = relations(teacherProfiles, ({ one, many }) => ({
   user: one(users, { fields: [teacherProfiles.userId], references: [users.id] }),
@@ -1861,6 +1936,8 @@ export const courseReviewsRelations = relations(courseReviews, ({ one }) => ({
 }));
 
 export type UserRow = typeof users.$inferSelect;
+export type AuthAccountRow = typeof authAccounts.$inferSelect;
+export type EmailVerificationTokenRow = typeof emailVerificationTokens.$inferSelect;
 export type StudentProfileRow = typeof studentProfiles.$inferSelect;
 export type TeacherProfileRow = typeof teacherProfiles.$inferSelect;
 export type CourseRow = typeof courses.$inferSelect;

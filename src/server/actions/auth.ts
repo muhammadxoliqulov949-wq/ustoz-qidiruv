@@ -1,18 +1,25 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb, schema } from "../db/client";
 import { hashPassword } from "../auth/password";
-import { authenticateAdminEmail, authenticatePhone } from "../auth/credentials";
+import {
+  authenticateAdminEmail,
+  authenticateMarketplaceEmail,
+  authenticatePhone,
+} from "../auth/credentials";
 import { createSession, destroySession, maybePruneExpiredSessions } from "../auth/session";
 import { newId } from "../auth/ids";
 import { parseSafeNext } from "@/lib/safe-next";
 import {
   adminLoginSchema,
+  emailLoginSchema,
+  emailRegisterSchema,
   fieldErrorsFrom,
   loginSchema,
   registerSchema,
+  resendVerificationSchema,
   type ActionResult,
 } from "../validation";
 import { slugifyName, uniqueTeacherSlug } from "../slug";
@@ -24,6 +31,12 @@ import {
   requestClientIp,
   type RateLimitCheck,
 } from "../rate-limit";
+import {
+  buildVerificationUrl,
+  createVerificationToken,
+} from "../auth/verification";
+import { getEmailProvider } from "../email/provider";
+import { maskEmail } from "@/lib/email";
 
 /* -------------------------------------------------------------------------- */
 /* Auth server actions — Phase 11.                                             */
@@ -159,6 +172,283 @@ export async function registerAction(form: FormData): Promise<ActionResult> {
 
   await createSession(userId);
   redirect(parseSafeNext(parsed.data.next ?? undefined) ?? "/onboarding");
+}
+
+/* -------------------------------------------------------------------------- */
+/* Email + Password Registration — Phase 23.5.                                */
+/*                                                                              */
+/* Creates an unverified student or teacher account, stores an expiring         */
+/* single-use verification token hash, and sends an activation email.           */
+/* An authenticated session is NOT issued until email ownership is proven.      */
+/* -------------------------------------------------------------------------- */
+export async function registerEmailAction(form: FormData): Promise<ActionResult> {
+  const parsed = emailRegisterSchema.safeParse({
+    role: formValue(form, "role"),
+    name: formValue(form, "name"),
+    email: formValue(form, "email"),
+    password: formValue(form, "password"),
+    confirmPassword: formValue(form, "confirmPassword"),
+    next: form.get("next") === null ? null : formValue(form, "next"),
+  });
+  if (!parsed.success) {
+    return {
+      ok: false,
+      code: "invalid_input",
+      message: "Ma’lumotlarni tekshiring.",
+      fieldErrors: fieldErrorsFrom(parsed.error),
+    };
+  }
+
+  const { role, name, email, password } = parsed.data;
+
+  const registerIp = await requestClientIp();
+  const registerAllowed = await consumeAuthLimits([
+    { policy: RATE_LIMIT_POLICIES.registerByEmail, key: rateLimitKey("register:email", email) },
+    ...(registerIp
+      ? [{ policy: RATE_LIMIT_POLICIES.registerByIp, key: rateLimitKey("register:ip", registerIp) }]
+      : []),
+  ]);
+  if (!registerAllowed) return rateLimited();
+
+  const db = getDb();
+
+  const existing = await db
+    .select({ id: schema.users.id })
+    .from(schema.users)
+    .where(eq(schema.users.email, email))
+    .limit(1);
+
+  if (existing.length > 0) {
+    return {
+      ok: false,
+      code: "duplicate_email",
+      message: "Bu email bilan hisob allaqachon mavjud. Kirishga urinib ko‘ring.",
+      fieldErrors: { email: "Bu email band." },
+    };
+  }
+
+  const userId = newId("usr");
+  const passwordHash = await hashPassword(password);
+  let rawToken = "";
+
+  try {
+    await db.transaction(async (tx) => {
+      await tx.insert(schema.users).values({
+        id: userId,
+        role,
+        email,
+        phone: null,
+        passwordHash,
+        emailVerifiedAt: null,
+      });
+
+      if (role === "student") {
+        await tx.insert(schema.studentProfiles).values({
+          userId,
+          role: "student",
+          name,
+          languages: [],
+          interests: [],
+          onboardingCompleted: false,
+        });
+      } else {
+        const slug = await uniqueTeacherSlug(tx, slugifyName(name));
+        await tx.insert(schema.teacherProfiles).values({
+          userId,
+          role: "teacher",
+          slug,
+          name,
+          categories: [],
+          levels: [],
+          formats: [],
+          languages: [],
+          verification: "unverified",
+          onboardingCompleted: false,
+        });
+      }
+
+      rawToken = await createVerificationToken(userId, email, tx);
+    });
+  } catch (error) {
+    console.error("registerEmailAction failed", {
+      code: (error as { code?: string }).code ?? "unknown",
+    });
+    return {
+      ok: false,
+      code: "server_error",
+      message: "Hisob yaratilmadi. Keyinroq qayta urinib ko‘ring.",
+    };
+  }
+
+  // Dispatch email verification link (never throws, returns delivery status)
+  const verifyUrl = buildVerificationUrl(rawToken);
+  await getEmailProvider().sendVerificationEmail(email, { name, verifyUrl });
+
+  // No session is minted. Direct the user to the verification holding page.
+  redirect(`/verify-email?sent=1&email=${encodeURIComponent(maskEmail(email))}`);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Email + Password Marketplace Login — Phase 23.5.                            */
+/*                                                                              */
+/* Authenticates students and teachers who use email identifiers.               */
+/* Refuses unverified email accounts until verification succeeds.               */
+/* -------------------------------------------------------------------------- */
+export async function loginEmailAction(form: FormData): Promise<ActionResult> {
+  const parsed = emailLoginSchema.safeParse({
+    email: formValue(form, "email"),
+    password: formValue(form, "password"),
+    next: form.get("next") === null ? null : formValue(form, "next"),
+  });
+  if (!parsed.success) {
+    return {
+      ok: false,
+      code: "invalid_input",
+      message: "Ma’lumotlarni tekshiring.",
+      fieldErrors: fieldErrorsFrom(parsed.error),
+    };
+  }
+
+  const loginIp = await requestClientIp();
+  const loginAllowed = await consumeAuthLimits([
+    {
+      policy: RATE_LIMIT_POLICIES.loginByEmail,
+      key: rateLimitKey("login:email", parsed.data.email),
+    },
+    ...(loginIp
+      ? [{ policy: RATE_LIMIT_POLICIES.authByIp, key: rateLimitKey("auth:ip", loginIp) }]
+      : []),
+  ]);
+  if (!loginAllowed) return rateLimited();
+
+  const authenticated = await authenticateMarketplaceEmail(
+    parsed.data.email,
+    parsed.data.password,
+  );
+
+  if (!authenticated.ok) {
+    if (authenticated.code === "unverified_email") {
+      return {
+        ok: false,
+        code: "unverified_email",
+        message:
+          "Email manzilingiz hali tasdiqlanmagan. Iltimos, pochtangizga yuborilgan tasdiqlash havolasini bosing yoki quyida qayta yuborishni so‘rang.",
+        fieldErrors: { email: "Email tasdiqlanmagan." },
+      };
+    }
+    return {
+      ok: false,
+      code: "invalid_credentials",
+      message: "Email yoki parol noto‘g‘ri.",
+    };
+  }
+
+  await createSession(authenticated.id);
+  void maybePruneExpiredSessions();
+
+  const next = parseSafeNext(parsed.data.next ?? undefined);
+  const home =
+    authenticated.role === "teacher"
+      ? "/teacher/dashboard"
+      : "/dashboard";
+  redirect(next ?? home);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Resend Email Verification — Phase 23.5.                                    */
+/*                                                                              */
+/* Rate-limited: 60s cooldown per address, 5 per day. Generic response prevents */
+/* account enumeration.                                                         */
+/* -------------------------------------------------------------------------- */
+export async function resendVerificationAction(form: FormData): Promise<ActionResult> {
+  const parsed = resendVerificationSchema.safeParse({
+    email: formValue(form, "email"),
+  });
+  if (!parsed.success) {
+    return {
+      ok: false,
+      code: "invalid_input",
+      message: "To‘g‘ri email manzilini kiriting.",
+      fieldErrors: fieldErrorsFrom(parsed.error),
+    };
+  }
+
+  const { email } = parsed.data;
+  const clientIp = await requestClientIp();
+
+  const cooldownDecision = await consumeRateLimits([
+    {
+      policy: RATE_LIMIT_POLICIES.verifyResendCooldown,
+      key: rateLimitKey("verify:cooldown", email),
+    },
+  ]);
+  if (!cooldownDecision.allowed) {
+    return {
+      ok: false,
+      code: "cooldown",
+      message: "Iltimos, qayta yuborishdan oldin 60 soniya kuting.",
+    };
+  }
+
+  const dailyAllowed = await consumeAuthLimits([
+    {
+      policy: RATE_LIMIT_POLICIES.verifyResendDaily,
+      key: rateLimitKey("verify:daily", email),
+    },
+    ...(clientIp
+      ? [{ policy: RATE_LIMIT_POLICIES.verifyByIp, key: rateLimitKey("verify:ip", clientIp) }]
+      : []),
+  ]);
+  if (!dailyAllowed) {
+    return {
+      ok: false,
+      code: "daily_limit",
+      message: "Kunlik yuborish limitiga yetdingiz. Iltimos, ertaga qayta urinib ko‘ring.",
+    };
+  }
+
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: schema.users.id,
+      email: schema.users.email,
+      role: schema.users.role,
+      emailVerifiedAt: schema.users.emailVerifiedAt,
+      accountStatus: schema.users.accountStatus,
+    })
+    .from(schema.users)
+    .where(and(eq(schema.users.email, email), eq(schema.users.accountStatus, "active")))
+    .limit(1);
+
+  const user = rows[0];
+  if (user && !user.emailVerifiedAt && user.role !== "admin") {
+    let name = "Foydalanuvchi";
+    if (user.role === "student") {
+      const student = await db
+        .select({ name: schema.studentProfiles.name })
+        .from(schema.studentProfiles)
+        .where(eq(schema.studentProfiles.userId, user.id))
+        .limit(1);
+      if (student[0]?.name) name = student[0].name;
+    } else if (user.role === "teacher") {
+      const teacher = await db
+        .select({ name: schema.teacherProfiles.name })
+        .from(schema.teacherProfiles)
+        .where(eq(schema.teacherProfiles.userId, user.id))
+        .limit(1);
+      if (teacher[0]?.name) name = teacher[0].name;
+    }
+
+    const rawToken = await createVerificationToken(user.id, user.email!);
+    const verifyUrl = buildVerificationUrl(rawToken);
+    await getEmailProvider().sendVerificationEmail(user.email!, { name, verifyUrl });
+  }
+
+  // Generic message: no account enumeration
+  return {
+    ok: true,
+    message: "Agar ushbu email bilan tasdiqlanmagan hisob mavjud bo‘lsa, tasdiqlash xati yuborildi.",
+  };
 }
 
 export async function loginAction(form: FormData): Promise<ActionResult> {

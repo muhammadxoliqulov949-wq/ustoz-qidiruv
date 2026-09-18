@@ -153,6 +153,51 @@ export const adminLoginSchema = z
   })
   .strict();
 
+/*
+ * MARKETPLACE EMAIL AUTH — Phase 23.5.
+ *
+ * Students and teachers can register and authenticate with email + password.
+ * Strict schemas enforce exact expected fields and prevent role escalation.
+ */
+export const emailRegisterSchema = z
+  .object({
+    role: roleSchema,
+    name: nameSchema,
+    email: emailSchema,
+    password: passwordSchema,
+    confirmPassword: z.string().min(1, "Parolni tasdiqlang."),
+    next: z.string().max(400).nullable().optional(),
+  })
+  .strict()
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Kiritilgan parollar bir-biriga mos kelmadi.",
+    path: ["confirmPassword"],
+  });
+
+export const emailLoginSchema = z
+  .object({
+    email: emailSchema,
+    password: z.string().min(1, "Parolni kiriting.").max(72),
+    next: z.string().max(400).nullable().optional(),
+  })
+  .strict();
+
+export const resendVerificationSchema = z
+  .object({
+    email: emailSchema,
+  })
+  .strict();
+
+export const verifyEmailTokenSchema = z
+  .object({
+    token: z.string().min(16, "Noto‘g‘ri token.").max(256),
+  })
+  .strict();
+
+export type EmailRegisterInput = z.infer<typeof emailRegisterSchema>;
+export type EmailLoginInput = z.infer<typeof emailLoginSchema>;
+export type ResendVerificationInput = z.infer<typeof resendVerificationSchema>;
+
 /* ------------------------------- onboarding -------------------------------- */
 
 export const studentProfileSchema = z
@@ -661,7 +706,7 @@ export type TeacherProfileInput = z.infer<typeof teacherProfileSchema>;
 
 /** Uniform typed result for every server action. */
 export type ActionResult<T = undefined> =
-  | { ok: true; data?: T }
+  | { ok: true; data?: T; message?: string }
   | { ok: false; code: string; message: string; fieldErrors?: Record<string, string> };
 
 export function fieldErrorsFrom(error: z.ZodError): Record<string, string> {
