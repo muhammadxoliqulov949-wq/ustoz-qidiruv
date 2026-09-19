@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getDb, schema } from "../db/client";
 import { hashPassword } from "../auth/password";
 import {
@@ -32,10 +32,9 @@ import {
   type RateLimitCheck,
 } from "../rate-limit";
 import {
-  buildVerificationUrl,
-  createVerificationToken,
-} from "../auth/verification";
-import { getEmailProvider } from "../email/provider";
+  registerEmail,
+  resendVerification,
+} from "../auth/registration";
 import { maskEmail } from "@/lib/email";
 
 /* -------------------------------------------------------------------------- */
@@ -210,79 +209,10 @@ export async function registerEmailAction(form: FormData): Promise<ActionResult>
   ]);
   if (!registerAllowed) return rateLimited();
 
-  const db = getDb();
-
-  const existing = await db
-    .select({ id: schema.users.id })
-    .from(schema.users)
-    .where(eq(schema.users.email, email))
-    .limit(1);
-
-  if (existing.length > 0) {
-    return {
-      ok: false,
-      code: "duplicate_email",
-      message: "Bu email bilan hisob allaqachon mavjud. Kirishga urinib ko‘ring.",
-      fieldErrors: { email: "Bu email band." },
-    };
+  const result = await registerEmail({ role, name, email, password });
+  if (!result.ok) {
+    return result;
   }
-
-  const userId = newId("usr");
-  const passwordHash = await hashPassword(password);
-  let rawToken = "";
-
-  try {
-    await db.transaction(async (tx) => {
-      await tx.insert(schema.users).values({
-        id: userId,
-        role,
-        email,
-        phone: null,
-        passwordHash,
-        emailVerifiedAt: null,
-      });
-
-      if (role === "student") {
-        await tx.insert(schema.studentProfiles).values({
-          userId,
-          role: "student",
-          name,
-          languages: [],
-          interests: [],
-          onboardingCompleted: false,
-        });
-      } else {
-        const slug = await uniqueTeacherSlug(tx, slugifyName(name));
-        await tx.insert(schema.teacherProfiles).values({
-          userId,
-          role: "teacher",
-          slug,
-          name,
-          categories: [],
-          levels: [],
-          formats: [],
-          languages: [],
-          verification: "unverified",
-          onboardingCompleted: false,
-        });
-      }
-
-      rawToken = await createVerificationToken(userId, email, tx);
-    });
-  } catch (error) {
-    console.error("registerEmailAction failed", {
-      code: (error as { code?: string }).code ?? "unknown",
-    });
-    return {
-      ok: false,
-      code: "server_error",
-      message: "Hisob yaratilmadi. Keyinroq qayta urinib ko‘ring.",
-    };
-  }
-
-  // Dispatch email verification link (never throws, returns delivery status)
-  const verifyUrl = buildVerificationUrl(rawToken);
-  await getEmailProvider().sendVerificationEmail(email, { name, verifyUrl });
 
   // No session is minted. Direct the user to the verification holding page.
   redirect(`/verify-email?sent=1&email=${encodeURIComponent(maskEmail(email))}`);
@@ -407,48 +337,7 @@ export async function resendVerificationAction(form: FormData): Promise<ActionRe
     };
   }
 
-  const db = getDb();
-  const rows = await db
-    .select({
-      id: schema.users.id,
-      email: schema.users.email,
-      role: schema.users.role,
-      emailVerifiedAt: schema.users.emailVerifiedAt,
-      accountStatus: schema.users.accountStatus,
-    })
-    .from(schema.users)
-    .where(and(eq(schema.users.email, email), eq(schema.users.accountStatus, "active")))
-    .limit(1);
-
-  const user = rows[0];
-  if (user && !user.emailVerifiedAt && user.role !== "admin") {
-    let name = "Foydalanuvchi";
-    if (user.role === "student") {
-      const student = await db
-        .select({ name: schema.studentProfiles.name })
-        .from(schema.studentProfiles)
-        .where(eq(schema.studentProfiles.userId, user.id))
-        .limit(1);
-      if (student[0]?.name) name = student[0].name;
-    } else if (user.role === "teacher") {
-      const teacher = await db
-        .select({ name: schema.teacherProfiles.name })
-        .from(schema.teacherProfiles)
-        .where(eq(schema.teacherProfiles.userId, user.id))
-        .limit(1);
-      if (teacher[0]?.name) name = teacher[0].name;
-    }
-
-    const rawToken = await createVerificationToken(user.id, user.email!);
-    const verifyUrl = buildVerificationUrl(rawToken);
-    await getEmailProvider().sendVerificationEmail(user.email!, { name, verifyUrl });
-  }
-
-  // Generic message: no account enumeration
-  return {
-    ok: true,
-    message: "Agar ushbu email bilan tasdiqlanmagan hisob mavjud bo‘lsa, tasdiqlash xati yuborildi.",
-  };
+  return await resendVerification(email);
 }
 
 export async function loginAction(form: FormData): Promise<ActionResult> {

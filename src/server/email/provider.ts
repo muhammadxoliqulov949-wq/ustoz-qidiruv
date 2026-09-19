@@ -122,11 +122,29 @@ export class ResendEmailProvider implements EmailProvider {
   }
 }
 
+export class UnavailableEmailProvider implements EmailProvider {
+  async sendVerificationEmail(): Promise<{ success: boolean; error?: string }> {
+    return { success: false, error: "email_service_unavailable" };
+  }
+}
+
 let customProvider: EmailProvider | null = null;
 
 /** Override provider for unit tests. */
 export function setEmailProviderForTesting(provider: EmailProvider | null): void {
   customProvider = provider;
+}
+
+/**
+ * Returns true if an email provider is configured to deliver emails.
+ *   • test / dev: DevEmailProvider allowed when RESEND_API_KEY is unset.
+ *   • production: strictly requires RESEND_API_KEY.
+ */
+export function isEmailDeliveryAvailable(): boolean {
+  if (customProvider !== null) return true;
+  const env = serverEnv();
+  if (env.RESEND_API_KEY) return true;
+  return env.NODE_ENV === "test" || env.NODE_ENV === "development";
 }
 
 export function getEmailProvider(): EmailProvider {
@@ -135,5 +153,8 @@ export function getEmailProvider(): EmailProvider {
   if (env.RESEND_API_KEY) {
     return new ResendEmailProvider(env.RESEND_API_KEY, env.AUTH_EMAIL_FROM);
   }
-  return new DevEmailProvider();
+  if (env.NODE_ENV === "test" || env.NODE_ENV === "development") {
+    return new DevEmailProvider();
+  }
+  return new UnavailableEmailProvider();
 }

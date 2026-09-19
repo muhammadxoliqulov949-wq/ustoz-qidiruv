@@ -146,20 +146,24 @@ export function LoginForm({ initialNext = null, initialError = null }: LoginForm
 
   return (
     <Card className="flex flex-col gap-5">
-      {/* 1. Primary: Continue with Google */}
-      <div className="flex flex-col gap-2">
-        <GoogleButton href={googleHref}>Continue with Google</GoogleButton>
-      </div>
+      {/* 1. Primary: Continue with Google (hidden in operator mode) */}
+      {mode !== "operator" ? (
+        <>
+          <div className="flex flex-col gap-2">
+            <GoogleButton href={googleHref}>Continue with Google</GoogleButton>
+          </div>
 
-      {/* Divider */}
-      <div className="relative text-center">
-        <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-line" />
-        </div>
-        <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-surface px-3 font-medium text-ink-400">yoki</span>
-        </div>
-      </div>
+          {/* Divider */}
+          <div className="relative text-center">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-line" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-surface px-3 font-medium text-ink-400">yoki</span>
+            </div>
+          </div>
+        </>
+      ) : null}
 
       {/* Identifier switcher */}
       <RadioCardGroup

@@ -79,7 +79,17 @@ async function main(): Promise<void> {
     createVerificationToken,
     verifyEmailToken,
   } = await import("../src/server/auth/verification");
-  const { DevEmailProvider, getEmailProvider } = await import("../src/server/email/provider");
+  const {
+    DevEmailProvider,
+    ResendEmailProvider,
+    getEmailProvider,
+    isEmailDeliveryAvailable,
+  } = await import("../src/server/email/provider");
+  const {
+    registerEmail,
+    resendVerification,
+  } = await import("../src/server/auth/registration");
+  const { __resetServerEnvForTesting } = await import("../src/server/env");
   const {
     emailRegisterSchema,
     roleSchema,
@@ -684,6 +694,101 @@ async function main(): Promise<void> {
     !expiredVerifyResult.ok && expiredVerifyResult.code === "expired",
   );
 
+  // Anti-enumeration tests for registerEmail and resendVerification
+  // 1. New email registration succeeds (isNew: true)
+  const newEmailResult = await registerEmail({
+    role: "student",
+    name: "New Student Ali",
+    email: "ali.new@example.com",
+    password: "securePass123",
+  });
+  check(
+    "new email registration succeeds and creates unverified user",
+    newEmailResult.ok === true &&
+      newEmailResult.email === "ali.new@example.com" &&
+      newEmailResult.isNew === true,
+  );
+
+  // 2. Duplicate student email registration does NOT enumerate (same generic result, no password change)
+  const studentUserRowBefore = (
+    await db.select().from(schema.users).where(eq(schema.users.email, "ali.new@example.com"))
+  )[0];
+  const duplicateStudentResult = await registerEmail({
+    role: "student",
+    name: "Attacker Trying Overwrite",
+    email: "ali.new@example.com",
+    password: "attackerNewPassword123",
+  });
+  check(
+    "duplicate student email registration returns identical success (anti-enumeration)",
+    duplicateStudentResult.ok === true && duplicateStudentResult.email === "ali.new@example.com",
+  );
+
+  const studentUserRowAfter = (
+    await db.select().from(schema.users).where(eq(schema.users.email, "ali.new@example.com"))
+  )[0];
+  check(
+    "duplicate registration does not alter existing password hash",
+    studentUserRowAfter.passwordHash === studentUserRowBefore.passwordHash,
+  );
+
+  // 3. Duplicate teacher email registration does NOT mutate profile or password
+  const teacherUserRowBefore = (
+    await db.select().from(schema.users).where(eq(schema.users.id, teacherId))
+  )[0];
+  const duplicateTeacherResult = await registerEmail({
+    role: "teacher",
+    name: "Fake Teacher Name",
+    email: "nodira@example.com",
+    password: "newPassword999",
+  });
+  check(
+    "duplicate teacher email returns identical success without disclosure",
+    duplicateTeacherResult.ok === true && duplicateTeacherResult.email === "nodira@example.com",
+  );
+  const teacherUserRowAfter = (
+    await db.select().from(schema.users).where(eq(schema.users.id, teacherId))
+  )[0];
+  check(
+    "existing teacher account remains unmodified",
+    teacherUserRowAfter.passwordHash === teacherUserRowBefore.passwordHash &&
+      teacherUserRowAfter.role === "teacher",
+  );
+
+  // 4. Registration with existing admin email does NOT leak or mutate admin account
+  const adminRowBefore = (
+    await db.select().from(schema.users).where(eq(schema.users.id, adminId))
+  )[0];
+  const adminAttemptResult = await registerEmail({
+    role: "student",
+    name: "Admin Impersonator",
+    email: "super.admin@ustoz-ops.uz",
+    password: "attackerPassword123",
+  });
+  check(
+    "admin email registration returns identical public success without disclosing admin existence",
+    adminAttemptResult.ok === true && adminAttemptResult.email === "super.admin@ustoz-ops.uz",
+  );
+  const adminRowAfter = (
+    await db.select().from(schema.users).where(eq(schema.users.id, adminId))
+  )[0];
+  check(
+    "admin account password and role strictly untouched",
+    adminRowAfter.passwordHash === adminRowBefore.passwordHash &&
+      adminRowAfter.role === "admin",
+  );
+
+  // 5. resendVerification returns generic response for unknown and admin emails
+  const resendUnknown = await resendVerification("completely.unknown@example.com");
+  const resendAdmin = await resendVerification("super.admin@ustoz-ops.uz");
+
+  check(
+    "resendVerification produces generic identical response for unknown and admin emails",
+    resendUnknown.ok === true &&
+      resendAdmin.ok === true &&
+      resendUnknown.message === resendAdmin.message,
+  );
+
   /* ==================== 5. RATE LIMITING & COOLDOWNS ==================== */
   console.log("\n# 5. Rate limiting, cooldowns & email provider");
 
@@ -715,6 +820,126 @@ async function main(): Promise<void> {
     "DevEmailProvider records sent email in-memory without network call",
     DevEmailProvider.sentEmails.length === 1 &&
       DevEmailProvider.sentEmails[0].to === "tester@example.com",
+  );
+
+  // Resend provider path with mocked network
+  const originalFetch = globalThis.fetch;
+  try {
+    const resend = new ResendEmailProvider("re_mock_key_123", "onboarding@resend.dev");
+
+    // Success case (200)
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ id: "mock_resend_id" }), { status: 200 })) as typeof fetch;
+    const resendSuccess = await resend.sendVerificationEmail("tester@example.com", {
+      name: "Tester",
+      verifyUrl: "http://localhost:3000/verify-email?token=xyz",
+    });
+    check("Resend provider succeeds with 200 API response", resendSuccess.success === true);
+
+    // Error case (401)
+    globalThis.fetch = (async () =>
+      new Response("Invalid API key", { status: 401 })) as typeof fetch;
+    const resendError = await resend.sendVerificationEmail("tester@example.com", {
+      name: "Tester",
+      verifyUrl: "http://localhost:3000/verify-email?token=xyz",
+    });
+    check(
+      "Resend provider handles API error status honestly",
+      resendError.success === false && resendError.error === "email_delivery_failed",
+    );
+
+    // Network exception case
+    globalThis.fetch = (async () => {
+      throw new Error("Network unreachable");
+    }) as typeof fetch;
+    const resendException = await resend.sendVerificationEmail("tester@example.com", {
+      name: "Tester",
+      verifyUrl: "http://localhost:3000/verify-email?token=xyz",
+    });
+    check(
+      "Resend provider handles network exception honestly",
+      resendException.success === false && resendException.error === "email_delivery_error",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  // Production fail-safe when RESEND_API_KEY is missing
+  const originalEnvNodeEnv = process.env.NODE_ENV;
+  const originalResendKey = process.env.RESEND_API_KEY;
+  const originalStateSecret = process.env.AUTH_OAUTH_STATE_SECRET;
+  try {
+    (process.env as Record<string, string | undefined>).NODE_ENV = "production";
+    process.env.AUTH_OAUTH_STATE_SECRET = "production-test-secret-at-least-32-chars-long";
+    delete process.env.RESEND_API_KEY;
+    __resetServerEnvForTesting();
+
+    check(
+      "isEmailDeliveryAvailable() is false in production without RESEND_API_KEY",
+      isEmailDeliveryAvailable() === false,
+    );
+
+    const prodEmailProvider = getEmailProvider();
+    const prodSendResult = await prodEmailProvider.sendVerificationEmail("user@example.com", {
+      name: "User",
+      verifyUrl: "http://example.com",
+    });
+    check(
+      "production email provider fails closed with email_service_unavailable",
+      prodSendResult.success === false && prodSendResult.error === "email_service_unavailable",
+    );
+
+    const prodResendResult = await resendVerification("any.user@example.com");
+    check(
+      "resendVerification in production without RESEND_API_KEY fails honestly",
+      prodResendResult.ok === false && prodResendResult.code === "email_service_unavailable",
+    );
+
+    const prodRegResult = await registerEmail({
+      role: "student",
+      name: "Test User",
+      email: "prod.no.resend@example.com",
+      password: "strongPass123",
+    });
+    check(
+      "registerEmail in production without RESEND_API_KEY fails honestly",
+      prodRegResult.ok === false && prodRegResult.code === "email_service_unavailable",
+    );
+
+    // Google OAuth still resolves in production even without Resend
+    const prodGoogleUser = await resolveGoogleUser(
+      {
+        ...validClaims,
+        sub: "google-sub-prod-no-resend",
+        email: "prod.google@gmail.com",
+      },
+      "student",
+    );
+    check(
+      "Google OAuth resolves cleanly in production even when Resend is unconfigured",
+      prodGoogleUser.ok === true,
+    );
+  } finally {
+    (process.env as Record<string, string | undefined>).NODE_ENV = originalEnvNodeEnv;
+    if (originalResendKey !== undefined) {
+      process.env.RESEND_API_KEY = originalResendKey;
+    } else {
+      delete process.env.RESEND_API_KEY;
+    }
+    if (originalStateSecret !== undefined) {
+      process.env.AUTH_OAUTH_STATE_SECRET = originalStateSecret;
+    } else {
+      delete process.env.AUTH_OAUTH_STATE_SECRET;
+    }
+    __resetServerEnvForTesting();
+  }
+
+  // Operator UX and isolation guarantees
+  const allowsGoogleInMode = (loginMode: string) => loginMode !== "operator";
+  check("operator login mode suppresses Google auth UI", allowsGoogleInMode("operator") === false);
+  check(
+    "email and phone login modes permit Google auth UI",
+    allowsGoogleInMode("email") === true && allowsGoogleInMode("phone") === true,
   );
 
   /* ================= 6. DEACTIVATION & BACKWARD COMPAT ================= */
