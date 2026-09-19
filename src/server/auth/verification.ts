@@ -28,7 +28,7 @@ export type VerifyEmailResult =
 
 /**
  * Mint a single valid verification token for a user.
- * Mechanically invalidates any prior unused tokens for this user first.
+ * Mechanically invalidates any prior unused tokens for this user via atomic upsert.
  */
 export async function createVerificationToken(
   userId: string,
@@ -39,20 +39,31 @@ export async function createVerificationToken(
   const normalized = normalizeEmail(email);
   const rawToken = randomBytes(32).toString("base64url");
   const tokenHash = hashToken(rawToken);
-  const expiresAt = new Date(Date.now() + VERIFICATION_TOKEN_TTL_MS);
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + VERIFICATION_TOKEN_TTL_MS);
 
-  // Invalidate any existing unused tokens for this user
+  // Atomic upsert: enforces exactly one active verification token per user.
+  // Replaces any existing token for this user without delete+insert race conditions.
   await db
-    .delete(schema.emailVerificationTokens)
-    .where(eq(schema.emailVerificationTokens.userId, userId));
-
-  await db.insert(schema.emailVerificationTokens).values({
-    id: newId("evt"),
-    userId,
-    tokenHash,
-    email: normalized,
-    expiresAt,
-  });
+    .insert(schema.emailVerificationTokens)
+    .values({
+      id: newId("evt"),
+      userId,
+      tokenHash,
+      email: normalized,
+      expiresAt,
+      createdAt: now,
+    })
+    .onConflictDoUpdate({
+      target: schema.emailVerificationTokens.userId,
+      set: {
+        id: newId("evt"),
+        tokenHash,
+        email: normalized,
+        expiresAt,
+        createdAt: now,
+      },
+    });
 
   return rawToken;
 }

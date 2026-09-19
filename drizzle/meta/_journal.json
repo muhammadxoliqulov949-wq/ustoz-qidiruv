@@ -99,6 +99,13 @@
       "when": 1789700000000,
       "tag": "0013_auth_upgrade",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1789710000000,
+      "tag": "0014_auth_hardening",
+      "breakpoints": true
     }
   ]
 }

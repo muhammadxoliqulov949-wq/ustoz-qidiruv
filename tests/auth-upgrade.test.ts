@@ -84,6 +84,8 @@ async function main(): Promise<void> {
     ResendEmailProvider,
     getEmailProvider,
     isEmailDeliveryAvailable,
+    escapeHtml,
+    buildVerificationEmailHtml,
   } = await import("../src/server/email/provider");
   const {
     registerEmail,
@@ -553,7 +555,48 @@ async function main(): Promise<void> {
     !adminGoogleRes.ok && adminGoogleRes.code === "admin_forbidden",
   );
 
-  // F. Duplicate provider identity collision constraint
+  // F. Manually seeded auth_accounts pointing to admin is strictly refused with admin_forbidden
+  const seededAdminId = newId("usr");
+  await db.insert(schema.users).values({
+    id: seededAdminId,
+    role: "admin",
+    email: "seeded.admin@ustoz-ops.uz",
+    passwordHash: adminPassword,
+    accountStatus: "active",
+    emailVerifiedAt: new Date(),
+  });
+  await db.insert(schema.authAccounts).values({
+    id: newId("acc"),
+    userId: seededAdminId,
+    provider: "google",
+    providerAccountId: "google-sub-seeded-admin",
+    providerEmail: "seeded.admin@ustoz-ops.uz",
+  });
+
+  const seededAdminRes = await resolveGoogleUser(
+    {
+      ...validClaims,
+      sub: "google-sub-seeded-admin",
+      email: "different-admin@gmail.com",
+    },
+    "student",
+  );
+  check(
+    "auth_accounts pointing to admin strictly returns admin_forbidden (no session-capable success)",
+    !seededAdminRes.ok && seededAdminRes.code === "admin_forbidden",
+  );
+
+  // G. Callback route is structurally incapable of routing to /admin
+  const callbackSource = readFileSync(
+    path.join(process.cwd(), "src/app/api/auth/google/callback/route.ts"),
+    "utf8",
+  );
+  check(
+    "Google OAuth callback route contains no routing to /admin and strips /admin safeNext",
+    !callbackSource.includes('"/admin"') || callbackSource.includes('!safeNext.startsWith("/admin")'),
+  );
+
+  // H. Duplicate provider identity collision constraint
   await rejects("auth_accounts enforces uniqueness on (provider, provider_account_id)", () =>
     db.insert(schema.authAccounts).values({
       id: newId("acc"),
@@ -694,6 +737,92 @@ async function main(): Promise<void> {
     !expiredVerifyResult.ok && expiredVerifyResult.code === "expired",
   );
 
+  // Concurrency & Unique Constraint: Enforce exactly one active verification token per user
+  const concurrentUserId = newId("usr");
+  await db.insert(schema.users).values({
+    id: concurrentUserId,
+    role: "student",
+    email: "concurrent@example.com",
+    passwordHash: teacherHash,
+    emailVerifiedAt: null,
+    accountStatus: "active",
+  });
+
+  // Schema-level UNIQUE constraint on user_id strictly prevents duplicates
+  await db.insert(schema.emailVerificationTokens).values({
+    id: newId("evt"),
+    userId: concurrentUserId,
+    tokenHash: "manual-hash-1",
+    email: "concurrent@example.com",
+    expiresAt: new Date(Date.now() + 86400000),
+  });
+  await rejects(
+    "email_verification_tokens enforces unique constraint on user_id",
+    () =>
+      db.insert(schema.emailVerificationTokens).values({
+        id: newId("evt"),
+        userId: concurrentUserId,
+        tokenHash: "manual-hash-2",
+        email: "concurrent@example.com",
+        expiresAt: new Date(Date.now() + 86400000),
+      }),
+  );
+
+  // Clean up manual row for concurrency test
+  await db
+    .delete(schema.emailVerificationTokens)
+    .where(eq(schema.emailVerificationTokens.userId, concurrentUserId));
+
+  // Race test: 5 concurrent issuance calls for the same user via atomic upsert
+  const concurrentTokens = await Promise.all([
+    createVerificationToken(concurrentUserId, "concurrent@example.com"),
+    createVerificationToken(concurrentUserId, "concurrent@example.com"),
+    createVerificationToken(concurrentUserId, "concurrent@example.com"),
+    createVerificationToken(concurrentUserId, "concurrent@example.com"),
+    createVerificationToken(concurrentUserId, "concurrent@example.com"),
+  ]);
+
+  const concurrentRows = await db
+    .select()
+    .from(schema.emailVerificationTokens)
+    .where(eq(schema.emailVerificationTokens.userId, concurrentUserId));
+
+  check(
+    "concurrent issuance produces exactly one active token row in database",
+    concurrentRows.length === 1,
+  );
+  check(
+    "active token in database is hashed at rest with 24h expiration",
+    concurrentRows[0].tokenHash !== "" &&
+      concurrentRows[0].expiresAt.getTime() > Date.now() + 23 * 3600 * 1000,
+  );
+
+  // Exactly one token (the latest/winning upsert) succeeds, while the other 4 are invalid
+  let validTokenCount = 0;
+  for (const token of concurrentTokens) {
+    if (hashToken(token) === concurrentRows[0].tokenHash) {
+      validTokenCount += 1;
+    } else {
+      const invalidRes = await verifyEmailToken(token);
+      check("overwritten concurrent token rejected", !invalidRes.ok && invalidRes.code === "invalid_token");
+    }
+  }
+  check("winning token is unique among concurrent batch", validTokenCount === 1);
+
+  // Verify winning token succeeds and is single-use
+  const winningToken = concurrentTokens.find((t) => hashToken(t) === concurrentRows[0].tokenHash)!;
+  const winningVerify = await verifyEmailToken(winningToken);
+  check("winning concurrent token successfully verifies user", winningVerify.ok === true);
+
+  const finalRows = await db
+    .select()
+    .from(schema.emailVerificationTokens)
+    .where(eq(schema.emailVerificationTokens.userId, concurrentUserId));
+  check("token row completely deleted after consumption (single-use)", finalRows.length === 0);
+
+  const winningReused = await verifyEmailToken(winningToken);
+  check("re-verifying consumed winning token rejected", !winningReused.ok && winningReused.code === "invalid_token");
+
   // Anti-enumeration tests for registerEmail and resendVerification
   // 1. New email registration succeeds (isNew: true)
   const newEmailResult = await registerEmail({
@@ -778,15 +907,36 @@ async function main(): Promise<void> {
       adminRowAfter.role === "admin",
   );
 
-  // 5. resendVerification returns generic response for unknown and admin emails
+  // 5. resendVerification returns generic conditional response for unknown and admin emails
   const resendUnknown = await resendVerification("completely.unknown@example.com");
   const resendAdmin = await resendVerification("super.admin@ustoz-ops.uz");
 
+  const EXPECTED_CONDITIONAL_COPY = "Agar ushbu email tasdiqlanmagan hisobga tegishli bo‘lsa, tasdiqlash xati yuborildi.";
   check(
-    "resendVerification produces generic identical response for unknown and admin emails",
+    "resendVerification produces generic identical conditional response for unknown and admin emails",
     resendUnknown.ok === true &&
       resendAdmin.ok === true &&
-      resendUnknown.message === resendAdmin.message,
+      resendUnknown.message === resendAdmin.message &&
+      resendUnknown.message === EXPECTED_CONDITIONAL_COPY,
+  );
+
+  // 6. Honest conditional copy in holding page, register form and resend form
+  const verifyPageSource = readFileSync(path.join(process.cwd(), "src/app/(auth)/verify-email/page.tsx"), "utf8");
+  check(
+    "verify-email holding page uses honest conditional copy",
+    verifyPageSource.includes(EXPECTED_CONDITIONAL_COPY),
+  );
+
+  const registerFormSource = readFileSync(path.join(process.cwd(), "src/components/auth/register-form.tsx"), "utf8");
+  check(
+    "register form uses honest conditional copy",
+    registerFormSource.includes("Agar ushbu email tasdiqlanmagan hisobga tegishli bo‘lsa, tasdiqlash xati"),
+  );
+
+  const resendFormSource = readFileSync(path.join(process.cwd(), "src/components/auth/resend-verification-form.tsx"), "utf8");
+  check(
+    "resend verification form uses honest conditional copy and neutral title",
+    resendFormSource.includes(EXPECTED_CONDITIONAL_COPY) && resendFormSource.includes('title="Tasdiqlash holati"'),
   );
 
   /* ==================== 5. RATE LIMITING & COOLDOWNS ==================== */
@@ -863,6 +1013,34 @@ async function main(): Promise<void> {
   } finally {
     globalThis.fetch = originalFetch;
   }
+
+  // HTML Escaping in transactional verification emails
+  const dangerousName = `<script>alert("xss")</script> & O'Connor "VIP"`;
+  const dangerousUrl = `https://ustoz.uz/verify?token=xyz&track=" onclick="alert(1)`;
+  const escapedName = escapeHtml(dangerousName);
+  check(
+    "escapeHtml correctly escapes < > & \" ' characters",
+    escapedName === `&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt; &amp; O&#39;Connor &quot;VIP&quot;`,
+  );
+  check(
+    "escapeHtml does not leave unescaped < > & \" ' characters",
+    !/[<>"']/.test(escapedName),
+  );
+
+  const emailHtml = buildVerificationEmailHtml({
+    name: dangerousName,
+    verifyUrl: dangerousUrl,
+  });
+  check(
+    "email HTML contains escaped name without raw executable script tags",
+    emailHtml.includes("&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;") &&
+      !emailHtml.includes("<script>alert"),
+  );
+  check(
+    "email HTML contains escaped URL attribute preventing attribute breakout",
+    emailHtml.includes('href="https://ustoz.uz/verify?token=xyz&amp;track=&quot; onclick=&quot;alert(1)"') &&
+      !emailHtml.includes('onclick="alert(1)"'),
+  );
 
   // Production fail-safe when RESEND_API_KEY is missing
   const originalEnvNodeEnv = process.env.NODE_ENV;

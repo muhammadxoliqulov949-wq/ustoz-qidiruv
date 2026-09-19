@@ -211,7 +211,7 @@ interface JwksCache {
 }
 
 export type GoogleAuthResult =
-  | { ok: true; userId: string; role: "student" | "teacher" | "admin"; next?: string | null }
+  | { ok: true; userId: string; role: "student" | "teacher"; next?: string | null }
   | { ok: false; code: string; message: string };
 
 /* ------------------------------- JWKS Cache -------------------------------- */
@@ -575,6 +575,15 @@ export async function resolveGoogleUser(
       const user = userRows[0];
       if (!user) {
         return { ok: false, code: "user_not_found", message: "Foydalanuvchi topilmadi." };
+      }
+
+      // ADMIN PROTECTION: Operator accounts can NEVER authenticate via Google OAuth
+      if (user.role === "admin") {
+        return {
+          ok: false,
+          code: "admin_forbidden",
+          message: "Administrator hisobiga umumiy Google orqali kirish taqiqlangan.",
+        };
       }
 
       if (user.accountStatus === "deactivated") {

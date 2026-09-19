@@ -219,6 +219,6 @@ export async function resendVerification(email: string): Promise<ResendVerificat
   // Generic message: no account enumeration
   return {
     ok: true,
-    message: "Agar ushbu email bilan tasdiqlanmagan hisob mavjud bo‘lsa, tasdiqlash xati yuborildi.",
+    message: "Agar ushbu email tasdiqlanmagan hisobga tegishli bo‘lsa, tasdiqlash xati yuborildi.",
   };
 }

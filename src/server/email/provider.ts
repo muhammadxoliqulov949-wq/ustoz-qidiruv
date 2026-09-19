@@ -33,6 +33,50 @@ export interface SentEmailRecord {
   sentAt: Date;
 }
 
+/**
+ * Server-side HTML escaping helper.
+ * Escapes < > & " ' so user input cannot inject HTML markup or escape attributes.
+ */
+export function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * Builds the safe HTML body for transactional verification emails.
+ * Display name and verifyUrl are strictly escaped.
+ */
+export function buildVerificationEmailHtml(data: EmailData): string {
+  const safeName = escapeHtml(data.name);
+  const safeUrl = escapeHtml(data.verifyUrl);
+
+  return [
+    `<div style="font-family: sans-serif; max-width: 560px; margin: 0 auto; padding: 20px;">`,
+    `  <h2 style="color: #1e293b; margin-bottom: 16px;">Salom, ${safeName}!</h2>`,
+    `  <p style="color: #475569; font-size: 16px; line-height: 1.5;">`,
+    `    USTOZ platformasidagi hisobingizni tasdiqlash uchun quyidagi tugmani bosing:`,
+    `  </p>`,
+    `  <div style="margin: 28px 0;">`,
+    `    <a href="${safeUrl}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; font-size: 15px; font-weight: 600; text-decoration: none; border-radius: 8px; display: inline-block;">`,
+    `      Emailni tasdiqlash`,
+    `    </a>`,
+    `  </div>`,
+    `  <p style="color: #64748b; font-size: 14px; line-height: 1.5;">`,
+    `    Yoki havolani brauzeringizga nusxalang:<br>`,
+    `    <a href="${safeUrl}" style="color: #2563eb; word-break: break-all;">${safeUrl}</a>`,
+    `  </p>`,
+    `  <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />`,
+    `  <p style="color: #94a3b8; font-size: 12px;">`,
+    `    Ushbu havola 24 soat davomida amal qiladi. Agar siz ro‘yxatdan o‘tmagan bo‘lsangiz, bu xatni o‘chirib tashlashingiz mumkin.`,
+    `  </p>`,
+    `</div>`,
+  ].join("\n");
+}
+
 export class DevEmailProvider implements EmailProvider {
   /** In-memory log of sent messages for testing and local inspection. */
   public static sentEmails: SentEmailRecord[] = [];
@@ -84,27 +128,7 @@ export class ResendEmailProvider implements EmailProvider {
             "Ushbu havola 24 soat davomida amal qiladi.",
             "Agar siz ro‘yxatdan o‘tmagan bo‘lsangiz, ushbu xatni e’tiborsiz qoldiring.",
           ].join("\n"),
-          html: [
-            `<div style="font-family: sans-serif; max-width: 560px; margin: 0 auto; padding: 20px;">`,
-            `  <h2 style="color: #1e293b; margin-bottom: 16px;">Salom, ${data.name}!</h2>`,
-            `  <p style="color: #475569; font-size: 16px; line-height: 1.5;">`,
-            `    USTOZ platformasidagi hisobingizni tasdiqlash uchun quyidagi tugmani bosing:`,
-            `  </p>`,
-            `  <div style="margin: 28px 0;">`,
-            `    <a href="${data.verifyUrl}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; font-size: 15px; font-weight: 600; text-decoration: none; border-radius: 8px; display: inline-block;">`,
-            `      Emailni tasdiqlash`,
-            `    </a>`,
-            `  </div>`,
-            `  <p style="color: #64748b; font-size: 14px; line-height: 1.5;">`,
-            `    Yoki havolani brauzeringizga nusxalang:<br>`,
-            `    <a href="${data.verifyUrl}" style="color: #2563eb; word-break: break-all;">${data.verifyUrl}</a>`,
-            `  </p>`,
-            `  <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />`,
-            `  <p style="color: #94a3b8; font-size: 12px;">`,
-            `    Ushbu havola 24 soat davomida amal qiladi. Agar siz ro‘yxatdan o‘tmagan bo‘lsangiz, bu xatni o‘chirib tashlashingiz mumkin.`,
-            `  </p>`,
-            `</div>`,
-          ].join("\n"),
+          html: buildVerificationEmailHtml(data),
         }),
       });
 

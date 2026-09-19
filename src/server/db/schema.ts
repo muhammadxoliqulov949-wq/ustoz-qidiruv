@@ -308,6 +308,7 @@ export const emailVerificationTokens = pgTable(
   },
   (table) => [
     unique("evt_token_hash_unique").on(table.tokenHash),
+    unique("evt_user_id_unique").on(table.userId),
     index("evt_user_id_idx").on(table.userId),
     index("evt_expires_at_idx").on(table.expiresAt),
   ],

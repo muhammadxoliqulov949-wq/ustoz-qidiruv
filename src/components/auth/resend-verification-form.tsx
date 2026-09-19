@@ -28,7 +28,10 @@ export function ResendVerificationForm({ initialEmail = "" }: { initialEmail?: s
       try {
         const result = await resendVerificationAction(formData);
         if (result.ok) {
-          setNotice(result.message ?? "Tasdiqlash xati yuborildi.");
+          setNotice(
+            result.message ??
+              "Agar ushbu email tasdiqlanmagan hisobga tegishli bo‘lsa, tasdiqlash xati yuborildi.",
+          );
         } else {
           setError(result.message);
         }
@@ -58,7 +61,7 @@ export function ResendVerificationForm({ initialEmail = "" }: { initialEmail?: s
       </Button>
 
       {notice ? (
-        <AuthNotice title="Xat yuborildi">
+        <AuthNotice title="Tasdiqlash holati">
           <p>{notice}</p>
         </AuthNotice>
       ) : null}

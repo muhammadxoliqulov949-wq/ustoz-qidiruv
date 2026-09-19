@@ -96,15 +96,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     // 4. Issue authenticated session
     await createSession(authResult.userId);
 
-    // 5. Direct user to safe return URL or role cabinet
+    // 5. Direct user to safe return URL or role cabinet (admin is structurally barred)
     const safeNext = parseSafeNext(oauthState.next ?? undefined);
     const targetPath =
-      safeNext ??
-      (authResult.role === "admin"
-        ? "/admin"
+      safeNext && !safeNext.startsWith("/admin")
+        ? safeNext
         : authResult.role === "teacher"
           ? "/teacher/dashboard"
-          : "/dashboard");
+          : "/dashboard";
 
     const targetUrl = new URL(targetPath, baseUrl);
     return responseRedirect(targetUrl);

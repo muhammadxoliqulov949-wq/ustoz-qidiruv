@@ -298,7 +298,7 @@ export function RegisterForm({
 
             <p className="text-center text-xs leading-relaxed text-ink-400">
               {method === "email"
-                ? "Davom etish bilan hisobingiz yaratiladi va email manzilingizga tasdiqlash xati yuboriladi."
+                ? "Davom etish bilan hisobingiz yaratiladi. Agar ushbu email tasdiqlanmagan hisobga tegishli bo‘lsa, tasdiqlash xati yuboriladi."
                 : "Davom etish bilan hisobingiz yaratiladi va onboarding savollariga o‘tasiz."}
             </p>
           </div>
