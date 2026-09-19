@@ -69,8 +69,12 @@ async function main(): Promise<void> {
     validateGoogleIdToken,
     resolveGoogleUser,
     setMockGoogleJwks,
+    signOAuthState,
+    verifyAndParseOAuthState,
+    setMockOAuthStateSecret,
   } = await import("../src/server/auth/oauth");
   type GoogleJwk = import("../src/server/auth/oauth").GoogleJwk;
+  const { parseSafeNext } = await import("../src/lib/safe-next");
   const {
     createVerificationToken,
     verifyEmailToken,
@@ -208,8 +212,202 @@ async function main(): Promise<void> {
     !unverifiedEmailResult.ok && unverifiedEmailResult.code === "email_not_verified",
   );
 
-  /* ================= 2. GOOGLE ACCOUNT RESOLUTION & LINKING ================= */
-  console.log("\n# 2. Google account resolution & linking safety");
+  /* ==================== 2. OAUTH STATE COOKIE INTEGRITY ==================== */
+  console.log("\n# 2. OAuth state cookie cryptographic integrity & tamper protection");
+
+  const validOAuthPayload = {
+    state: "valid-random-state-string-32-chars-long",
+    nonce: "valid-random-nonce-string-32-chars-long",
+    codeVerifier: "valid-pkce-verifier-string-32-chars-long",
+    role: "student" as const,
+    next: "/dashboard/saved",
+  };
+
+  // 1. Unsigned cookie rejection (plain JSON)
+  const unsignedCookieJson = JSON.stringify(validOAuthPayload);
+  const unsignedRes = verifyAndParseOAuthState(unsignedCookieJson);
+  check(
+    "unsigned OAuth state cookie rejected (plain JSON)",
+    !unsignedRes.ok && unsignedRes.code === "unsigned_cookie",
+  );
+
+  // 2. Unsigned / malformed string rejection
+  const nonV1Cookie = "legacy.nonversioned.payload";
+  const nonV1Res = verifyAndParseOAuthState(nonV1Cookie);
+  check(
+    "unsigned OAuth state cookie rejected (missing v1 prefix)",
+    !nonV1Res.ok && nonV1Res.code === "unsigned_cookie",
+  );
+
+  const malformedCookie = "v1.onlytwoparts";
+  const malformedRes = verifyAndParseOAuthState(malformedCookie);
+  check(
+    "malformed OAuth state cookie rejected (wrong segments)",
+    !malformedRes.ok && malformedRes.code === "malformed_cookie",
+  );
+
+  // Helper to tamper payload while keeping original HMAC
+  const validSignedCookie = signOAuthState(validOAuthPayload);
+  const [vPrefix, validPayloadB64, originalHmac] = validSignedCookie.split(".");
+
+  function tamperPayload(mutate: (p: Record<string, unknown>) => void): string {
+    const json = JSON.parse(Buffer.from(validPayloadB64, "base64url").toString("utf8"));
+    mutate(json);
+    const tamperedB64 = Buffer.from(JSON.stringify(json)).toString("base64url");
+    return `${vPrefix}.${tamperedB64}.${originalHmac}`;
+  }
+
+  // 3. Altered state rejection
+  const alteredStateCookie = tamperPayload((p) => {
+    p.state = "attacker-altered-state";
+  });
+  const alteredStateRes = verifyAndParseOAuthState(alteredStateCookie);
+  check(
+    "altered state parameter rejected (invalid signature)",
+    !alteredStateRes.ok && alteredStateRes.code === "invalid_signature",
+  );
+
+  // 4. Altered nonce rejection
+  const alteredNonceCookie = tamperPayload((p) => {
+    p.nonce = "attacker-altered-nonce";
+  });
+  const alteredNonceRes = verifyAndParseOAuthState(alteredNonceCookie);
+  check(
+    "altered nonce parameter rejected (invalid signature)",
+    !alteredNonceRes.ok && alteredNonceRes.code === "invalid_signature",
+  );
+
+  // 5. Altered PKCE codeVerifier rejection
+  const alteredVerifierCookie = tamperPayload((p) => {
+    p.codeVerifier = "attacker-altered-verifier";
+  });
+  const alteredVerifierRes = verifyAndParseOAuthState(alteredVerifierCookie);
+  check(
+    "altered PKCE codeVerifier parameter rejected (invalid signature)",
+    !alteredVerifierRes.ok && alteredVerifierRes.code === "invalid_signature",
+  );
+
+  // 6. Altered role rejection (tampered payload with original HMAC)
+  const alteredRoleCookie = tamperPayload((p) => {
+    p.role = "teacher";
+  });
+  const alteredRoleRes = verifyAndParseOAuthState(alteredRoleCookie);
+  check(
+    "altered role parameter rejected (invalid signature)",
+    !alteredRoleRes.ok && alteredRoleRes.code === "invalid_signature",
+  );
+
+  // 7. Forged role='admin' rejection even when signed with valid secret
+  const forgedAdminCookie = signOAuthState({
+    ...validOAuthPayload,
+    role: "admin" as unknown as "student" | "teacher",
+  });
+  const forgedAdminRes = verifyAndParseOAuthState(forgedAdminCookie);
+  check(
+    "forged role='admin' in state strictly rejected",
+    !forgedAdminRes.ok && forgedAdminRes.code === "invalid_payload",
+  );
+
+  // 8. Altered next rejection
+  const alteredNextCookie = tamperPayload((p) => {
+    p.next = "https://evil.com/phish";
+  });
+  const alteredNextRes = verifyAndParseOAuthState(alteredNextCookie);
+  check(
+    "altered next parameter rejected (invalid signature)",
+    !alteredNextRes.ok && alteredNextRes.code === "invalid_signature",
+  );
+
+  // 9. Corrupted HMAC rejection
+  const corruptedHmacCookie = `${vPrefix}.${validPayloadB64}.${originalHmac.slice(0, -5)}XXXXX`;
+  const corruptedHmacRes = verifyAndParseOAuthState(corruptedHmacCookie);
+  check(
+    "corrupted HMAC signature bytes rejected",
+    !corruptedHmacRes.ok && corruptedHmacRes.code === "invalid_signature",
+  );
+
+  // 10. Untrusted/different HMAC secret rejection
+  const untrustedSecretCookie = signOAuthState(
+    validOAuthPayload,
+    "untrusted-rogue-secret-attacker-key-32-chars",
+  );
+  const untrustedSecretRes = verifyAndParseOAuthState(untrustedSecretCookie);
+  check(
+    "OAuth state signed with untrusted secret rejected",
+    !untrustedSecretRes.ok && untrustedSecretRes.code === "invalid_signature",
+  );
+
+  // 11. Expired signed state payload rejection (server-side TTL)
+  const expiredCookie = signOAuthState({
+    ...validOAuthPayload,
+    issuedAt: Date.now() - 700 * 1000,
+    expiresAt: Date.now() - 50 * 1000, // expired 50s ago
+  });
+  const expiredRes = verifyAndParseOAuthState(expiredCookie);
+  check(
+    "expired signed state payload rejected by server-side TTL",
+    !expiredRes.ok && expiredRes.code === "expired_state",
+  );
+
+  // 12. Valid signed state succeeds
+  const validRes = verifyAndParseOAuthState(validSignedCookie);
+  check(
+    "valid signed OAuth state succeeds",
+    validRes.ok === true &&
+      validRes.state.state === validOAuthPayload.state &&
+      validRes.state.nonce === validOAuthPayload.nonce &&
+      validRes.state.codeVerifier === validOAuthPayload.codeVerifier &&
+      validRes.state.role === "student" &&
+      validRes.state.next === "/dashboard/saved" &&
+      validRes.state.expiresAt > Date.now(),
+  );
+
+  // 13. Student and teacher are the only allowed public roles
+  const validTeacherSigned = signOAuthState({
+    ...validOAuthPayload,
+    role: "teacher",
+  });
+  const validTeacherRes = verifyAndParseOAuthState(validTeacherSigned);
+  check(
+    "role='teacher' in signed state accepted",
+    validTeacherRes.ok === true && validTeacherRes.state.role === "teacher",
+  );
+
+  const invalidRoleCookie = signOAuthState({
+    ...validOAuthPayload,
+    role: "operator" as unknown as "student" | "teacher",
+  });
+  const invalidRoleRes = verifyAndParseOAuthState(invalidRoleCookie);
+  check(
+    "arbitrary role in signed state rejected",
+    !invalidRoleRes.ok && invalidRoleRes.code === "invalid_payload",
+  );
+
+  // 14. Custom secret override via setMockOAuthStateSecret
+  setMockOAuthStateSecret("mock-custom-oauth-state-secret-32-chars");
+  const mockSigned = signOAuthState(validOAuthPayload);
+  const mockVerified = verifyAndParseOAuthState(mockSigned);
+  check(
+    "setMockOAuthStateSecret overrides signing and verification secret",
+    mockVerified.ok === true,
+  );
+  setMockOAuthStateSecret(null);
+
+  // 15. Safe-next protection remains intact
+  const safeInternal = parseSafeNext("/dashboard");
+  const openRedirect1 = parseSafeNext("https://attacker.com/evil");
+  const openRedirect2 = parseSafeNext("//attacker.com/evil");
+  const javascriptUrl = parseSafeNext("javascript:alert(1)");
+  check(
+    "safe-next accepts internal paths and rejects open redirects",
+    safeInternal === "/dashboard" &&
+      openRedirect1 === null &&
+      openRedirect2 === null &&
+      javascriptUrl === null,
+  );
+
+  /* ================= 3. GOOGLE ACCOUNT RESOLUTION & LINKING ================= */
+  console.log("\n# 3. Google account resolution & linking safety");
 
   // A. Create new user via Google
   const googleUserRes = await resolveGoogleUser(
@@ -356,8 +554,8 @@ async function main(): Promise<void> {
     }),
   );
 
-  /* ================= 3. EMAIL/PASSWORD & VERIFICATION ================= */
-  console.log("\n# 3. Email/Password registration & verification lifecycle");
+  /* ================= 4. EMAIL/PASSWORD & VERIFICATION ================= */
+  console.log("\n# 4. Email/Password registration & verification lifecycle");
 
   // Input validation
   check(
@@ -486,8 +684,8 @@ async function main(): Promise<void> {
     !expiredVerifyResult.ok && expiredVerifyResult.code === "expired",
   );
 
-  /* ==================== 4. RATE LIMITING & COOLDOWNS ==================== */
-  console.log("\n# 4. Rate limiting, cooldowns & email provider");
+  /* ==================== 5. RATE LIMITING & COOLDOWNS ==================== */
+  console.log("\n# 5. Rate limiting, cooldowns & email provider");
 
   const testEmail = "throttle@example.com";
   const cooldownKey = rateLimitKey("verify:cooldown", testEmail);
@@ -519,8 +717,8 @@ async function main(): Promise<void> {
       DevEmailProvider.sentEmails[0].to === "tester@example.com",
   );
 
-  /* ================= 5. DEACTIVATION & BACKWARD COMPAT ================= */
-  console.log("\n# 5. Account deactivation & backward compatibility");
+  /* ================= 6. DEACTIVATION & BACKWARD COMPAT ================= */
+  console.log("\n# 6. Account deactivation & backward compatibility");
 
   // Deactivated user blocked on all methods
   const deactUserId = newId("usr");

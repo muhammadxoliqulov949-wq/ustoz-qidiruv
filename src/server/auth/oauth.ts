@@ -2,6 +2,7 @@ import "server-only";
 import { and, eq } from "drizzle-orm";
 import {
   createHash,
+  createHmac,
   createPublicKey,
   randomBytes,
   verify as cryptoVerify,
@@ -30,7 +31,7 @@ import { logError } from "../log";
 /* -------------------------------------------------------------------------- */
 
 export const OAUTH_STATE_COOKIE = "ustoz_oauth_state";
-const OAUTH_STATE_TTL_SECONDS = 600; // 10 minutes
+export const OAUTH_STATE_TTL_SECONDS = 600; // 10 minutes
 
 export interface GoogleOAuthState {
   state: string;
@@ -38,6 +39,150 @@ export interface GoogleOAuthState {
   codeVerifier: string;
   role: "student" | "teacher";
   next?: string | null;
+  issuedAt: number;
+  expiresAt: number;
+}
+
+export type VerifyOAuthStateResult =
+  | { ok: true; state: GoogleOAuthState }
+  | {
+      ok: false;
+      code:
+        | "unsigned_cookie"
+        | "malformed_cookie"
+        | "invalid_signature"
+        | "expired_state"
+        | "invalid_payload";
+    };
+
+let mockOAuthSecret: string | null = null;
+
+/** Hook for tests to override OAuth state signing secret. */
+export function setMockOAuthStateSecret(secret: string | null): void {
+  mockOAuthSecret = secret;
+}
+
+/** Get secret used for signing and verifying OAuth state cookies. */
+export function getOAuthStateSecret(): string {
+  if (mockOAuthSecret !== null) return mockOAuthSecret;
+  const env = serverEnv();
+  if (env.AUTH_OAUTH_STATE_SECRET) return env.AUTH_OAUTH_STATE_SECRET;
+  if (env.NODE_ENV === "test") {
+    return "test-oauth-state-secret-at-least-32-chars-long-for-hmac-sha256";
+  }
+  throw new Error("AUTH_OAUTH_STATE_SECRET is not configured");
+}
+
+/**
+ * Encode state cookie using versioned signed format:
+ * v1.<base64url(payload)>.<base64url(hmac)>
+ * HMAC-SHA256 covers the exact base64url-encoded payload.
+ */
+export function signOAuthState(
+  payload: Omit<GoogleOAuthState, "issuedAt" | "expiresAt"> & {
+    issuedAt?: number;
+    expiresAt?: number;
+  },
+  secretOverride?: string,
+): string {
+  const signingSecret = secretOverride ?? getOAuthStateSecret();
+  const now = Date.now();
+  const fullPayload: GoogleOAuthState = {
+    state: payload.state,
+    nonce: payload.nonce,
+    codeVerifier: payload.codeVerifier,
+    role: payload.role,
+    next: payload.next ?? null,
+    issuedAt: payload.issuedAt ?? now,
+    expiresAt: payload.expiresAt ?? now + OAUTH_STATE_TTL_SECONDS * 1000,
+  };
+  const payloadB64 = Buffer.from(JSON.stringify(fullPayload), "utf8").toString("base64url");
+  const hmac = createHmac("sha256", signingSecret).update(payloadB64).digest("base64url");
+  return `v1.${payloadB64}.${hmac}`;
+}
+
+/**
+ * Verify HMAC before parsing JSON or accessing any payload fields.
+ * Uses constant-time signature comparison and verifies server-side expiration.
+ */
+export function verifyAndParseOAuthState(
+  cookieValue: string | undefined | null,
+  secretOverride?: string,
+): VerifyOAuthStateResult {
+  if (!cookieValue || typeof cookieValue !== "string") {
+    return { ok: false, code: "unsigned_cookie" };
+  }
+
+  // Reject unsigned cookies (e.g. plain JSON, non-v1 format)
+  if (!cookieValue.startsWith("v1.")) {
+    return { ok: false, code: "unsigned_cookie" };
+  }
+
+  const parts = cookieValue.split(".");
+  if (parts.length !== 3) {
+    return { ok: false, code: "malformed_cookie" };
+  }
+
+  const [version, payloadB64, signatureB64] = parts;
+  if (version !== "v1" || !payloadB64 || !signatureB64) {
+    return { ok: false, code: "malformed_cookie" };
+  }
+
+  const signingSecret = secretOverride ?? getOAuthStateSecret();
+  const expectedHmac = createHmac("sha256", signingSecret).update(payloadB64).digest("base64url");
+
+  // Constant-time HMAC comparison before JSON.parse or inspecting fields
+  if (!safeEqual(signatureB64, expectedHmac)) {
+    return { ok: false, code: "invalid_signature" };
+  }
+
+  // Parse JSON after cryptographic HMAC verification
+  let raw: unknown;
+  try {
+    const jsonStr = Buffer.from(payloadB64, "base64url").toString("utf8");
+    raw = JSON.parse(jsonStr);
+  } catch {
+    return { ok: false, code: "malformed_cookie" };
+  }
+
+  if (!raw || typeof raw !== "object") {
+    return { ok: false, code: "invalid_payload" };
+  }
+
+  const p = raw as Record<string, unknown>;
+  if (
+    typeof p.state !== "string" ||
+    typeof p.nonce !== "string" ||
+    typeof p.codeVerifier !== "string" ||
+    typeof p.issuedAt !== "number" ||
+    typeof p.expiresAt !== "number"
+  ) {
+    return { ok: false, code: "invalid_payload" };
+  }
+
+  // Only student or teacher roles can be registered/authenticated via public Google flow
+  if (p.role !== "student" && p.role !== "teacher") {
+    return { ok: false, code: "invalid_payload" };
+  }
+
+  // Server-side timestamp/expiry check
+  const now = Date.now();
+  if (now > p.expiresAt) {
+    return { ok: false, code: "expired_state" };
+  }
+
+  return {
+    ok: true,
+    state: {
+      state: p.state,
+      nonce: p.nonce,
+      codeVerifier: p.codeVerifier,
+      role: p.role,
+      next: typeof p.next === "string" ? p.next : null,
+      issuedAt: p.issuedAt,
+      expiresAt: p.expiresAt,
+    },
+  };
 }
 
 export interface GoogleIdTokenClaims {
@@ -130,7 +275,7 @@ export async function createGoogleAuthRedirect(options: {
   const codeVerifier = randomBytes(32).toString("base64url");
   const codeChallenge = createHash("sha256").update(codeVerifier).digest("base64url");
 
-  const statePayload: GoogleOAuthState = {
+  const statePayload: Omit<GoogleOAuthState, "issuedAt" | "expiresAt"> = {
     state,
     nonce,
     codeVerifier,
@@ -138,8 +283,10 @@ export async function createGoogleAuthRedirect(options: {
     next: options.next ?? null,
   };
 
+  const signedState = signOAuthState(statePayload);
+
   const store = await cookies();
-  store.set(OAUTH_STATE_COOKIE, JSON.stringify(statePayload), {
+  store.set(OAUTH_STATE_COOKIE, signedState, {
     httpOnly: true,
     sameSite: "lax",
     path: "/",

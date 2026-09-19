@@ -118,6 +118,11 @@ const schema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
   /** Optional explicit Google redirect URI override. */
   GOOGLE_REDIRECT_URI: z.string().url().optional(),
+  /**
+   * Secret key for signing OAuth state cookies (HMAC-SHA256).
+   * Required outside test mode whenever Google OAuth is enabled. Minimum 32 characters.
+   */
+  AUTH_OAUTH_STATE_SECRET: z.string().min(32).optional(),
   /** Resend API key for transactional email verification. */
   RESEND_API_KEY: z.string().min(1).optional(),
   /** Sender address for transactional emails. */
@@ -157,6 +162,7 @@ export function serverEnv(): ServerEnv {
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
     GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI,
+    AUTH_OAUTH_STATE_SECRET: process.env.AUTH_OAUTH_STATE_SECRET,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     AUTH_EMAIL_FROM: process.env.AUTH_EMAIL_FROM,
   });
@@ -167,6 +173,12 @@ export function serverEnv(): ServerEnv {
   }
   if (parsed.data.DB_DRIVER === "pg" && !parsed.data.DATABASE_URL) {
     throw new Error("DB_DRIVER=pg requires DATABASE_URL to be set");
+  }
+  const hasGoogle = !!(parsed.data.GOOGLE_CLIENT_ID && parsed.data.GOOGLE_CLIENT_SECRET);
+  if (hasGoogle && parsed.data.NODE_ENV !== "test" && !parsed.data.AUTH_OAUTH_STATE_SECRET) {
+    throw new Error(
+      "Google OAuth requires AUTH_OAUTH_STATE_SECRET (at least 32 characters) to be configured outside test mode",
+    );
   }
   /*
    * FAIL SAFE, NOT OPEN. If someone turns payments on, the credentials must
@@ -269,6 +281,7 @@ export function describeEnv(): Record<string, string | boolean> {
       (env.STORAGE_PROVIDER === "local" && env.STORAGE_SIGNING_SECRET !== undefined),
     hasGoogleAuth:
       env.GOOGLE_CLIENT_ID !== undefined && env.GOOGLE_CLIENT_SECRET !== undefined,
+    hasOAuthStateSecret: env.AUTH_OAUTH_STATE_SECRET !== undefined,
     hasResend: env.RESEND_API_KEY !== undefined,
   };
 }

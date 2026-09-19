@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   OAUTH_STATE_COOKIE,
-  type GoogleOAuthState,
   exchangeGoogleCode,
   resolveGoogleUser,
   validateGoogleIdToken,
+  verifyAndParseOAuthState,
 } from "@/server/auth/oauth";
 import { createSession } from "@/server/auth/session";
 import { safeEqual } from "@/server/auth/ids";
@@ -41,15 +41,16 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return responseRedirect(loginUrl);
   }
 
-  let oauthState: GoogleOAuthState;
-  try {
-    oauthState = JSON.parse(stateCookie) as GoogleOAuthState;
-  } catch {
-    loginUrl.searchParams.set("error", "corrupted_oauth_state");
+  // Cryptographically verify HMAC and server-side expiration before reading ANY state fields
+  const parsedState = verifyAndParseOAuthState(stateCookie);
+  if (!parsedState.ok) {
+    logError("OAuth state cookie verification failed", { code: parsedState.code });
+    loginUrl.searchParams.set("error", parsedState.code);
     return responseRedirect(loginUrl);
   }
+  const oauthState = parsedState.state;
 
-  // Constant-time state validation
+  // Constant-time state validation against Google callback parameter
   if (!safeEqual(state, oauthState.state)) {
     loginUrl.searchParams.set("error", "state_mismatch");
     return responseRedirect(loginUrl);
