@@ -1043,6 +1043,70 @@ async function main(): Promise<void> {
   const capRevoked = await enforceSessionCap(phoneUserId);
   check("session cap enforced cleanly", capRevoked === 0 && userSessions.length <= MAX_SESSIONS_PER_USER);
 
+  /* ================= 7. STRETCHED LINK & HERO ROUTING QA ================= */
+  console.log("\n# 7. Stretched link containing block & hero routing regression QA");
+
+  // 1. Card root provides a positioned containing block
+  const cardSource = readFileSync(path.join(process.cwd(), "src/components/ui/card.tsx"), "utf8");
+  check(
+    "Card root provides a positioned containing block (relative className present)",
+    cardSource.includes('"relative overflow-hidden rounded-xl"'),
+  );
+
+  // 2. CategoryCard stretched link remains inside its own card
+  const categoryCardSource = readFileSync(
+    path.join(process.cwd(), "src/components/ui/category-card.tsx"),
+    "utf8",
+  );
+  check(
+    "CategoryCard stretched link remains inside its own card",
+    categoryCardSource.includes("<Card") && categoryCardSource.includes("stretchedLink"),
+  );
+
+  // 3. CourseCard stretched link remains inside its own card
+  const courseCardSource = readFileSync(
+    path.join(process.cwd(), "src/components/ui/course-card.tsx"),
+    "utf8",
+  );
+  check(
+    "CourseCard stretched link remains inside its own card",
+    courseCardSource.includes("<Card") && courseCardSource.includes("stretchedLink"),
+  );
+
+  // 4. TeacherCard stretched link remains inside its own card
+  const teacherCardSource = readFileSync(
+    path.join(process.cwd(), "src/components/ui/teacher-card.tsx"),
+    "utf8",
+  );
+  check(
+    "TeacherCard stretched link remains inside its own card",
+    teacherCardSource.includes("<Card") && teacherCardSource.includes("stretchedLink"),
+  );
+
+  // 5. Hero quick filters keep their own URLs
+  const { quickFilters } = await import("../src/data/site");
+  const toshkent = quickFilters.find((f) => f.id === "toshkent");
+  const online = quickFilters.find((f) => f.id === "online");
+  const offline = quickFilters.find((f) => f.id === "offline");
+  const bepul = quickFilters.find((f) => f.id === "bepul");
+  check(
+    "Hero quick filters keep their own URLs without collision",
+    toshkent?.href === "/courses?city=toshkent" &&
+      online?.href === "/courses?format=online" &&
+      offline?.href === "/courses?format=offline" &&
+      bepul?.href === "/courses?price=free",
+  );
+
+  // 6. Hero search still routes to: /courses?q=<query>
+  const heroSearchSource = readFileSync(
+    path.join(process.cwd(), "src/components/home/hero-search.tsx"),
+    "utf8",
+  );
+  check(
+    "Hero search still routes to /courses?q=<query>",
+    heroSearchSource.includes("router.push(`/courses?q=${encodeURIComponent(query)}`)"),
+  );
+
   await raw.close();
   rmSync(DATA_DIR, { recursive: true, force: true });
 
