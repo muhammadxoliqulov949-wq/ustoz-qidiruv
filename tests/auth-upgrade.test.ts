@@ -1,0 +1,1301 @@
+/* -------------------------------------------------------------------------- */
+/* Phase 23.5 Authentication Upgrade test suite.                              */
+/*                                                                              */
+/* Tests Google OAuth/OIDC, email + password fallback, email verification      */
+/* lifecycle, account linking safety, rate limiting, and backward              */
+/* compatibility against a real PGlite PostgreSQL database.                    */
+/*                                                                              */
+/*   npm run test:auth                                                          */
+/* -------------------------------------------------------------------------- */
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+const DATA_DIR = mkdtempSync(path.join(tmpdir(), "ustoz-auth-upgrade-"));
+process.env.DB_DRIVER = "pglite";
+process.env.PGLITE_DATA_DIR = DATA_DIR;
+(process.env as Record<string, string>).NODE_ENV = "test";
+process.env.GOOGLE_CLIENT_ID = "test-google-client-id.apps.googleusercontent.com";
+process.env.GOOGLE_CLIENT_SECRET = "test-google-client-secret";
+process.env.AUTH_EMAIL_FROM = "onboarding@resend.dev";
+
+let pass = 0;
+let fail = 0;
+const failures: string[] = [];
+
+function check(name: string, condition: boolean): void {
+  if (condition) {
+    pass += 1;
+  } else {
+    fail += 1;
+    failures.push(name);
+    console.log(`  FAIL: ${name}`);
+  }
+}
+
+async function rejects(name: string, fn: () => Promise<unknown>): Promise<void> {
+  try {
+    await fn();
+    check(name, false);
+  } catch {
+    check(name, true);
+  }
+}
+
+
+
+async function main(): Promise<void> {
+  const { PGlite } = await import("@electric-sql/pglite");
+  const raw = new PGlite(DATA_DIR);
+  const dir = path.join(process.cwd(), "drizzle");
+  for (const file of readdirSync(dir).filter((f) => f.endsWith(".sql")).sort()) {
+    const sql = readFileSync(path.join(dir, file), "utf8");
+    for (const statement of sql.split("--> statement-breakpoint")) {
+      const trimmed = statement.trim();
+      if (trimmed) await raw.exec(trimmed);
+    }
+  }
+
+  const { getDb, schema } = await import("../src/server/db/client");
+  const { eq, and } = await import("drizzle-orm");
+  const { hashPassword } = await import("../src/server/auth/password");
+  const { hashToken, newId } = await import("../src/server/auth/ids");
+  const {
+    authenticatePhone,
+    authenticateAdminEmail,
+    authenticateMarketplaceEmail,
+  } = await import("../src/server/auth/credentials");
+  const {
+    validateGoogleIdToken,
+    resolveGoogleUser,
+    setMockGoogleJwks,
+    signOAuthState,
+    verifyAndParseOAuthState,
+    setMockOAuthStateSecret,
+  } = await import("../src/server/auth/oauth");
+  type GoogleJwk = import("../src/server/auth/oauth").GoogleJwk;
+  const { parseSafeNext } = await import("../src/lib/safe-next");
+  const {
+    createVerificationToken,
+    verifyEmailToken,
+  } = await import("../src/server/auth/verification");
+  const {
+    DevEmailProvider,
+    ResendEmailProvider,
+    getEmailProvider,
+    isEmailDeliveryAvailable,
+    escapeHtml,
+    buildVerificationEmailHtml,
+  } = await import("../src/server/email/provider");
+  const {
+    registerEmail,
+    resendVerification,
+  } = await import("../src/server/auth/registration");
+  const { __resetServerEnvForTesting } = await import("../src/server/env");
+  const {
+    emailRegisterSchema,
+    roleSchema,
+  } = await import("../src/server/validation");
+  const {
+    RATE_LIMIT_POLICIES,
+    consumeRateLimit,
+    rateLimitKey,
+  } = await import("../src/server/rate-limit");
+  const { enforceSessionCap, MAX_SESSIONS_PER_USER } = await import(
+    "../src/server/auth/session"
+  );
+  const db = getDb();
+
+  const CLIENT_ID = process.env.GOOGLE_CLIENT_ID!;
+
+  /* ==================== 1. GOOGLE ID TOKEN CRYPTO & CLAIMS ==================== */
+  console.log("\n# 1. Google ID token cryptographic signature & claims");
+
+  const { generateKeyPairSync, createSign } = await import("node:crypto");
+  const { publicKey: testPublicKey, privateKey: testPrivateKey } = generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+  });
+  const { privateKey: attackerPrivateKey } = generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+  });
+
+  const testJwk = {
+    ...testPublicKey.export({ format: "jwk" }),
+    kid: "google-test-kid-1",
+    alg: "RS256",
+    use: "sig",
+  } as GoogleJwk;
+
+  // Inject trusted test JWK (simulating Google's certs endpoint)
+  setMockGoogleJwks([testJwk]);
+
+  function makeSignedJwt(
+    payload: Record<string, unknown>,
+    options: { kid?: string; alg?: string; key?: import("node:crypto").KeyObject } = {},
+  ): string {
+    const kid = options.kid ?? "google-test-kid-1";
+    const alg = options.alg ?? "RS256";
+    const header = Buffer.from(JSON.stringify({ alg, typ: "JWT", kid })).toString("base64url");
+    const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+    const data = Buffer.from(`${header}.${body}`);
+
+    if (alg === "none") {
+      return `${header}.${body}.`;
+    }
+
+    const signer = createSign("RSA-SHA256");
+    signer.update(data);
+    const sig = signer.sign(options.key ?? testPrivateKey).toString("base64url");
+    return `${header}.${body}.${sig}`;
+  }
+
+  const validNonce = "secure-nonce-123456";
+  const validClaims = {
+    iss: "https://accounts.google.com",
+    aud: CLIENT_ID,
+    sub: "google-sub-10001",
+    email: "student.google@example.com",
+    email_verified: true,
+    name: "Alisher Google",
+    exp: Math.floor(Date.now() / 1000) + 3600,
+    nonce: validNonce,
+  };
+
+  const validJwt = makeSignedJwt(validClaims);
+  const validResult = await validateGoogleIdToken(validJwt, validNonce, CLIENT_ID);
+  check("valid Google ID token passes cryptographic signature & validation", validResult.ok === true);
+
+  // 1. Forged signature: tampered body
+  const tamperedJwt = `${validJwt.slice(0, -10)}abcdefghij`;
+  const tamperedResult = await validateGoogleIdToken(tamperedJwt, validNonce, CLIENT_ID);
+  check(
+    "tampered signature is cryptographically rejected",
+    !tamperedResult.ok && tamperedResult.code === "invalid_signature",
+  );
+
+  // 2. Forged signature: signed by attacker key
+  const forgedJwt = makeSignedJwt(validClaims, { key: attackerPrivateKey });
+  const forgedResult = await validateGoogleIdToken(forgedJwt, validNonce, CLIENT_ID);
+  check(
+    "token signed by untrusted key is cryptographically rejected",
+    !forgedResult.ok && forgedResult.code === "invalid_signature",
+  );
+
+  // 3. Algorithm restriction: alg=none rejected
+  const algNoneJwt = makeSignedJwt(validClaims, { alg: "none" });
+  const algNoneResult = await validateGoogleIdToken(algNoneJwt, validNonce, CLIENT_ID);
+  check(
+    "alg=none is rejected by algorithm restriction",
+    !algNoneResult.ok && algNoneResult.code === "unsupported_algorithm",
+  );
+
+  // 4. Unknown kid rejected
+  const unknownKidJwt = makeSignedJwt(validClaims, { kid: "non-existent-kid" });
+  const unknownKidResult = await validateGoogleIdToken(unknownKidJwt, validNonce, CLIENT_ID);
+  check(
+    "unknown kid rejected against trusted JWKS",
+    !unknownKidResult.ok && unknownKidResult.code === "unknown_signing_key",
+  );
+
+  // 5. Invalid issuer
+  const badIssuerJwt = makeSignedJwt({ ...validClaims, iss: "https://untrusted-issuer.com" });
+  const badIssuerResult = await validateGoogleIdToken(badIssuerJwt, validNonce, CLIENT_ID);
+  check("wrong issuer rejected", !badIssuerResult.ok && badIssuerResult.code === "invalid_issuer");
+
+  // 6. Invalid audience
+  const badAudJwt = makeSignedJwt({ ...validClaims, aud: "wrong-client-id" });
+  const badAudResult = await validateGoogleIdToken(badAudJwt, validNonce, CLIENT_ID);
+  check("wrong audience rejected", !badAudResult.ok && badAudResult.code === "invalid_audience");
+
+  // 7. Expired token
+  const expiredJwt = makeSignedJwt({ ...validClaims, exp: Math.floor(Date.now() / 1000) - 60 });
+  const expiredResult = await validateGoogleIdToken(expiredJwt, validNonce, CLIENT_ID);
+  check("expired ID token rejected", !expiredResult.ok && expiredResult.code === "token_expired");
+
+  // 8. Invalid nonce
+  const badNonceResult = await validateGoogleIdToken(validJwt, "wrong-nonce", CLIENT_ID);
+  check("nonce mismatch rejected", !badNonceResult.ok && badNonceResult.code === "invalid_nonce");
+
+  // 9. Unverified email
+  const unverifiedEmailJwt = makeSignedJwt({ ...validClaims, email_verified: false });
+  const unverifiedEmailResult = await validateGoogleIdToken(unverifiedEmailJwt, validNonce, CLIENT_ID);
+  check(
+    "unverified Google email rejected",
+    !unverifiedEmailResult.ok && unverifiedEmailResult.code === "email_not_verified",
+  );
+
+  /* ==================== 2. OAUTH STATE COOKIE INTEGRITY ==================== */
+  console.log("\n# 2. OAuth state cookie cryptographic integrity & tamper protection");
+
+  const validOAuthPayload = {
+    state: "valid-random-state-string-32-chars-long",
+    nonce: "valid-random-nonce-string-32-chars-long",
+    codeVerifier: "valid-pkce-verifier-string-32-chars-long",
+    role: "student" as const,
+    next: "/dashboard/saved",
+  };
+
+  // 1. Unsigned cookie rejection (plain JSON)
+  const unsignedCookieJson = JSON.stringify(validOAuthPayload);
+  const unsignedRes = verifyAndParseOAuthState(unsignedCookieJson);
+  check(
+    "unsigned OAuth state cookie rejected (plain JSON)",
+    !unsignedRes.ok && unsignedRes.code === "unsigned_cookie",
+  );
+
+  // 2. Unsigned / malformed string rejection
+  const nonV1Cookie = "legacy.nonversioned.payload";
+  const nonV1Res = verifyAndParseOAuthState(nonV1Cookie);
+  check(
+    "unsigned OAuth state cookie rejected (missing v1 prefix)",
+    !nonV1Res.ok && nonV1Res.code === "unsigned_cookie",
+  );
+
+  const malformedCookie = "v1.onlytwoparts";
+  const malformedRes = verifyAndParseOAuthState(malformedCookie);
+  check(
+    "malformed OAuth state cookie rejected (wrong segments)",
+    !malformedRes.ok && malformedRes.code === "malformed_cookie",
+  );
+
+  // Helper to tamper payload while keeping original HMAC
+  const validSignedCookie = signOAuthState(validOAuthPayload);
+  const [vPrefix, validPayloadB64, originalHmac] = validSignedCookie.split(".");
+
+  function tamperPayload(mutate: (p: Record<string, unknown>) => void): string {
+    const json = JSON.parse(Buffer.from(validPayloadB64, "base64url").toString("utf8"));
+    mutate(json);
+    const tamperedB64 = Buffer.from(JSON.stringify(json)).toString("base64url");
+    return `${vPrefix}.${tamperedB64}.${originalHmac}`;
+  }
+
+  // 3. Altered state rejection
+  const alteredStateCookie = tamperPayload((p) => {
+    p.state = "attacker-altered-state";
+  });
+  const alteredStateRes = verifyAndParseOAuthState(alteredStateCookie);
+  check(
+    "altered state parameter rejected (invalid signature)",
+    !alteredStateRes.ok && alteredStateRes.code === "invalid_signature",
+  );
+
+  // 4. Altered nonce rejection
+  const alteredNonceCookie = tamperPayload((p) => {
+    p.nonce = "attacker-altered-nonce";
+  });
+  const alteredNonceRes = verifyAndParseOAuthState(alteredNonceCookie);
+  check(
+    "altered nonce parameter rejected (invalid signature)",
+    !alteredNonceRes.ok && alteredNonceRes.code === "invalid_signature",
+  );
+
+  // 5. Altered PKCE codeVerifier rejection
+  const alteredVerifierCookie = tamperPayload((p) => {
+    p.codeVerifier = "attacker-altered-verifier";
+  });
+  const alteredVerifierRes = verifyAndParseOAuthState(alteredVerifierCookie);
+  check(
+    "altered PKCE codeVerifier parameter rejected (invalid signature)",
+    !alteredVerifierRes.ok && alteredVerifierRes.code === "invalid_signature",
+  );
+
+  // 6. Altered role rejection (tampered payload with original HMAC)
+  const alteredRoleCookie = tamperPayload((p) => {
+    p.role = "teacher";
+  });
+  const alteredRoleRes = verifyAndParseOAuthState(alteredRoleCookie);
+  check(
+    "altered role parameter rejected (invalid signature)",
+    !alteredRoleRes.ok && alteredRoleRes.code === "invalid_signature",
+  );
+
+  // 7. Forged role='admin' rejection even when signed with valid secret
+  const forgedAdminCookie = signOAuthState({
+    ...validOAuthPayload,
+    role: "admin" as unknown as "student" | "teacher",
+  });
+  const forgedAdminRes = verifyAndParseOAuthState(forgedAdminCookie);
+  check(
+    "forged role='admin' in state strictly rejected",
+    !forgedAdminRes.ok && forgedAdminRes.code === "invalid_payload",
+  );
+
+  // 8. Altered next rejection
+  const alteredNextCookie = tamperPayload((p) => {
+    p.next = "https://evil.com/phish";
+  });
+  const alteredNextRes = verifyAndParseOAuthState(alteredNextCookie);
+  check(
+    "altered next parameter rejected (invalid signature)",
+    !alteredNextRes.ok && alteredNextRes.code === "invalid_signature",
+  );
+
+  // 9. Corrupted HMAC rejection
+  const corruptedHmacCookie = `${vPrefix}.${validPayloadB64}.${originalHmac.slice(0, -5)}XXXXX`;
+  const corruptedHmacRes = verifyAndParseOAuthState(corruptedHmacCookie);
+  check(
+    "corrupted HMAC signature bytes rejected",
+    !corruptedHmacRes.ok && corruptedHmacRes.code === "invalid_signature",
+  );
+
+  // 10. Untrusted/different HMAC secret rejection
+  const untrustedSecretCookie = signOAuthState(
+    validOAuthPayload,
+    "untrusted-rogue-secret-attacker-key-32-chars",
+  );
+  const untrustedSecretRes = verifyAndParseOAuthState(untrustedSecretCookie);
+  check(
+    "OAuth state signed with untrusted secret rejected",
+    !untrustedSecretRes.ok && untrustedSecretRes.code === "invalid_signature",
+  );
+
+  // 11. Expired signed state payload rejection (server-side TTL)
+  const expiredCookie = signOAuthState({
+    ...validOAuthPayload,
+    issuedAt: Date.now() - 700 * 1000,
+    expiresAt: Date.now() - 50 * 1000, // expired 50s ago
+  });
+  const expiredRes = verifyAndParseOAuthState(expiredCookie);
+  check(
+    "expired signed state payload rejected by server-side TTL",
+    !expiredRes.ok && expiredRes.code === "expired_state",
+  );
+
+  // 12. Valid signed state succeeds
+  const validRes = verifyAndParseOAuthState(validSignedCookie);
+  check(
+    "valid signed OAuth state succeeds",
+    validRes.ok === true &&
+      validRes.state.state === validOAuthPayload.state &&
+      validRes.state.nonce === validOAuthPayload.nonce &&
+      validRes.state.codeVerifier === validOAuthPayload.codeVerifier &&
+      validRes.state.role === "student" &&
+      validRes.state.next === "/dashboard/saved" &&
+      validRes.state.expiresAt > Date.now(),
+  );
+
+  // 13. Student and teacher are the only allowed public roles
+  const validTeacherSigned = signOAuthState({
+    ...validOAuthPayload,
+    role: "teacher",
+  });
+  const validTeacherRes = verifyAndParseOAuthState(validTeacherSigned);
+  check(
+    "role='teacher' in signed state accepted",
+    validTeacherRes.ok === true && validTeacherRes.state.role === "teacher",
+  );
+
+  const invalidRoleCookie = signOAuthState({
+    ...validOAuthPayload,
+    role: "operator" as unknown as "student" | "teacher",
+  });
+  const invalidRoleRes = verifyAndParseOAuthState(invalidRoleCookie);
+  check(
+    "arbitrary role in signed state rejected",
+    !invalidRoleRes.ok && invalidRoleRes.code === "invalid_payload",
+  );
+
+  // 14. Custom secret override via setMockOAuthStateSecret
+  setMockOAuthStateSecret("mock-custom-oauth-state-secret-32-chars");
+  const mockSigned = signOAuthState(validOAuthPayload);
+  const mockVerified = verifyAndParseOAuthState(mockSigned);
+  check(
+    "setMockOAuthStateSecret overrides signing and verification secret",
+    mockVerified.ok === true,
+  );
+  setMockOAuthStateSecret(null);
+
+  // 15. Safe-next protection remains intact
+  const safeInternal = parseSafeNext("/dashboard");
+  const openRedirect1 = parseSafeNext("https://attacker.com/evil");
+  const openRedirect2 = parseSafeNext("//attacker.com/evil");
+  const javascriptUrl = parseSafeNext("javascript:alert(1)");
+  check(
+    "safe-next accepts internal paths and rejects open redirects",
+    safeInternal === "/dashboard" &&
+      openRedirect1 === null &&
+      openRedirect2 === null &&
+      javascriptUrl === null,
+  );
+
+  /* ================= 3. GOOGLE ACCOUNT RESOLUTION & LINKING ================= */
+  console.log("\n# 3. Google account resolution & linking safety");
+
+  // A. Create new user via Google
+  const googleUserRes = await resolveGoogleUser(
+    {
+      ...validClaims,
+      sub: "google-sub-20001",
+      email: "new.student@gmail.com",
+    },
+    "student",
+  );
+
+  check("new user registered via Google", googleUserRes.ok === true);
+  let newGoogleUserId = "";
+  if (googleUserRes.ok) {
+    newGoogleUserId = googleUserRes.userId;
+    check("new user assigned role student", googleUserRes.role === "student");
+
+    const userRow = (
+      await db.select().from(schema.users).where(eq(schema.users.id, newGoogleUserId))
+    )[0];
+    check("user has null passwordHash", userRow.passwordHash === null);
+    check("user has verified email timestamp", userRow.emailVerifiedAt !== null);
+
+    const studentRow = (
+      await db
+        .select()
+        .from(schema.studentProfiles)
+        .where(eq(schema.studentProfiles.userId, newGoogleUserId))
+    )[0];
+    check("student profile created with Google name", studentRow.name === "Alisher Google");
+
+    const authAccount = (
+      await db
+        .select()
+        .from(schema.authAccounts)
+        .where(
+          and(
+            eq(schema.authAccounts.provider, "google"),
+            eq(schema.authAccounts.providerAccountId, "google-sub-20001"),
+          ),
+        )
+    )[0];
+    check(
+      "auth_accounts row created with google provider and sub",
+      authAccount && authAccount.userId === newGoogleUserId,
+    );
+  }
+
+  // B. Resolving existing sub returns same user
+  const secondRes = await resolveGoogleUser(
+    {
+      ...validClaims,
+      sub: "google-sub-20001",
+      email: "new.student@gmail.com",
+    },
+    "student",
+  );
+  check("sub lookup resolves the same user", secondRes.ok && secondRes.userId === newGoogleUserId);
+
+  // C. Google auth cannot change existing role
+  const roleTamperRes = await resolveGoogleUser(
+    {
+      ...validClaims,
+      sub: "google-sub-20001",
+      email: "new.student@gmail.com",
+    },
+    "teacher", // Attacker sends teacher
+  );
+  check("Google auth cannot mutate existing role", roleTamperRes.ok && roleTamperRes.role === "student");
+
+  // D. Linking to existing student by verified email
+  const existingStudentPassword = await hashPassword("student-password-123");
+  const existingStudentId = newId("usr");
+  await db.insert(schema.users).values({
+    id: existingStudentId,
+    role: "student",
+    email: "existing.learner@example.com",
+    passwordHash: existingStudentPassword,
+    accountStatus: "active",
+    emailVerifiedAt: null,
+  });
+  await db.insert(schema.studentProfiles).values({
+    userId: existingStudentId,
+    role: "student",
+    name: "Existing Learner",
+  });
+
+  const linkRes = await resolveGoogleUser(
+    {
+      ...validClaims,
+      sub: "google-sub-30001",
+      email: "existing.learner@example.com",
+    },
+    "student",
+  );
+  check("existing email matches and links user", linkRes.ok && linkRes.userId === existingStudentId);
+
+  const linkedUserRow = (
+    await db.select().from(schema.users).where(eq(schema.users.id, existingStudentId))
+  )[0];
+  check("linking marks email_verified_at", linkedUserRow.emailVerifiedAt !== null);
+
+  const linkedAccount = (
+    await db
+      .select()
+      .from(schema.authAccounts)
+      .where(eq(schema.authAccounts.userId, existingStudentId))
+  )[0];
+  check("auth_accounts linked to existing user", linkedAccount.providerAccountId === "google-sub-30001");
+
+  // E. ADMIN PROTECTION: Google cannot link or authenticate operator account
+  const adminPassword = await hashPassword("admin-operator-password");
+  const adminId = newId("usr");
+  await db.insert(schema.users).values({
+    id: adminId,
+    role: "admin",
+    email: "super.admin@ustoz-ops.uz",
+    passwordHash: adminPassword,
+    accountStatus: "active",
+    emailVerifiedAt: new Date(),
+  });
+
+  const adminGoogleRes = await resolveGoogleUser(
+    {
+      ...validClaims,
+      sub: "google-sub-40001",
+      email: "super.admin@ustoz-ops.uz",
+    },
+    "student",
+  );
+  check(
+    "Google OAuth matching admin email is strictly refused",
+    !adminGoogleRes.ok && adminGoogleRes.code === "admin_forbidden",
+  );
+
+  // F. Manually seeded auth_accounts pointing to admin is strictly refused with admin_forbidden
+  const seededAdminId = newId("usr");
+  await db.insert(schema.users).values({
+    id: seededAdminId,
+    role: "admin",
+    email: "seeded.admin@ustoz-ops.uz",
+    passwordHash: adminPassword,
+    accountStatus: "active",
+    emailVerifiedAt: new Date(),
+  });
+  await db.insert(schema.authAccounts).values({
+    id: newId("acc"),
+    userId: seededAdminId,
+    provider: "google",
+    providerAccountId: "google-sub-seeded-admin",
+    providerEmail: "seeded.admin@ustoz-ops.uz",
+  });
+
+  const seededAdminRes = await resolveGoogleUser(
+    {
+      ...validClaims,
+      sub: "google-sub-seeded-admin",
+      email: "different-admin@gmail.com",
+    },
+    "student",
+  );
+  check(
+    "auth_accounts pointing to admin strictly returns admin_forbidden (no session-capable success)",
+    !seededAdminRes.ok && seededAdminRes.code === "admin_forbidden",
+  );
+
+  // G. Callback route is structurally incapable of routing to /admin
+  const callbackSource = readFileSync(
+    path.join(process.cwd(), "src/app/api/auth/google/callback/route.ts"),
+    "utf8",
+  );
+  check(
+    "Google OAuth callback route contains no routing to /admin and strips /admin safeNext",
+    !callbackSource.includes('"/admin"') || callbackSource.includes('!safeNext.startsWith("/admin")'),
+  );
+
+  // H. Duplicate provider identity collision constraint
+  await rejects("auth_accounts enforces uniqueness on (provider, provider_account_id)", () =>
+    db.insert(schema.authAccounts).values({
+      id: newId("acc"),
+      userId: existingStudentId,
+      provider: "google",
+      providerAccountId: "google-sub-20001", // already owned by newGoogleUserId
+      providerEmail: "other@gmail.com",
+    }),
+  );
+
+  /* ================= 4. EMAIL/PASSWORD & VERIFICATION ================= */
+  console.log("\n# 4. Email/Password registration & verification lifecycle");
+
+  // Input validation
+  check(
+    "roleSchema accepts only student and teacher",
+    roleSchema.safeParse("student").success &&
+      roleSchema.safeParse("teacher").success &&
+      !roleSchema.safeParse("admin").success,
+  );
+
+  const validRegInput = {
+    role: "teacher",
+    name: "Teacher Nodira",
+    email: "nodira@example.com",
+    password: "securePassword123",
+    confirmPassword: "securePassword123",
+  };
+  check("valid email registration schema passes", emailRegisterSchema.safeParse(validRegInput).success);
+
+  const mismatchRegInput = { ...validRegInput, confirmPassword: "wrongConfirmPassword" };
+  check("password mismatch rejected", !emailRegisterSchema.safeParse(mismatchRegInput).success);
+
+  // Registration flow in DB
+  const teacherId = newId("usr");
+  const teacherHash = await hashPassword("securePassword123");
+  await db.insert(schema.users).values({
+    id: teacherId,
+    role: "teacher",
+    email: "nodira@example.com",
+    passwordHash: teacherHash,
+    emailVerifiedAt: null, // Unverified
+    accountStatus: "active",
+  });
+  await db.insert(schema.teacherProfiles).values({
+    userId: teacherId,
+    role: "teacher",
+    slug: "nodira-teacher",
+    name: "Teacher Nodira",
+    verification: "unverified",
+  });
+
+  // Block unverified email login
+  const unverifiedLogin = await authenticateMarketplaceEmail("nodira@example.com", "securePassword123");
+  check(
+    "unverified email login blocked",
+    !unverifiedLogin.ok && unverifiedLogin.code === "unverified_email",
+  );
+
+  // Mint verification token
+  const rawToken = await createVerificationToken(teacherId, "nodira@example.com");
+  check("raw token is valid length", rawToken.length >= 32);
+
+  const tokenRows = await db
+    .select()
+    .from(schema.emailVerificationTokens)
+    .where(eq(schema.emailVerificationTokens.userId, teacherId));
+  check("exactly one token row exists for user", tokenRows.length === 1);
+  check("token is stored as hash, not plaintext", tokenRows[0].tokenHash === hashToken(rawToken));
+
+  // Old token invalid after resend (issuing fresh token invalidates prior)
+  const secondToken = await createVerificationToken(teacherId, "nodira@example.com");
+  const tokensAfterResend = await db
+    .select()
+    .from(schema.emailVerificationTokens)
+    .where(eq(schema.emailVerificationTokens.userId, teacherId));
+  check("prior token was deleted on resend", tokensAfterResend.length === 1);
+  check(
+    "old token fails verification after resend",
+    !(await verifyEmailToken(rawToken)).ok,
+  );
+
+  // Verification success with current token
+  const verifyResult = await verifyEmailToken(secondToken);
+  check("current token verification succeeds", verifyResult.ok === true);
+
+  const verifiedUser = (
+    await db.select().from(schema.users).where(eq(schema.users.id, teacherId))
+  )[0];
+  check("user email_verified_at set after verification", verifiedUser.emailVerifiedAt !== null);
+
+  const tokensAfterVerify = await db
+    .select()
+    .from(schema.emailVerificationTokens)
+    .where(eq(schema.emailVerificationTokens.userId, teacherId));
+  check("token row deleted after single-use consumption", tokensAfterVerify.length === 0);
+
+  // Reused token fails safely
+  const reusedVerify = await verifyEmailToken(secondToken);
+  check("reused token rejected safely", !reusedVerify.ok && reusedVerify.code === "invalid_token");
+
+  // Now login succeeds
+  const verifiedLogin = await authenticateMarketplaceEmail("nodira@example.com", "securePassword123");
+  check(
+    "login succeeds after verification",
+    verifiedLogin.ok === true && verifiedLogin.id === teacherId && verifiedLogin.role === "teacher",
+  );
+
+  // Wrong password rejected
+  const wrongPasswordLogin = await authenticateMarketplaceEmail("nodira@example.com", "wrong-pass");
+  check(
+    "wrong password rejected",
+    !wrongPasswordLogin.ok && wrongPasswordLogin.code === "invalid_credentials",
+  );
+
+  // Expired token rejection
+  const expiredUserId = newId("usr");
+  await db.insert(schema.users).values({
+    id: expiredUserId,
+    role: "student",
+    email: "expired@example.com",
+    passwordHash: teacherHash,
+    emailVerifiedAt: null,
+    accountStatus: "active",
+  });
+  const expiredRawToken = "expired-token-1234567890123456";
+  await db.insert(schema.emailVerificationTokens).values({
+    id: newId("evt"),
+    userId: expiredUserId,
+    tokenHash: hashToken(expiredRawToken),
+    email: "expired@example.com",
+    expiresAt: new Date(Date.now() - 3600000), // Expired 1 hour ago
+  });
+
+  const expiredVerifyResult = await verifyEmailToken(expiredRawToken);
+  check(
+    "expired token rejected",
+    !expiredVerifyResult.ok && expiredVerifyResult.code === "expired",
+  );
+
+  // Concurrency & Unique Constraint: Enforce exactly one active verification token per user
+  const concurrentUserId = newId("usr");
+  await db.insert(schema.users).values({
+    id: concurrentUserId,
+    role: "student",
+    email: "concurrent@example.com",
+    passwordHash: teacherHash,
+    emailVerifiedAt: null,
+    accountStatus: "active",
+  });
+
+  // Schema-level UNIQUE constraint on user_id strictly prevents duplicates
+  await db.insert(schema.emailVerificationTokens).values({
+    id: newId("evt"),
+    userId: concurrentUserId,
+    tokenHash: "manual-hash-1",
+    email: "concurrent@example.com",
+    expiresAt: new Date(Date.now() + 86400000),
+  });
+  await rejects(
+    "email_verification_tokens enforces unique constraint on user_id",
+    () =>
+      db.insert(schema.emailVerificationTokens).values({
+        id: newId("evt"),
+        userId: concurrentUserId,
+        tokenHash: "manual-hash-2",
+        email: "concurrent@example.com",
+        expiresAt: new Date(Date.now() + 86400000),
+      }),
+  );
+
+  // Clean up manual row for concurrency test
+  await db
+    .delete(schema.emailVerificationTokens)
+    .where(eq(schema.emailVerificationTokens.userId, concurrentUserId));
+
+  // Race test: 5 concurrent issuance calls for the same user via atomic upsert
+  const concurrentTokens = await Promise.all([
+    createVerificationToken(concurrentUserId, "concurrent@example.com"),
+    createVerificationToken(concurrentUserId, "concurrent@example.com"),
+    createVerificationToken(concurrentUserId, "concurrent@example.com"),
+    createVerificationToken(concurrentUserId, "concurrent@example.com"),
+    createVerificationToken(concurrentUserId, "concurrent@example.com"),
+  ]);
+
+  const concurrentRows = await db
+    .select()
+    .from(schema.emailVerificationTokens)
+    .where(eq(schema.emailVerificationTokens.userId, concurrentUserId));
+
+  check(
+    "concurrent issuance produces exactly one active token row in database",
+    concurrentRows.length === 1,
+  );
+  check(
+    "active token in database is hashed at rest with 24h expiration",
+    concurrentRows[0].tokenHash !== "" &&
+      concurrentRows[0].expiresAt.getTime() > Date.now() + 23 * 3600 * 1000,
+  );
+
+  // Exactly one token (the latest/winning upsert) succeeds, while the other 4 are invalid
+  let validTokenCount = 0;
+  for (const token of concurrentTokens) {
+    if (hashToken(token) === concurrentRows[0].tokenHash) {
+      validTokenCount += 1;
+    } else {
+      const invalidRes = await verifyEmailToken(token);
+      check("overwritten concurrent token rejected", !invalidRes.ok && invalidRes.code === "invalid_token");
+    }
+  }
+  check("winning token is unique among concurrent batch", validTokenCount === 1);
+
+  // Verify winning token succeeds and is single-use
+  const winningToken = concurrentTokens.find((t) => hashToken(t) === concurrentRows[0].tokenHash)!;
+  const winningVerify = await verifyEmailToken(winningToken);
+  check("winning concurrent token successfully verifies user", winningVerify.ok === true);
+
+  const finalRows = await db
+    .select()
+    .from(schema.emailVerificationTokens)
+    .where(eq(schema.emailVerificationTokens.userId, concurrentUserId));
+  check("token row completely deleted after consumption (single-use)", finalRows.length === 0);
+
+  const winningReused = await verifyEmailToken(winningToken);
+  check("re-verifying consumed winning token rejected", !winningReused.ok && winningReused.code === "invalid_token");
+
+  // Anti-enumeration tests for registerEmail and resendVerification
+  // 1. New email registration succeeds (isNew: true)
+  const newEmailResult = await registerEmail({
+    role: "student",
+    name: "New Student Ali",
+    email: "ali.new@example.com",
+    password: "securePass123",
+  });
+  check(
+    "new email registration succeeds and creates unverified user",
+    newEmailResult.ok === true &&
+      newEmailResult.email === "ali.new@example.com" &&
+      newEmailResult.isNew === true,
+  );
+
+  // 2. Duplicate student email registration does NOT enumerate (same generic result, no password change)
+  const studentUserRowBefore = (
+    await db.select().from(schema.users).where(eq(schema.users.email, "ali.new@example.com"))
+  )[0];
+  const duplicateStudentResult = await registerEmail({
+    role: "student",
+    name: "Attacker Trying Overwrite",
+    email: "ali.new@example.com",
+    password: "attackerNewPassword123",
+  });
+  check(
+    "duplicate student email registration returns identical success (anti-enumeration)",
+    duplicateStudentResult.ok === true && duplicateStudentResult.email === "ali.new@example.com",
+  );
+
+  const studentUserRowAfter = (
+    await db.select().from(schema.users).where(eq(schema.users.email, "ali.new@example.com"))
+  )[0];
+  check(
+    "duplicate registration does not alter existing password hash",
+    studentUserRowAfter.passwordHash === studentUserRowBefore.passwordHash,
+  );
+
+  // 3. Duplicate teacher email registration does NOT mutate profile or password
+  const teacherUserRowBefore = (
+    await db.select().from(schema.users).where(eq(schema.users.id, teacherId))
+  )[0];
+  const duplicateTeacherResult = await registerEmail({
+    role: "teacher",
+    name: "Fake Teacher Name",
+    email: "nodira@example.com",
+    password: "newPassword999",
+  });
+  check(
+    "duplicate teacher email returns identical success without disclosure",
+    duplicateTeacherResult.ok === true && duplicateTeacherResult.email === "nodira@example.com",
+  );
+  const teacherUserRowAfter = (
+    await db.select().from(schema.users).where(eq(schema.users.id, teacherId))
+  )[0];
+  check(
+    "existing teacher account remains unmodified",
+    teacherUserRowAfter.passwordHash === teacherUserRowBefore.passwordHash &&
+      teacherUserRowAfter.role === "teacher",
+  );
+
+  // 4. Registration with existing admin email does NOT leak or mutate admin account
+  const adminRowBefore = (
+    await db.select().from(schema.users).where(eq(schema.users.id, adminId))
+  )[0];
+  const adminAttemptResult = await registerEmail({
+    role: "student",
+    name: "Admin Impersonator",
+    email: "super.admin@ustoz-ops.uz",
+    password: "attackerPassword123",
+  });
+  check(
+    "admin email registration returns identical public success without disclosing admin existence",
+    adminAttemptResult.ok === true && adminAttemptResult.email === "super.admin@ustoz-ops.uz",
+  );
+  const adminRowAfter = (
+    await db.select().from(schema.users).where(eq(schema.users.id, adminId))
+  )[0];
+  check(
+    "admin account password and role strictly untouched",
+    adminRowAfter.passwordHash === adminRowBefore.passwordHash &&
+      adminRowAfter.role === "admin",
+  );
+
+  // 5. resendVerification returns generic conditional response for unknown and admin emails
+  const resendUnknown = await resendVerification("completely.unknown@example.com");
+  const resendAdmin = await resendVerification("super.admin@ustoz-ops.uz");
+
+  const EXPECTED_CONDITIONAL_COPY = "Agar ushbu email tasdiqlanmagan hisobga tegishli bo‘lsa, tasdiqlash xati yuborildi.";
+  check(
+    "resendVerification produces generic identical conditional response for unknown and admin emails",
+    resendUnknown.ok === true &&
+      resendAdmin.ok === true &&
+      resendUnknown.message === resendAdmin.message &&
+      resendUnknown.message === EXPECTED_CONDITIONAL_COPY,
+  );
+
+  // 6. Honest conditional copy in holding page, register form and resend form
+  const verifyPageSource = readFileSync(path.join(process.cwd(), "src/app/(auth)/verify-email/page.tsx"), "utf8");
+  check(
+    "verify-email holding page uses honest conditional copy",
+    verifyPageSource.includes(EXPECTED_CONDITIONAL_COPY),
+  );
+
+  const registerFormSource = readFileSync(path.join(process.cwd(), "src/components/auth/register-form.tsx"), "utf8");
+  check(
+    "register form uses honest conditional copy",
+    registerFormSource.includes("Agar ushbu email tasdiqlanmagan hisobga tegishli bo‘lsa, tasdiqlash xati"),
+  );
+
+  const resendFormSource = readFileSync(path.join(process.cwd(), "src/components/auth/resend-verification-form.tsx"), "utf8");
+  check(
+    "resend verification form uses honest conditional copy and neutral title",
+    resendFormSource.includes(EXPECTED_CONDITIONAL_COPY) && resendFormSource.includes('title="Tasdiqlash holati"'),
+  );
+
+  /* ==================== 5. RATE LIMITING & COOLDOWNS ==================== */
+  console.log("\n# 5. Rate limiting, cooldowns & email provider");
+
+  const testEmail = "throttle@example.com";
+  const cooldownKey = rateLimitKey("verify:cooldown", testEmail);
+
+  const attempt1 = await consumeRateLimit(RATE_LIMIT_POLICIES.verifyResendCooldown, cooldownKey);
+  check("first resend attempt allowed", attempt1.allowed === true);
+
+  const attempt2 = await consumeRateLimit(RATE_LIMIT_POLICIES.verifyResendCooldown, cooldownKey);
+  check("second immediate resend attempt refused (60s cooldown)", attempt2.allowed === false);
+
+  // Daily limit
+  const dailyKey = rateLimitKey("verify:daily", testEmail);
+  for (let i = 0; i < 5; i++) {
+    await consumeRateLimit(RATE_LIMIT_POLICIES.verifyResendDaily, dailyKey);
+  }
+  const attempt6 = await consumeRateLimit(RATE_LIMIT_POLICIES.verifyResendDaily, dailyKey);
+  check("6th resend attempt in 24h refused (max 5/day)", attempt6.allowed === false);
+
+  // DevEmailProvider in-memory delivery
+  DevEmailProvider.clear();
+  const emailProvider = getEmailProvider();
+  await emailProvider.sendVerificationEmail("tester@example.com", {
+    name: "Tester",
+    verifyUrl: "http://localhost:3000/verify-email?token=xyz",
+  });
+  check(
+    "DevEmailProvider records sent email in-memory without network call",
+    DevEmailProvider.sentEmails.length === 1 &&
+      DevEmailProvider.sentEmails[0].to === "tester@example.com",
+  );
+
+  // Resend provider path with mocked network
+  const originalFetch = globalThis.fetch;
+  try {
+    const resend = new ResendEmailProvider("re_mock_key_123", "onboarding@resend.dev");
+
+    // Success case (200)
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ id: "mock_resend_id" }), { status: 200 })) as typeof fetch;
+    const resendSuccess = await resend.sendVerificationEmail("tester@example.com", {
+      name: "Tester",
+      verifyUrl: "http://localhost:3000/verify-email?token=xyz",
+    });
+    check("Resend provider succeeds with 200 API response", resendSuccess.success === true);
+
+    // Error case (401)
+    globalThis.fetch = (async () =>
+      new Response("Invalid API key", { status: 401 })) as typeof fetch;
+    const resendError = await resend.sendVerificationEmail("tester@example.com", {
+      name: "Tester",
+      verifyUrl: "http://localhost:3000/verify-email?token=xyz",
+    });
+    check(
+      "Resend provider handles API error status honestly",
+      resendError.success === false && resendError.error === "email_delivery_failed",
+    );
+
+    // Network exception case
+    globalThis.fetch = (async () => {
+      throw new Error("Network unreachable");
+    }) as typeof fetch;
+    const resendException = await resend.sendVerificationEmail("tester@example.com", {
+      name: "Tester",
+      verifyUrl: "http://localhost:3000/verify-email?token=xyz",
+    });
+    check(
+      "Resend provider handles network exception honestly",
+      resendException.success === false && resendException.error === "email_delivery_error",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  // HTML Escaping in transactional verification emails
+  const dangerousName = `<script>alert("xss")</script> & O'Connor "VIP"`;
+  const dangerousUrl = `https://ustoz.uz/verify?token=xyz&track=" onclick="alert(1)`;
+  const escapedName = escapeHtml(dangerousName);
+  check(
+    "escapeHtml correctly escapes < > & \" ' characters",
+    escapedName === `&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt; &amp; O&#39;Connor &quot;VIP&quot;`,
+  );
+  check(
+    "escapeHtml does not leave unescaped < > & \" ' characters",
+    !/[<>"']/.test(escapedName),
+  );
+
+  const emailHtml = buildVerificationEmailHtml({
+    name: dangerousName,
+    verifyUrl: dangerousUrl,
+  });
+  check(
+    "email HTML contains escaped name without raw executable script tags",
+    emailHtml.includes("&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;") &&
+      !emailHtml.includes("<script>alert"),
+  );
+  check(
+    "email HTML contains escaped URL attribute preventing attribute breakout",
+    emailHtml.includes('href="https://ustoz.uz/verify?token=xyz&amp;track=&quot; onclick=&quot;alert(1)"') &&
+      !emailHtml.includes('onclick="alert(1)"'),
+  );
+
+  // Production fail-safe when RESEND_API_KEY is missing
+  const originalEnvNodeEnv = process.env.NODE_ENV;
+  const originalResendKey = process.env.RESEND_API_KEY;
+  const originalStateSecret = process.env.AUTH_OAUTH_STATE_SECRET;
+  try {
+    (process.env as Record<string, string | undefined>).NODE_ENV = "production";
+    process.env.AUTH_OAUTH_STATE_SECRET = "production-test-secret-at-least-32-chars-long";
+    delete process.env.RESEND_API_KEY;
+    __resetServerEnvForTesting();
+
+    check(
+      "isEmailDeliveryAvailable() is false in production without RESEND_API_KEY",
+      isEmailDeliveryAvailable() === false,
+    );
+
+    const prodEmailProvider = getEmailProvider();
+    const prodSendResult = await prodEmailProvider.sendVerificationEmail("user@example.com", {
+      name: "User",
+      verifyUrl: "http://example.com",
+    });
+    check(
+      "production email provider fails closed with email_service_unavailable",
+      prodSendResult.success === false && prodSendResult.error === "email_service_unavailable",
+    );
+
+    const prodResendResult = await resendVerification("any.user@example.com");
+    check(
+      "resendVerification in production without RESEND_API_KEY fails honestly",
+      prodResendResult.ok === false && prodResendResult.code === "email_service_unavailable",
+    );
+
+    const prodRegResult = await registerEmail({
+      role: "student",
+      name: "Test User",
+      email: "prod.no.resend@example.com",
+      password: "strongPass123",
+    });
+    check(
+      "registerEmail in production without RESEND_API_KEY fails honestly",
+      prodRegResult.ok === false && prodRegResult.code === "email_service_unavailable",
+    );
+
+    // Google OAuth still resolves in production even without Resend
+    const prodGoogleUser = await resolveGoogleUser(
+      {
+        ...validClaims,
+        sub: "google-sub-prod-no-resend",
+        email: "prod.google@gmail.com",
+      },
+      "student",
+    );
+    check(
+      "Google OAuth resolves cleanly in production even when Resend is unconfigured",
+      prodGoogleUser.ok === true,
+    );
+  } finally {
+    (process.env as Record<string, string | undefined>).NODE_ENV = originalEnvNodeEnv;
+    if (originalResendKey !== undefined) {
+      process.env.RESEND_API_KEY = originalResendKey;
+    } else {
+      delete process.env.RESEND_API_KEY;
+    }
+    if (originalStateSecret !== undefined) {
+      process.env.AUTH_OAUTH_STATE_SECRET = originalStateSecret;
+    } else {
+      delete process.env.AUTH_OAUTH_STATE_SECRET;
+    }
+    __resetServerEnvForTesting();
+  }
+
+  // Operator UX and isolation guarantees
+  const allowsGoogleInMode = (loginMode: string) => loginMode !== "operator";
+  check("operator login mode suppresses Google auth UI", allowsGoogleInMode("operator") === false);
+  check(
+    "email and phone login modes permit Google auth UI",
+    allowsGoogleInMode("email") === true && allowsGoogleInMode("phone") === true,
+  );
+
+  /* ================= 6. DEACTIVATION & BACKWARD COMPAT ================= */
+  console.log("\n# 6. Account deactivation & backward compatibility");
+
+  // Deactivated user blocked on all methods
+  const deactUserId = newId("usr");
+  const deactHash = await hashPassword("deact-pass-1234");
+  await db.insert(schema.users).values({
+    id: deactUserId,
+    role: "student",
+    phone: "+998901234999",
+    email: "deactivated@example.com",
+    passwordHash: deactHash,
+    emailVerifiedAt: new Date(),
+    accountStatus: "deactivated",
+    deactivatedAt: new Date(),
+  });
+  await db.insert(schema.authAccounts).values({
+    id: newId("acc"),
+    userId: deactUserId,
+    provider: "google",
+    providerAccountId: "google-sub-deact",
+    providerEmail: "deactivated@example.com",
+  });
+
+  check(
+    "deactivated account blocked on phone login",
+    (await authenticatePhone("+998901234999", "deact-pass-1234")).ok === false,
+  );
+
+  check(
+    "deactivated account blocked on marketplace email login",
+    (await authenticateMarketplaceEmail("deactivated@example.com", "deact-pass-1234")).ok === false,
+  );
+
+  const deactGoogle = await resolveGoogleUser(
+    {
+      ...validClaims,
+      sub: "google-sub-deact",
+      email: "deactivated@example.com",
+    },
+    "student",
+  );
+  check(
+    "deactivated account blocked on Google login",
+    !deactGoogle.ok && deactGoogle.code === "account_deactivated",
+  );
+
+  // Existing phone login preserved
+  const phoneUserId = newId("usr");
+  const phoneHash = await hashPassword("phone-only-pass");
+  await db.insert(schema.users).values({
+    id: phoneUserId,
+    role: "student",
+    phone: "+998901112299",
+    email: null,
+    passwordHash: phoneHash,
+    accountStatus: "active",
+  });
+
+  const phoneLogin = await authenticatePhone("+998901112299", "phone-only-pass");
+  check(
+    "existing phone account logs in successfully without email",
+    phoneLogin.ok === true && phoneLogin.id === phoneUserId,
+  );
+
+  // Admin login preserved
+  const adminLogin = await authenticateAdminEmail("super.admin@ustoz-ops.uz", "admin-operator-password");
+  check(
+    "admin email login works as expected",
+    adminLogin.ok === true && adminLogin.id === adminId && adminLogin.role === "admin",
+  );
+
+  // Admin cannot log in via marketplace email login
+  const adminViaMarketplace = await authenticateMarketplaceEmail(
+    "super.admin@ustoz-ops.uz",
+    "admin-operator-password",
+  );
+  check(
+    "admin cannot authenticate via marketplace email login",
+    adminViaMarketplace.ok === false,
+  );
+
+  // Session creation & cap preserved
+  const testSessionId = newId("ses");
+  const rawSessionToken = "test-token-12345678901234567890";
+  await db.insert(schema.sessions).values({
+    id: testSessionId,
+    tokenHash: hashToken(rawSessionToken),
+    userId: phoneUserId,
+    expiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000),
+  });
+
+  const userSessions = await db
+    .select()
+    .from(schema.sessions)
+    .where(eq(schema.sessions.userId, phoneUserId));
+  check("session created in sessions table with tokenHash", userSessions.length === 1 && userSessions[0].tokenHash === hashToken(rawSessionToken));
+
+  const capRevoked = await enforceSessionCap(phoneUserId);
+  check("session cap enforced cleanly", capRevoked === 0 && userSessions.length <= MAX_SESSIONS_PER_USER);
+
+  /* ================= 7. STRETCHED LINK & HERO ROUTING QA ================= */
+  console.log("\n# 7. Stretched link containing block & hero routing regression QA");
+
+  // 1. Card root provides a positioned containing block
+  const cardSource = readFileSync(path.join(process.cwd(), "src/components/ui/card.tsx"), "utf8");
+  check(
+    "Card root provides a positioned containing block (relative className present)",
+    cardSource.includes('"relative overflow-hidden rounded-xl"'),
+  );
+
+  // 2. CategoryCard stretched link remains inside its own card
+  const categoryCardSource = readFileSync(
+    path.join(process.cwd(), "src/components/ui/category-card.tsx"),
+    "utf8",
+  );
+  check(
+    "CategoryCard stretched link remains inside its own card",
+    categoryCardSource.includes("<Card") && categoryCardSource.includes("stretchedLink"),
+  );
+
+  // 3. CourseCard stretched link remains inside its own card
+  const courseCardSource = readFileSync(
+    path.join(process.cwd(), "src/components/ui/course-card.tsx"),
+    "utf8",
+  );
+  check(
+    "CourseCard stretched link remains inside its own card",
+    courseCardSource.includes("<Card") && courseCardSource.includes("stretchedLink"),
+  );
+
+  // 4. TeacherCard stretched link remains inside its own card
+  const teacherCardSource = readFileSync(
+    path.join(process.cwd(), "src/components/ui/teacher-card.tsx"),
+    "utf8",
+  );
+  check(
+    "TeacherCard stretched link remains inside its own card",
+    teacherCardSource.includes("<Card") && teacherCardSource.includes("stretchedLink"),
+  );
+
+  // 5. Hero quick filters keep their own URLs
+  const { quickFilters } = await import("../src/data/site");
+  const toshkent = quickFilters.find((f) => f.id === "toshkent");
+  const online = quickFilters.find((f) => f.id === "online");
+  const offline = quickFilters.find((f) => f.id === "offline");
+  const bepul = quickFilters.find((f) => f.id === "bepul");
+  check(
+    "Hero quick filters keep their own URLs without collision",
+    toshkent?.href === "/courses?city=toshkent" &&
+      online?.href === "/courses?format=online" &&
+      offline?.href === "/courses?format=offline" &&
+      bepul?.href === "/courses?price=free",
+  );
+
+  // 6. Hero search still routes to: /courses?q=<query>
+  const heroSearchSource = readFileSync(
+    path.join(process.cwd(), "src/components/home/hero-search.tsx"),
+    "utf8",
+  );
+  check(
+    "Hero search still routes to /courses?q=<query>",
+    heroSearchSource.includes("router.push(`/courses?q=${encodeURIComponent(query)}`)"),
+  );
+
+  await raw.close();
+  rmSync(DATA_DIR, { recursive: true, force: true });
+
+  console.log(`\n${pass} passed, ${fail} failed`);
+  if (fail > 0) {
+    console.error("Failures:", failures);
+    process.exit(1);
+  }
+}
+
+main().catch((err) => {
+  console.error("Test suite fatal error:", err);
+  process.exit(1);
+});

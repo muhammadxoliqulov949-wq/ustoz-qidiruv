@@ -2,12 +2,13 @@
 
 import { useCallback, useState, useTransition } from "react";
 import Link from "next/link";
-import { ArrowRight, Mail, Phone } from "lucide-react";
+import { ArrowRight, Mail, Phone, ShieldCheck } from "lucide-react";
 import { Button, Card, RadioCardGroup } from "@/components/ui";
 import { PhoneField } from "./phone-input";
 import { EmailField } from "./email-input";
 import { PasswordField } from "./password-input";
 import { AuthNotice } from "./auth-notice";
+import { GoogleButton } from "./google-button";
 import {
   extractUzPhoneDigits,
   formatUzPhone,
@@ -17,42 +18,28 @@ import {
 } from "@/lib/onboarding";
 import { validateEmailField } from "@/lib/email";
 import { withNext } from "@/lib/safe-next";
-import { adminLoginAction, loginAction } from "@/server/actions/auth";
+import {
+  adminLoginAction,
+  loginAction,
+  loginEmailAction,
+} from "@/server/actions/auth";
 
 /* -------------------------------------------------------------------------- */
-/* LoginForm — ONE page, TWO identifier kinds.                                  */
+/* LoginForm — Phase 23.5.                                                     */
 /*                                                                              */
-/*   Telefon raqami  → phone + password → `loginAction`                         */
-/*                     students, teachers, and phone-bootstrapped operators.    */
-/*                     This is the default and it is unchanged.                 */
-/*   Operator emaili → email + password → `adminLoginAction`                    */
-/*                     operator accounts created by `admin:create-email`.       */
-/*                                                                              */
-/* The choice is an explicit radio-card decision (the same control /register    */
-/* uses for the student/teacher choice) rather than a guess from the input's    */
-/* shape: two identity systems with different rules deserve a visible switch,   */
-/* and guessing would turn a typo in an email into a confusing phone error.     */
-/*                                                                              */
-/* Submit calls the matching server action, which verifies the argon2id hash    */
-/* and, on success, sets an HttpOnly session cookie and redirects server-side.  */
-/* Local validation is kept purely for fast feedback — it is re-run on the      */
-/* server and never trusted. Nothing is stored in localStorage, the password    */
-/* never leaves the form, and failures return one generic message per mode so   */
-/* the form cannot be used to discover which identifiers are registered.        */
-/*                                                                              */
-/* WHAT THIS FORM CANNOT DO: create an operator account. There is no register   */
-/* link in operator mode and no action behind one — `adminLoginAction` only     */
-/* authenticates, and the only writer of `users.role = 'admin'` is the          */
-/* server-side CLI (scripts/admin.ts). Password recovery stays an honest        */
-/* deferred state (needs SMS/e-mail delivery, which this product does not       */
-/* implement).                                                                  */
+/* Target UX:                                                                  */
+/*   1. Primary: [ Continue with Google ]                                      */
+/*   2. Fallback: Email + Password                                             */
+/*   3. Legacy: Phone + Password                                               */
+/*   4. Operator: Admin Email + Password                                       */
 /* -------------------------------------------------------------------------- */
 
-type LoginMode = "phone" | "email";
+type LoginMode = "email" | "phone" | "operator";
 
 const MODE_OPTIONS = [
-  { value: "phone", label: "Telefon raqami", icon: Phone },
-  { value: "email", label: "Operator emaili", icon: Mail },
+  { value: "email", label: "Email", icon: Mail },
+  { value: "phone", label: "Telefon (eski)", icon: Phone },
+  { value: "operator", label: "Operator", icon: ShieldCheck },
 ];
 
 interface FieldErrors {
@@ -64,20 +51,26 @@ interface FieldErrors {
 export interface LoginFormProps {
   /** Safe internal ?next= target (validated on the server). */
   initialNext?: string | null;
+  /** OAuth error query if redirected from Google callback. */
+  initialError?: string | null;
 }
 
-export function LoginForm({ initialNext = null }: LoginFormProps) {
-  const [mode, setMode] = useState<LoginMode>("phone");
+export function LoginForm({ initialNext = null, initialError = null }: LoginFormProps) {
+  const [mode, setMode] = useState<LoginMode>("email");
   const [phone, setPhone] = useState("+998");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<FieldErrors>({});
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(
+    initialError ? formatOAuthError(initialError) : null,
+  );
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
   const [forgotOpen, setForgotOpen] = useState(false);
   const [submitting, startTransition] = useTransition();
 
   const clearMessages = useCallback(() => {
     setFormError(null);
+    setUnverifiedEmail(null);
     setErrors({});
   }, []);
 
@@ -90,6 +83,7 @@ export function LoginForm({ initialNext = null }: LoginFormProps) {
   const handleEmailChange = useCallback((next: string) => {
     setEmail(next);
     setFormError(null);
+    setUnverifiedEmail(null);
     setErrors((prev) => (prev.email ? { ...prev, email: undefined } : prev));
   }, []);
 
@@ -107,33 +101,41 @@ export function LoginForm({ initialNext = null }: LoginFormProps) {
     if (passwordError) nextErrors.password = passwordError;
     setErrors(nextErrors);
     setFormError(null);
+    setUnverifiedEmail(null);
     if (Object.keys(nextErrors).length > 0) return;
 
-    // Real authentication. On success the server action redirects (it throws
-    // Next.js's redirect signal), so no success branch runs here.
     startTransition(async () => {
       const payload = new FormData();
       if (mode === "phone") payload.set("phone", phone);
       else payload.set("email", email);
       payload.set("password", password);
       if (initialNext) payload.set("next", initialNext);
+
       try {
-        const result =
-          mode === "phone"
-            ? await loginAction(payload)
-            : await adminLoginAction(payload);
+        let result;
+        if (mode === "email") {
+          result = await loginEmailAction(payload);
+        } else if (mode === "phone") {
+          result = await loginAction(payload);
+        } else {
+          result = await adminLoginAction(payload);
+        }
+
         if (!result.ok) {
           setErrors(result.fieldErrors ?? {});
           setFormError(result.message);
+          if (result.code === "unverified_email") {
+            setUnverifiedEmail(email);
+          }
         }
       } catch (error) {
-        // Re-throw framework navigation signals; only report real failures.
         if (error && typeof error === "object" && "digest" in error) throw error;
         setFormError("Ulanishda xatolik. Internetni tekshirib, qayta urining.");
       }
     });
   };
 
+  const googleHref = withNext("/api/auth/google", initialNext);
   const phoneDigits = extractUzPhoneDigits(phone);
   const registerHref = withNext(
     isValidUzPhoneDigits(phoneDigits)
@@ -143,19 +145,39 @@ export function LoginForm({ initialNext = null }: LoginFormProps) {
   );
 
   return (
-    <Card>
-      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-        <RadioCardGroup
-          legend="Qanday kirasiz?"
-          value={mode}
-          onChange={(next) => {
-            setMode(next as LoginMode);
-            clearMessages();
-          }}
-          options={MODE_OPTIONS}
-          columns={2}
-        />
+    <Card className="flex flex-col gap-5">
+      {/* 1. Primary: Continue with Google (hidden in operator mode) */}
+      {mode !== "operator" ? (
+        <>
+          <div className="flex flex-col gap-2">
+            <GoogleButton href={googleHref}>Continue with Google</GoogleButton>
+          </div>
 
+          {/* Divider */}
+          <div className="relative text-center">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-line" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-surface px-3 font-medium text-ink-400">yoki</span>
+            </div>
+          </div>
+        </>
+      ) : null}
+
+      {/* Identifier switcher */}
+      <RadioCardGroup
+        legend="Kirish usuli"
+        value={mode}
+        onChange={(next) => {
+          setMode(next as LoginMode);
+          clearMessages();
+        }}
+        options={MODE_OPTIONS}
+        columns={3}
+      />
+
+      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
         {mode === "phone" ? (
           <PhoneField
             value={phone}
@@ -168,6 +190,7 @@ export function LoginForm({ initialNext = null }: LoginFormProps) {
             value={email}
             onChange={handleEmailChange}
             error={errors.email}
+            label={mode === "operator" ? "Operator emaili" : "Email"}
             required
           />
         )}
@@ -199,10 +222,8 @@ export function LoginForm({ initialNext = null }: LoginFormProps) {
               id="forgot-password-panel"
               className="rounded-lg border border-line bg-surface-muted px-3.5 py-2.5 text-sm text-ink-500"
             >
-              Parolni tiklash SMS yoki e-po‘ta orqali tasdiqlashni talab qiladi
-              va autentifikatsiya serveri ulangach ishga tushadi. Bu interfeys
-              hozircha tiklashni bajara olmaydi — qayta urinib turing yoki yangi
-              hisob yarating.
+              Parolni tiklash bo‘yicha qo‘llab-quvvatlash xizmatiga murojaat qiling
+              yoki yangi hisob yarating.
             </p>
           ) : null}
         </div>
@@ -219,15 +240,23 @@ export function LoginForm({ initialNext = null }: LoginFormProps) {
       </form>
 
       {formError ? (
-        <div className="mt-4">
-          <AuthNotice live title="Kirish amalga oshmadi">
-            <p>{formError}</p>
-          </AuthNotice>
-        </div>
+        <AuthNotice live title="Kirish amalga oshmadi">
+          <p>{formError}</p>
+          {unverifiedEmail ? (
+            <p className="mt-2">
+              <Link
+                href={`/verify-email?sent=1&email=${encodeURIComponent(unverifiedEmail)}`}
+                className="font-medium text-accent-700 underline hover:text-accent-600"
+              >
+                Tasdiqlash xatini qayta yuborish sahifasiga o‘tish
+              </Link>
+            </p>
+          ) : null}
+        </AuthNotice>
       ) : null}
 
-      {mode === "phone" ? (
-        <p className="mt-4 border-t border-line pt-4 text-center text-sm text-ink-500">
+      {mode !== "operator" ? (
+        <p className="border-t border-line pt-4 text-center text-sm text-ink-500">
           Hisobingiz yo‘qmi?{" "}
           <Link
             href={registerHref}
@@ -237,13 +266,26 @@ export function LoginForm({ initialNext = null }: LoginFormProps) {
           </Link>
         </p>
       ) : (
-        /* No registration path in operator mode — and that is the point. An
-           operator account is bootstrapped on the server, never from a form. */
-        <p className="mt-4 border-t border-line pt-4 text-center text-sm text-ink-500">
+        <p className="border-t border-line pt-4 text-center text-sm text-ink-500">
           Operator hisobi faqat serverda yaratiladi: bu sahifada ro‘yxatdan
           o‘tish yo‘li yo‘q.
         </p>
       )}
     </Card>
   );
+}
+
+function formatOAuthError(code: string): string {
+  switch (code) {
+    case "google_cancelled":
+      return "Google orqali kirish bekor qilindi.";
+    case "email_not_verified":
+      return "Google hisobidagi email tasdiqlanmagan.";
+    case "admin_forbidden":
+      return "Administrator hisobiga umumiy Google orqali kirish taqiqlangan.";
+    case "account_deactivated":
+      return "Hisobingiz faolsizlantirilgan.";
+    default:
+      return "Google orqali autentifikatsiyada xatolik yuz berdi.";
+  }
 }

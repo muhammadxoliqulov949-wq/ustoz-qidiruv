@@ -4,15 +4,22 @@ import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "../db/client";
 import { hashPassword } from "../auth/password";
-import { authenticateAdminEmail, authenticatePhone } from "../auth/credentials";
+import {
+  authenticateAdminEmail,
+  authenticateMarketplaceEmail,
+  authenticatePhone,
+} from "../auth/credentials";
 import { createSession, destroySession, maybePruneExpiredSessions } from "../auth/session";
 import { newId } from "../auth/ids";
 import { parseSafeNext } from "@/lib/safe-next";
 import {
   adminLoginSchema,
+  emailLoginSchema,
+  emailRegisterSchema,
   fieldErrorsFrom,
   loginSchema,
   registerSchema,
+  resendVerificationSchema,
   type ActionResult,
 } from "../validation";
 import { slugifyName, uniqueTeacherSlug } from "../slug";
@@ -24,6 +31,11 @@ import {
   requestClientIp,
   type RateLimitCheck,
 } from "../rate-limit";
+import {
+  registerEmail,
+  resendVerification,
+} from "../auth/registration";
+import { maskEmail } from "@/lib/email";
 
 /* -------------------------------------------------------------------------- */
 /* Auth server actions — Phase 11.                                             */
@@ -159,6 +171,173 @@ export async function registerAction(form: FormData): Promise<ActionResult> {
 
   await createSession(userId);
   redirect(parseSafeNext(parsed.data.next ?? undefined) ?? "/onboarding");
+}
+
+/* -------------------------------------------------------------------------- */
+/* Email + Password Registration — Phase 23.5.                                */
+/*                                                                              */
+/* Creates an unverified student or teacher account, stores an expiring         */
+/* single-use verification token hash, and sends an activation email.           */
+/* An authenticated session is NOT issued until email ownership is proven.      */
+/* -------------------------------------------------------------------------- */
+export async function registerEmailAction(form: FormData): Promise<ActionResult> {
+  const parsed = emailRegisterSchema.safeParse({
+    role: formValue(form, "role"),
+    name: formValue(form, "name"),
+    email: formValue(form, "email"),
+    password: formValue(form, "password"),
+    confirmPassword: formValue(form, "confirmPassword"),
+    next: form.get("next") === null ? null : formValue(form, "next"),
+  });
+  if (!parsed.success) {
+    return {
+      ok: false,
+      code: "invalid_input",
+      message: "Ma’lumotlarni tekshiring.",
+      fieldErrors: fieldErrorsFrom(parsed.error),
+    };
+  }
+
+  const { role, name, email, password } = parsed.data;
+
+  const registerIp = await requestClientIp();
+  const registerAllowed = await consumeAuthLimits([
+    { policy: RATE_LIMIT_POLICIES.registerByEmail, key: rateLimitKey("register:email", email) },
+    ...(registerIp
+      ? [{ policy: RATE_LIMIT_POLICIES.registerByIp, key: rateLimitKey("register:ip", registerIp) }]
+      : []),
+  ]);
+  if (!registerAllowed) return rateLimited();
+
+  const result = await registerEmail({ role, name, email, password });
+  if (!result.ok) {
+    return result;
+  }
+
+  // No session is minted. Direct the user to the verification holding page.
+  redirect(`/verify-email?sent=1&email=${encodeURIComponent(maskEmail(email))}`);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Email + Password Marketplace Login — Phase 23.5.                            */
+/*                                                                              */
+/* Authenticates students and teachers who use email identifiers.               */
+/* Refuses unverified email accounts until verification succeeds.               */
+/* -------------------------------------------------------------------------- */
+export async function loginEmailAction(form: FormData): Promise<ActionResult> {
+  const parsed = emailLoginSchema.safeParse({
+    email: formValue(form, "email"),
+    password: formValue(form, "password"),
+    next: form.get("next") === null ? null : formValue(form, "next"),
+  });
+  if (!parsed.success) {
+    return {
+      ok: false,
+      code: "invalid_input",
+      message: "Ma’lumotlarni tekshiring.",
+      fieldErrors: fieldErrorsFrom(parsed.error),
+    };
+  }
+
+  const loginIp = await requestClientIp();
+  const loginAllowed = await consumeAuthLimits([
+    {
+      policy: RATE_LIMIT_POLICIES.loginByEmail,
+      key: rateLimitKey("login:email", parsed.data.email),
+    },
+    ...(loginIp
+      ? [{ policy: RATE_LIMIT_POLICIES.authByIp, key: rateLimitKey("auth:ip", loginIp) }]
+      : []),
+  ]);
+  if (!loginAllowed) return rateLimited();
+
+  const authenticated = await authenticateMarketplaceEmail(
+    parsed.data.email,
+    parsed.data.password,
+  );
+
+  if (!authenticated.ok) {
+    if (authenticated.code === "unverified_email") {
+      return {
+        ok: false,
+        code: "unverified_email",
+        message:
+          "Email manzilingiz hali tasdiqlanmagan. Iltimos, pochtangizga yuborilgan tasdiqlash havolasini bosing yoki quyida qayta yuborishni so‘rang.",
+        fieldErrors: { email: "Email tasdiqlanmagan." },
+      };
+    }
+    return {
+      ok: false,
+      code: "invalid_credentials",
+      message: "Email yoki parol noto‘g‘ri.",
+    };
+  }
+
+  await createSession(authenticated.id);
+  void maybePruneExpiredSessions();
+
+  const next = parseSafeNext(parsed.data.next ?? undefined);
+  const home =
+    authenticated.role === "teacher"
+      ? "/teacher/dashboard"
+      : "/dashboard";
+  redirect(next ?? home);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Resend Email Verification — Phase 23.5.                                    */
+/*                                                                              */
+/* Rate-limited: 60s cooldown per address, 5 per day. Generic response prevents */
+/* account enumeration.                                                         */
+/* -------------------------------------------------------------------------- */
+export async function resendVerificationAction(form: FormData): Promise<ActionResult> {
+  const parsed = resendVerificationSchema.safeParse({
+    email: formValue(form, "email"),
+  });
+  if (!parsed.success) {
+    return {
+      ok: false,
+      code: "invalid_input",
+      message: "To‘g‘ri email manzilini kiriting.",
+      fieldErrors: fieldErrorsFrom(parsed.error),
+    };
+  }
+
+  const { email } = parsed.data;
+  const clientIp = await requestClientIp();
+
+  const cooldownDecision = await consumeRateLimits([
+    {
+      policy: RATE_LIMIT_POLICIES.verifyResendCooldown,
+      key: rateLimitKey("verify:cooldown", email),
+    },
+  ]);
+  if (!cooldownDecision.allowed) {
+    return {
+      ok: false,
+      code: "cooldown",
+      message: "Iltimos, qayta yuborishdan oldin 60 soniya kuting.",
+    };
+  }
+
+  const dailyAllowed = await consumeAuthLimits([
+    {
+      policy: RATE_LIMIT_POLICIES.verifyResendDaily,
+      key: rateLimitKey("verify:daily", email),
+    },
+    ...(clientIp
+      ? [{ policy: RATE_LIMIT_POLICIES.verifyByIp, key: rateLimitKey("verify:ip", clientIp) }]
+      : []),
+  ]);
+  if (!dailyAllowed) {
+    return {
+      ok: false,
+      code: "daily_limit",
+      message: "Kunlik yuborish limitiga yetdingiz. Iltimos, ertaga qayta urinib ko‘ring.",
+    };
+  }
+
+  return await resendVerification(email);
 }
 
 export async function loginAction(form: FormData): Promise<ActionResult> {

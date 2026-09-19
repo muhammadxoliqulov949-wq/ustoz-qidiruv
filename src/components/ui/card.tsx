@@ -38,7 +38,7 @@ export function Card({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-xl",
+        "relative overflow-hidden rounded-xl",
         padded && "p-6",
         variantClasses[variant],
         className,

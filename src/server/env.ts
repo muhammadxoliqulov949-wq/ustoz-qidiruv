@@ -110,6 +110,23 @@ const schema = z.object({
    * to the marketplace. MUST expose only the `public/` prefix.
    */
   STORAGE_PUBLIC_BASE_URL: z.string().url().optional(),
+
+  /* ----------------------- auth upgrade (Phase 23.5) ----------------------- */
+  /** Google OAuth 2.0 Client ID (optional; enabled when set). */
+  GOOGLE_CLIENT_ID: z.string().min(1).optional(),
+  /** Google OAuth 2.0 Client Secret (optional; server-only, never logged). */
+  GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
+  /** Optional explicit Google redirect URI override. */
+  GOOGLE_REDIRECT_URI: z.string().url().optional(),
+  /**
+   * Secret key for signing OAuth state cookies (HMAC-SHA256).
+   * Required outside test mode whenever Google OAuth is enabled. Minimum 32 characters.
+   */
+  AUTH_OAUTH_STATE_SECRET: z.string().min(32).optional(),
+  /** Resend API key for transactional email verification. */
+  RESEND_API_KEY: z.string().min(1).optional(),
+  /** Sender address for transactional emails. */
+  AUTH_EMAIL_FROM: z.string().min(1).default("onboarding@resend.dev"),
 });
 
 export type ServerEnv = z.infer<typeof schema>;
@@ -142,6 +159,12 @@ export function serverEnv(): ServerEnv {
     STORAGE_S3_SECRET_ACCESS_KEY: process.env.STORAGE_S3_SECRET_ACCESS_KEY,
     STORAGE_S3_FORCE_PATH_STYLE: process.env.STORAGE_S3_FORCE_PATH_STYLE,
     STORAGE_PUBLIC_BASE_URL: process.env.STORAGE_PUBLIC_BASE_URL,
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+    GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI,
+    AUTH_OAUTH_STATE_SECRET: process.env.AUTH_OAUTH_STATE_SECRET,
+    RESEND_API_KEY: process.env.RESEND_API_KEY,
+    AUTH_EMAIL_FROM: process.env.AUTH_EMAIL_FROM,
   });
   if (!parsed.success) {
     // Field NAMES only — never values, so a bad secret cannot be logged.
@@ -150,6 +173,12 @@ export function serverEnv(): ServerEnv {
   }
   if (parsed.data.DB_DRIVER === "pg" && !parsed.data.DATABASE_URL) {
     throw new Error("DB_DRIVER=pg requires DATABASE_URL to be set");
+  }
+  const hasGoogle = !!(parsed.data.GOOGLE_CLIENT_ID && parsed.data.GOOGLE_CLIENT_SECRET);
+  if (hasGoogle && parsed.data.NODE_ENV !== "test" && !parsed.data.AUTH_OAUTH_STATE_SECRET) {
+    throw new Error(
+      "Google OAuth requires AUTH_OAUTH_STATE_SECRET (at least 32 characters) to be configured outside test mode",
+    );
   }
   /*
    * FAIL SAFE, NOT OPEN. If someone turns payments on, the credentials must
@@ -250,6 +279,10 @@ export function describeEnv(): Record<string, string | boolean> {
     hasSignedPrivateReads:
       env.STORAGE_PROVIDER === "s3" ||
       (env.STORAGE_PROVIDER === "local" && env.STORAGE_SIGNING_SECRET !== undefined),
+    hasGoogleAuth:
+      env.GOOGLE_CLIENT_ID !== undefined && env.GOOGLE_CLIENT_SECRET !== undefined,
+    hasOAuthStateSecret: env.AUTH_OAUTH_STATE_SECRET !== undefined,
+    hasResend: env.RESEND_API_KEY !== undefined,
   };
 }
 
