@@ -76,7 +76,7 @@ export default async function TeacherDashboardLayout({
             </p>
             <Link
               href="/teachers"
-              className="text-sm font-medium text-accent-700 underline underline-offset-2 max-lg:hidden"
+              className="-my-1 inline-block py-1 text-sm font-medium text-accent-700 underline underline-offset-2 max-lg:hidden"
             >
               Ommaviy ustozlar sahifasi
             </Link>

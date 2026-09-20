@@ -187,7 +187,7 @@ export function TeacherProfileEditor({
           Barcha majburiy maydonlar to‘ldirilgan. Saqlagach{" "}
           <Link
             href="/teacher/dashboard/verification"
-            className="font-medium text-accent-700 underline underline-offset-2"
+            className="-my-1 inline-block py-1 font-medium text-accent-700 underline underline-offset-2"
           >
             “Profil tasdig‘i”
           </Link>{" "}
@@ -351,7 +351,7 @@ export function TeacherProfileEditor({
         </Button>
         <Link
           href="/teacher/dashboard/verification"
-          className="text-sm font-medium text-accent-700 underline underline-offset-2"
+          className="-my-1 inline-block py-1 text-sm font-medium text-accent-700 underline underline-offset-2"
         >
           Tasdiqlash bo‘limiga o‘tish
         </Link>

@@ -212,7 +212,7 @@ export function LoginForm({ initialNext = null, initialError = null }: LoginForm
               onClick={() => setForgotOpen((open) => !open)}
               aria-expanded={forgotOpen}
               aria-controls="forgot-password-panel"
-              className="rounded-md px-1 py-0.5 text-sm font-medium text-accent-700 transition-colors duration-fast hover:text-accent-500 focus-visible:outline-none focus-visible:ring-[length:var(--size-focus-ring)] focus-visible:ring-accent-600/35"
+              className="-my-1 rounded-md px-1 py-1 text-sm font-medium text-accent-700 transition-colors duration-fast hover:text-accent-500 focus-visible:outline-none focus-visible:ring-[length:var(--size-focus-ring)] focus-visible:ring-accent-600/35"
             >
               Parolni unutdingizmi?
             </button>
