@@ -15,15 +15,15 @@ const variantClasses: Record<Variant, Record<Tone, string>> = {
     solid: "bg-accent-600 text-white",
   },
   success: {
-    soft: "bg-[#e9f7ee] text-[#157a3d]",
+    soft: "bg-success-soft text-success-ink",
     solid: "bg-success text-white",
   },
   warning: {
-    soft: "bg-[#fdf3e3] text-[#9a6207]",
+    soft: "bg-warning-soft text-warning-ink",
     solid: "bg-warning text-white",
   },
   danger: {
-    soft: "bg-[#fdeceb] text-[#b42318]",
+    soft: "bg-danger-soft text-danger-ink",
     solid: "bg-danger text-white",
   },
 };

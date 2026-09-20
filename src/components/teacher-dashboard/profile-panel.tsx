@@ -130,14 +130,14 @@ function ProfileBody({
               <div key={field.label} className="flex flex-col">
                 <dt className="flex items-center gap-2 text-sm text-ink-500">
                   {field.label}
-                  <span className="text-xs text-ink-400">
+                  <span className="text-xs text-ink-500">
                     {field.source === "catalog" ? "katalog" : "qoralama"}
                   </span>
                 </dt>
                 <dd
                   className={
                     field.value === null
-                      ? "text-base text-ink-400"
+                      ? "text-base text-ink-500"
                       : "text-base text-ink-900"
                   }
                 >

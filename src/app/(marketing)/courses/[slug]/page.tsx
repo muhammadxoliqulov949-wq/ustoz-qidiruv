@@ -272,25 +272,25 @@ export default async function CourseDetailPage({
 
                 <dl className="mt-8 grid grid-cols-2 gap-x-6 gap-y-4 rounded-xl border border-line bg-surface p-5 text-sm shadow-xs sm:grid-cols-4 sm:p-6">
                   <div>
-                    <dt className="text-ink-400">Daraja</dt>
+                    <dt className="text-ink-500">Daraja</dt>
                     <dd className="mt-0.5 font-medium text-ink-900">
                       {courseLevelLabels[course.level]}
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-ink-400">Format</dt>
+                    <dt className="text-ink-500">Format</dt>
                     <dd className="mt-0.5 font-medium text-ink-900">
                       {courseFormatLabels[course.format]}
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-ink-400">Joylashuv</dt>
+                    <dt className="text-ink-500">Joylashuv</dt>
                     <dd className="mt-0.5 font-medium text-ink-900">
                       {course.location ?? "Masofaviy"}
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-ink-400">O‘quv tili</dt>
+                    <dt className="text-ink-500">O‘quv tili</dt>
                     <dd className="mt-0.5 font-medium text-ink-900">
                       {detail.teachingLanguages.join(", ")}
                     </dd>

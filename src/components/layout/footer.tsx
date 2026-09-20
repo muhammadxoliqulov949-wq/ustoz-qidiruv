@@ -27,13 +27,19 @@ export function Footer() {
               <h3 className="text-sm font-semibold text-ink-900">
                 {group.title}
               </h3>
+              {/*
+                Phase 24 (touch targets): the links are 13px text with a 10px
+                gap, i.e. a 16px-tall hit area. `py-1 -my-1` grows the target to
+                24px (WCAG 2.5.8) while the negative margin keeps the visible
+                rhythm of the list exactly as designed.
+              */}
               <ul className="mt-4 flex flex-col gap-2.5">
                 {group.links.map((link) => (
                   <li key={link.label}>
                     <Link
                       href={link.href}
                       prefetch={link.prefetch}
-                      className="rounded-md text-sm text-ink-500 transition-colors duration-fast hover:text-ink-900 focus-visible:ring-[length:var(--size-focus-ring)] focus-visible:ring-accent-600/35 focus-visible:outline-none"
+                      className="-my-1 inline-block rounded-md py-1 text-sm text-ink-500 transition-colors duration-fast hover:text-ink-900 focus-visible:ring-[length:var(--size-focus-ring)] focus-visible:ring-accent-600/35 focus-visible:outline-none"
                     >
                       {link.label}
                     </Link>
@@ -44,7 +50,7 @@ export function Footer() {
           ))}
         </div>
 
-        <div className="mt-12 flex flex-col gap-2 border-t border-line pt-4 text-sm text-ink-400 md:flex-row md:items-center md:justify-between">
+        <div className="mt-12 flex flex-col gap-2 border-t border-line pt-4 text-sm text-ink-500 md:flex-row md:items-center md:justify-between">
           <p>© {new Date().getFullYear()} USTOZ. Barcha huquqlar himoyalangan.</p>
           <p>O‘zbekiston — Toshkent</p>
         </div>

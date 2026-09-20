@@ -19,13 +19,13 @@ export default async function AccountPage() {
       <ChangePasswordForm />
       <section className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-xl font-semibold text-ink-900">Yordam kerakmi?</h2>
-        <p className="text-sm leading-relaxed text-ink-600">Kirish, kurs, to‘lov yoki boshqa muammo bo‘lsa, operatorga ilova ichidagi murojaat yuboring.</p>
+        <p className="text-sm leading-relaxed text-ink-700">Kirish, kurs, to‘lov yoki boshqa muammo bo‘lsa, operatorga ilova ichidagi murojaat yuboring.</p>
         <div><Link href="/support" className="font-medium text-accent-700 underline underline-offset-2">Yordam va murojaatlar</Link></div>
       </section>
       {user.role === "admin" ? (
         <section className="rounded-xl border border-line bg-surface-muted p-5">
           <h2 className="text-xl font-semibold text-ink-900">Administrator hisobi</h2>
-          <p className="mt-1 text-sm leading-relaxed text-ink-600">
+          <p className="mt-1 text-sm leading-relaxed text-ink-700">
             Administrator hisobini deaktivasiyalash ilova ichida bajarilmaydi. Zarur bo‘lsa, serverdagi operator tartibidan foydalaning.
           </p>
         </section>

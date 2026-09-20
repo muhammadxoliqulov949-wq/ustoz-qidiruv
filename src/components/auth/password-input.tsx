@@ -49,7 +49,7 @@ export function PasswordField({
           aria-pressed={visible}
           aria-label={visible ? "Parolni yashirish" : "Parolni ko‘rsatish"}
           className={cn(
-            "inline-flex size-8 items-center justify-center rounded-md text-ink-400",
+            "inline-flex size-8 items-center justify-center rounded-md text-ink-500",
             "transition-colors duration-fast hover:text-ink-700",
             "focus-visible:outline-none focus-visible:ring-[length:var(--size-focus-ring)] focus-visible:ring-accent-600/35",
           )}

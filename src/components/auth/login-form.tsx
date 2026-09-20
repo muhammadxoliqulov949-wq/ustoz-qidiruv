@@ -159,7 +159,7 @@ export function LoginForm({ initialNext = null, initialError = null }: LoginForm
               <div className="w-full border-t border-line" />
             </div>
             <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-surface px-3 font-medium text-ink-400">yoki</span>
+              <span className="bg-surface px-3 font-medium text-ink-500">yoki</span>
             </div>
           </div>
         </>

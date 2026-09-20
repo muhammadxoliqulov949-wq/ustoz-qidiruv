@@ -63,6 +63,7 @@ export const SelectField = forwardRef<HTMLSelectElement, SelectFieldProps>(
         {hint || error ? (
           <p
             id={hintId}
+            {...(error ? { role: "alert" } : {})}
             className={cn("text-sm", error ? "text-danger" : "text-ink-500")}
           >
             {error ?? hint}

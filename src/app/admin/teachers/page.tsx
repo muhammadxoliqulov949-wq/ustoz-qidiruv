@@ -10,6 +10,7 @@ import {
   formatAdminDate,
 } from "@/components/admin/admin-ui";
 import { EmptyState } from "@/components/dashboard/empty-state";
+import { focusRing } from "@/lib/utils";
 import {
   getVerificationQueueCounts,
   listVerificationQueue,
@@ -137,7 +138,21 @@ export default async function AdminTeachersPage({
               : "Bu holatda yozuv topilmadi. Boshqa filtrni tanlab ko‘ring."}
           </EmptyState>
         ) : (
-          <div className="overflow-x-auto">
+          /*
+           * Phase 24 (responsive + a11y): the queue keeps a real <table> at
+           * every width and scrolls sideways below `md` instead of crushing six
+           * columns into 320px. A scroll region with no focusable content of its
+           * own is unreachable by keyboard, so the wrapper is a labelled
+           * focusable region: Tab lands on it, arrow keys/trackpad then move the
+           * table, and a screen reader announces what the region is before its
+           * rows.
+           */
+          <div
+            role="region"
+            aria-label="Ustoz arizalari jadvali — gorizontal aylantiriladi"
+            tabIndex={0}
+            className={`overflow-x-auto overscroll-x-contain rounded-lg ${focusRing}`}
+          >
             <table className="w-full min-w-[46rem] border-collapse text-left">
               <caption className="sr-only">
                 Ustoz tasdiqlash arizalari: ism, mutaxassislik, yuborilgan sana,

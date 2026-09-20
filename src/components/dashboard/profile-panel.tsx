@@ -104,7 +104,7 @@ export function ProfilePanel() {
                 <dd
                   className={
                     field.value === null
-                      ? "text-base text-ink-400"
+                      ? "text-base text-ink-500"
                       : "text-base text-ink-900"
                   }
                 >

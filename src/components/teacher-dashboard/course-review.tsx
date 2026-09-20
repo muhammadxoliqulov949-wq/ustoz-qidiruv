@@ -70,7 +70,7 @@ export function CourseReviewView({
               <dd
                 className={
                   section.value === null
-                    ? "text-base text-ink-400"
+                    ? "text-base text-ink-500"
                     : "text-base break-words text-ink-900"
                 }
               >
@@ -95,7 +95,7 @@ export function CourseReviewView({
           </Button>
         </div>
         {review.groups.length === 0 ? (
-          <p className="text-base text-ink-400">Guruh qo‘shilmagan.</p>
+          <p className="text-base text-ink-500">Guruh qo‘shilmagan.</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {review.groups.map((group) => (
@@ -137,7 +137,7 @@ export function CourseReviewView({
           </Button>
         </div>
         {review.syllabus.length === 0 ? (
-          <p className="text-base text-ink-400">Modul qo‘shilmagan.</p>
+          <p className="text-base text-ink-500">Modul qo‘shilmagan.</p>
         ) : (
           <ol className="flex flex-col gap-3">
             {review.syllabus.map((module, index) => (
@@ -145,7 +145,7 @@ export function CourseReviewView({
                 <p className="text-base font-medium text-ink-900">
                   {index + 1}.{" "}
                   {module.title === "" ? (
-                    <span className="text-ink-400">Nomsiz modul</span>
+                    <span className="text-ink-500">Nomsiz modul</span>
                   ) : (
                     module.title
                   )}
@@ -157,7 +157,7 @@ export function CourseReviewView({
                 </p>
                 <p className="text-sm text-ink-700">
                   {module.description === "" ? (
-                    <span className="text-ink-400">Tavsif yo‘q</span>
+                    <span className="text-ink-500">Tavsif yo‘q</span>
                   ) : (
                     module.description
                   )}
@@ -181,7 +181,7 @@ export function CourseReviewView({
           <h4 className="text-sm font-semibold text-ink-900">Kurs haqida</h4>
           <p className="mt-1 text-base leading-relaxed text-pretty text-ink-700">
             {review.longDescription ?? (
-              <span className="text-ink-400">To‘ldirilmagan</span>
+              <span className="text-ink-500">To‘ldirilmagan</span>
             )}
           </p>
         </div>
@@ -190,7 +190,7 @@ export function CourseReviewView({
           <div>
             <h4 className="text-sm font-semibold text-ink-900">Kim uchun</h4>
             {review.audience.length === 0 ? (
-              <p className="mt-1 text-base text-ink-400">To‘ldirilmagan</p>
+              <p className="mt-1 text-base text-ink-500">To‘ldirilmagan</p>
             ) : (
               <ul className="mt-1 list-disc ps-5 text-base text-ink-700">
                 {review.audience.map((item, index) => (
@@ -202,7 +202,7 @@ export function CourseReviewView({
           <div>
             <h4 className="text-sm font-semibold text-ink-900">Nimalarni o‘rganadi</h4>
             {review.learningOutcomes.length === 0 ? (
-              <p className="mt-1 text-base text-ink-400">To‘ldirilmagan</p>
+              <p className="mt-1 text-base text-ink-500">To‘ldirilmagan</p>
             ) : (
               <ul className="mt-1 list-disc ps-5 text-base text-ink-700">
                 {review.learningOutcomes.map((item, index) => (

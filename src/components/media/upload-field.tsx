@@ -116,6 +116,16 @@ export function UploadField({
         accept={acceptAttribute(purpose)}
         className="sr-only"
         disabled={disabled || pending}
+        /*
+         * Phase 24 a11y. The control is visually hidden but stays in the
+         * accessibility tree, so it needs a NAME of its own: without one a
+         * screen reader announced "choose file, button" with no context on the
+         * teacher profile and verification screens. `tabIndex={-1}` keeps the
+         * tab order honest — the visible Button below is the one keyboard stop
+         * that opens the picker, so the same action is not offered twice.
+         */
+        aria-label={label}
+        tabIndex={-1}
         aria-describedby={statusId}
         onChange={(event) => pick(event.target.files?.[0] ?? null)}
       />
@@ -143,7 +153,7 @@ export function UploadField({
             ? "sr-only"
             : state.tone === "ok"
               ? "text-sm font-medium text-accent-700"
-              : "text-sm font-medium text-red-700"
+              : "text-sm font-medium text-danger-ink"
         }
       >
         {pending ? busyLabel : (state?.text ?? "")}

@@ -156,7 +156,7 @@ export function DbCourseEditor({
           className={
             message.tone === "ok"
               ? "text-base font-medium text-accent-700"
-              : "text-base font-medium text-red-700"
+              : "text-base font-medium text-danger-ink"
           }
         >
           {message.text}

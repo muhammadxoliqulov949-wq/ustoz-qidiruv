@@ -194,7 +194,7 @@ export function RefundDecisionForm({
                 onChange={(event) => setFeedback(event.target.value)}
                 className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink-900 outline-none focus-visible:border-accent-500"
               />
-              <p className="text-xs text-ink-400">
+              <p className="text-xs text-ink-500">
                 {trimmed.length}/{REFUND_FEEDBACK_MAX_LENGTH}
                 {feedbackTooShort ? ` — kamida ${REFUND_FEEDBACK_MIN_LENGTH} belgi` : ""}
               </p>
@@ -223,8 +223,8 @@ export function RefundDecisionForm({
 
       <p role="status" aria-live="polite" className="min-h-[1.25rem] text-sm">
         {pending ? <span className="text-ink-500">Qaror saqlanmoqda…</span> : null}
-        {done ? <span className="font-medium text-emerald-800">{done}</span> : null}
-        {error ? <span className="font-medium text-red-700">{error}</span> : null}
+        {done ? <span className="font-medium text-success-ink">{done}</span> : null}
+        {error ? <span className="font-medium text-danger-ink">{error}</span> : null}
       </p>
     </div>
   );

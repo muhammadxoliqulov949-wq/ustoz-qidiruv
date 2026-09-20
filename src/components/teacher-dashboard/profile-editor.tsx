@@ -374,7 +374,7 @@ export function TeacherProfileEditor({
         ) : null}
       </p>
 
-      <p className="text-xs leading-relaxed text-ink-400">
+      <p className="text-xs leading-relaxed text-ink-500">
         Ism, yo‘nalish, shahar, dars tillari, tajriba, tavsif va dars uslubi
         saqlanadi. Tasdiqlash holati bu formadan o‘zgarmaydi — uni faqat
         administrator qarori o‘zgartiradi. Profil rasmi yuqoridagi yuklash

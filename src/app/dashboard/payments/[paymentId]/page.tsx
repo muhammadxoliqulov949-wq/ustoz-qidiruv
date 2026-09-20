@@ -125,20 +125,20 @@ export default async function PaymentDetailPage({
         <h2 className="text-xl font-semibold text-ink-900">Tafsilotlar</h2>
         <dl className="mt-4 grid gap-x-6 gap-y-4 sm:grid-cols-2">
           <div>
-            <dt className="text-sm text-ink-400">Summa</dt>
+            <dt className="text-sm text-ink-500">Summa</dt>
             <dd className="mt-0.5 text-lg font-semibold text-ink-900">
               {formatTiyin(payment.amountTiyin)}
             </dd>
           </div>
           <div>
-            <dt className="text-sm text-ink-400">Holat</dt>
+            <dt className="text-sm text-ink-500">Holat</dt>
             <dd className="mt-0.5 font-medium text-ink-900">
               {PAYMENT_STATUS_LABEL[payment.status]}
             </dd>
           </div>
           {payment.paidAt ? (
             <div>
-              <dt className="text-sm text-ink-400">To‘langan vaqt</dt>
+              <dt className="text-sm text-ink-500">To‘langan vaqt</dt>
               <dd className="mt-0.5 font-medium text-ink-900">
                 {formatDate(payment.paidAt)}
               </dd>
@@ -236,7 +236,7 @@ export default async function PaymentDetailPage({
         <ol className="mt-3 flex flex-col gap-2">
           {events.map((event) => (
             <li key={event.id} className="text-sm text-ink-700">
-              <span className="text-ink-400">{formatDate(event.createdAt)}</span>{" "}
+              <span className="text-ink-500">{formatDate(event.createdAt)}</span>{" "}
               {EVENT_LABEL[event.type] ?? event.type}
             </li>
           ))}

@@ -69,8 +69,8 @@ export function SupportTicketForm() {
           hint="Masalan, kurs yoki to‘lov identifikatori."
         />
       </div>
-      {error ? <p role="alert" className="text-sm font-medium text-red-700">{error}</p> : null}
-      {done ? <p role="status" className="text-sm font-medium text-emerald-800">{done}</p> : null}
+      {error ? <p role="alert" className="text-sm font-medium text-danger-ink">{error}</p> : null}
+      {done ? <p role="status" className="text-sm font-medium text-success-ink">{done}</p> : null}
       <div>
         <Button type="submit" disabled={pending}>{pending ? "Yuborilmoqda…" : "Murojaat yuborish"}</Button>
       </div>

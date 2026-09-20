@@ -49,7 +49,7 @@ export function NewCourseForm({
     <Card>
       <form className="flex flex-col gap-4" onSubmit={onSubmit} noValidate>
         {error ? (
-          <p role="alert" className="text-base font-medium text-red-700">
+          <p role="alert" className="text-base font-medium text-danger-ink">
             {error}
           </p>
         ) : null}
@@ -58,7 +58,7 @@ export function NewCourseForm({
           <span className="text-sm font-medium text-ink-700">Kurs nomi</span>
           <input name="title" className={field} required minLength={8} />
           {fieldErrors.title ? (
-            <span className="text-sm text-red-700">{fieldErrors.title}</span>
+            <span className="text-sm text-danger-ink">{fieldErrors.title}</span>
           ) : null}
         </label>
 
@@ -103,7 +103,7 @@ export function NewCourseForm({
               ))}
             </select>
             {fieldErrors.city ? (
-              <span className="text-sm text-red-700">{fieldErrors.city}</span>
+              <span className="text-sm text-danger-ink">{fieldErrors.city}</span>
             ) : null}
           </label>
 
@@ -124,7 +124,7 @@ export function NewCourseForm({
           </span>
           <textarea name="summary" rows={3} className={field} required />
           {fieldErrors.summary ? (
-            <span className="text-sm text-red-700">{fieldErrors.summary}</span>
+            <span className="text-sm text-danger-ink">{fieldErrors.summary}</span>
           ) : null}
         </label>
 

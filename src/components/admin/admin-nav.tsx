@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import type { ComponentType } from "react";
 import { cn, focusRing } from "@/lib/utils";
+import { useActiveStripItem } from "@/lib/use-active-strip-item";
 import { ADMIN_NAV, isActiveAdminNav, type AdminNavItem } from "@/lib/admin-workspace";
 
 /* -------------------------------------------------------------------------- */
@@ -123,12 +124,18 @@ export function AdminSidebarNav({ counts }: { counts?: AdminNavCounts }) {
 
 export function AdminTabNav({ counts }: { counts?: AdminNavCounts }) {
   const pathname = usePathname();
+  // Phase 24: at 360px the strip is far wider than the window and its
+  // scrollbar is hidden, so bring the current section into view.
+  const stripRef = useActiveStripItem<HTMLUListElement>(pathname);
   return (
     <nav
       aria-label="Administrator paneli"
       className="-mx-5 border-b border-line px-5 md:-mx-8 md:px-8 lg:hidden"
     >
-      <ul className="flex gap-1 overflow-x-auto pb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <ul
+          ref={stripRef}
+          className="flex gap-1 overflow-x-auto pb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
         {ADMIN_NAV.map((item) => {
           const Icon = icons[item.icon];
           const active = isActiveAdminNav(pathname, item.href);

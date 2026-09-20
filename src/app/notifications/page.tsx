@@ -87,7 +87,7 @@ export default async function NotificationsPage({
                   "flex flex-col gap-2 rounded-xl border p-4 shadow-xs",
                   notification.read
                     ? "border-line bg-surface"
-                    : "border-accent-200 bg-accent-50",
+                    : "border-accent-100 bg-accent-50",
                 )}
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
@@ -99,7 +99,7 @@ export default async function NotificationsPage({
                 </div>
 
                 <p className="text-sm text-ink-700">{notification.body}</p>
-                <p className="text-sm text-ink-400">{formatDate(notification.createdAt)}</p>
+                <p className="text-sm text-ink-500">{formatDate(notification.createdAt)}</p>
 
                 <div className="flex flex-wrap items-center gap-3">
                   {notification.href ? (

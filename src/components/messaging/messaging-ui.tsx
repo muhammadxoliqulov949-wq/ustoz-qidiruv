@@ -135,7 +135,7 @@ export function MessageBubble({
         the author typed without ever interpreting markup, and `break-words`
         keeps a pasted URL from forcing a horizontal scrollbar at 390px.
       */}
-      <p className="text-base leading-relaxed break-words whitespace-pre-wrap text-ink-800">
+      <p className="text-base leading-relaxed break-words whitespace-pre-wrap text-ink-700">
         {message.body}
       </p>
     </li>

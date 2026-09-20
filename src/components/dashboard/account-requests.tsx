@@ -259,7 +259,7 @@ export async function AccountRequests({ userId }: { userId: string }) {
                           itself the receipt, so it is rendered from the row.
                         */}
                         {refundView.status === "requested" ? (
-                          <p role="status" className="text-sm font-medium text-emerald-800">
+                          <p role="status" className="text-sm font-medium text-success-ink">
                             {REFUND_REQUEST_ACK}
                           </p>
                         ) : null}

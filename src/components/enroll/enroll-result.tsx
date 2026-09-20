@@ -103,7 +103,7 @@ export function EnrollResult({ course, group, draft, onEditAgain, onClear, persi
       <div className="grid gap-3 rounded-xl border border-line bg-surface-muted p-4 text-sm sm:grid-cols-2">
         {sections.map((section) => (
           <div key={section.title}>
-            <p className="text-xs font-semibold tracking-wide text-ink-400 uppercase">
+            <p className="text-xs font-semibold tracking-wide text-ink-500 uppercase">
               {section.title}
             </p>
             <dl className="mt-1.5 flex flex-col gap-1">

@@ -200,7 +200,7 @@ export default async function AdminRefundDetailPage({
         <ol className="mt-3 flex flex-col gap-2">
           {events.map((event) => (
             <li key={event.id} className="text-sm text-ink-700">
-              <span className="text-ink-400">{formatAdminDateTime(event.createdAt)}</span>{" "}
+              <span className="text-ink-500">{formatAdminDateTime(event.createdAt)}</span>{" "}
               {EVENT_LABEL[event.type] ?? event.type}
               {" · "}
               <span className="text-ink-500">

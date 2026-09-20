@@ -338,7 +338,7 @@ export function ReviewForm({
       <p id={statusId} role="status" aria-live="polite" className="mt-3 min-h-[1.25rem] text-sm">
         {pending ? <span className="text-ink-500">Saqlanmoqda…</span> : null}
         {done ? <span className="font-medium text-ink-900">{done}</span> : null}
-        {error ? <span className="font-medium text-red-700">{error}</span> : null}
+        {error ? <span className="font-medium text-danger-ink">{error}</span> : null}
       </p>
     </div>
   );

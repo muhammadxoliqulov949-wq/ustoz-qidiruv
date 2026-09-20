@@ -88,7 +88,7 @@ export function RequestDecisionForm({
 
       <p role="status" aria-live="polite" className="min-h-[1.25rem] text-sm">
         {pending ? <span className="text-ink-500">Saqlanmoqda…</span> : null}
-        {error ? <span className="font-medium text-red-700">{error}</span> : null}
+        {error ? <span className="font-medium text-danger-ink">{error}</span> : null}
       </p>
     </div>
   );

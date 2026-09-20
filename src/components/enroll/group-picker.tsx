@@ -100,7 +100,7 @@ export function GroupPicker({ legend, groups, selectedGroupId, onSelect, error }
                   <span className="mt-1 block text-sm text-ink-700">
                     {groupScheduleLabel(group)} · boshlanish {group.startDateLabel}
                   </span>
-                  <span className="mt-0.5 block text-xs text-ink-400">
+                  <span className="mt-0.5 block text-xs text-ink-500">
                     {group.formatLabel} · {groupWhereLabel(group)} ·{" "}
                     {group.capacity - group.seatsRemaining}/{group.capacity} joy band
                   </span>

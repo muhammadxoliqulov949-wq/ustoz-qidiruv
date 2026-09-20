@@ -68,29 +68,29 @@ export function CourseTeacher({
 
         <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-4">
           <div>
-            <dt className="text-ink-400">Reyting</dt>
+            <dt className="text-ink-500">Reyting</dt>
             <dd className="mt-0.5 inline-flex items-center gap-1 font-semibold text-ink-900">
               <Star className="size-3.5 fill-rating text-rating stroke-0" aria-hidden="true" />
               {teacher.rating.toFixed(1)}
-              <span className="font-normal text-ink-400">
+              <span className="font-normal text-ink-500">
                 ({formatCount(teacher.reviews)})
               </span>
             </dd>
           </div>
           <div>
-            <dt className="text-ink-400">Tajriba</dt>
+            <dt className="text-ink-500">Tajriba</dt>
             <dd className="mt-0.5 font-semibold text-ink-900">
               {teacher.experienceYears} yil
             </dd>
           </div>
           <div>
-            <dt className="text-ink-400">O‘quvchilar</dt>
+            <dt className="text-ink-500">O‘quvchilar</dt>
             <dd className="mt-0.5 font-semibold text-ink-900">
               {formatCount(teacher.students)}
             </dd>
           </div>
           <div>
-            <dt className="text-ink-400">Tillar</dt>
+            <dt className="text-ink-500">Tillar</dt>
             <dd className="mt-0.5 inline-flex items-start gap-1 font-semibold text-ink-900">
               <Globe className="mt-0.5 size-3.5 shrink-0 text-ink-400" aria-hidden="true" />
               {teacher.languages.join(", ")}

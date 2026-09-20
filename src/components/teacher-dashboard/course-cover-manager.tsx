@@ -75,7 +75,7 @@ export function CourseCoverManager({
               className="object-cover"
             />
           ) : (
-            <span className="absolute inset-0 flex items-center justify-center text-xs text-ink-400">
+            <span className="absolute inset-0 flex items-center justify-center text-xs text-ink-500">
               Muqova yo‘q
             </span>
           )}
@@ -123,7 +123,7 @@ export function CourseCoverManager({
             ? "sr-only"
             : status.tone === "ok"
               ? "text-sm font-medium text-accent-700"
-              : "text-sm font-medium text-red-700"
+              : "text-sm font-medium text-danger-ink"
         }
       >
         {status?.text ?? ""}

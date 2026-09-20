@@ -244,7 +244,7 @@ export function VerificationDocuments({
             ? "sr-only"
             : status.tone === "ok"
               ? "text-sm font-medium text-ink-900"
-              : "text-sm font-medium text-red-700"
+              : "text-sm font-medium text-danger-ink"
         }
       >
         {status?.text ?? ""}

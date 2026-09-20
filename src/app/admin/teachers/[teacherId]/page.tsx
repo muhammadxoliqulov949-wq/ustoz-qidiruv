@@ -194,7 +194,7 @@ export default async function AdminTeacherDetailPage({
                         Ko‘rish
                       </a>
                     ) : (
-                      <span className="text-sm text-ink-400">Havola yaratilmadi</span>
+                      <span className="text-sm text-ink-500">Havola yaratilmadi</span>
                     )}
                   </li>
                 );

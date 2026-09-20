@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 /* -------------------------------------------------------------------------- */
 export const fieldBaseClasses = cn(
   "w-full border border-line-strong bg-surface text-ink-900 shadow-xs",
-  "placeholder:text-ink-400",
+  "placeholder:text-ink-500",
   "transition-[border-color,box-shadow] duration-fast",
   "hover:border-ink-300",
   "focus:border-accent-600 focus:outline-none",
@@ -108,6 +108,13 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
       {hint || error ? (
         <p
           id={hintId}
+          /*
+           * Phase 24 a11y: an error appears after submit, long after the field
+           * was focused, so it is announced as an alert instead of waiting for
+           * the user to rediscover it. Hints stay quiet (no role) — they are
+           * already reachable through aria-describedby.
+           */
+          {...(error ? { role: "alert" } : {})}
           className={cn(
             "flex items-start gap-1 text-sm",
             error ? "text-danger" : "text-ink-500",
