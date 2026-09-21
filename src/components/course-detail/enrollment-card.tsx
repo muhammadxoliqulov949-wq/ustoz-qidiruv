@@ -103,7 +103,7 @@ export function EnrollmentCard({
   return (
     <div
       aria-label="Kursga yozilish"
-      className={cn("rounded-xl border border-line bg-surface p-6 shadow-xs", className)}
+      className={cn("depth-featured rounded-xl p-6", className)}
     >
       <p className="text-2xl font-semibold text-ink-900">
         {course.priceUzs === 0 ? (

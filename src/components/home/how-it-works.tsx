@@ -15,7 +15,7 @@ export function HowItWorks() {
 
       <ol className="grid gap-8 md:grid-cols-3 md:gap-12">
         {howItWorks.steps.map((step) => (
-          <li key={step.id} className="flex flex-col gap-2 border-t border-line pt-4">
+          <li key={step.id} className="depth-quiet flex flex-col gap-2 rounded-2xl p-5 sm:p-6">
             <span className="text-sm font-semibold tracking-[0.08em] text-accent-600">
               {step.number}
             </span>

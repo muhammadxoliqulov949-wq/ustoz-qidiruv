@@ -29,8 +29,8 @@ export default async function CategoriesPage() {
   const courseCounts = await getCategoryCourseCounts();
 
   return (
-    <div className="site-container flex flex-col gap-10 pb-18 pt-14 md:gap-12 md:pb-26 md:pt-18">
-      <div className="flex flex-col gap-2">
+    <div className="depth-canvas site-container flex flex-col gap-10 pb-18 pt-14 md:gap-12 md:pb-26 md:pt-18">
+      <div className="marketplace-header flex flex-col gap-2 p-6 sm:p-8 lg:p-10">
         <p className="text-sm font-semibold tracking-[0.08em] text-accent-600 uppercase">
           Katalog
         </p>

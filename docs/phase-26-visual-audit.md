@@ -23,10 +23,17 @@ Phase 25 is structurally strong: spacing, contrast, responsive behavior and moti
 
 The hero depth object is CSS-only: no network request, layout shift, autoplay media or mobile cost. It is hidden below the large breakpoint. Generated image/video assets were intentionally omitted because they would add weight without improving marketplace comprehension.
 
+## R2 completion pass
+
+R2 extends the depth system beyond the hero: homepage sections now have grouped editorial shells; course, teacher and category cards have distinct media and information treatments; browse pages use the ambient canvas; course and teacher detail headers are conversion-focused featured surfaces; and student, teacher and admin shells share premium identity and metric patterns.
+
+### Higgsfield evaluation
+
+Three USTOZ-specific concepts were submitted for evaluation: an editorial knowledge-plane hero, a layered course/mentor marketplace composition, and a six-part category visual system. Higgsfield rejected all three before generation with `Requires basic plan or higher`; no credits were charged and no assets were produced. The final implementation therefore keeps the lighter CSS-only visual system and does not claim generated imagery was reviewed.
+
 ## Reference principles
 
 - Editorial split hero: message and search remain primary; depth supports them rather than competing.
 - Layered marketplace cards: border tone, highlight and shadow work as one system.
 - Dashboard restraint: clearer grouping, no decorative charts or invented metrics.
 - Glass only for floating UI: controlled blur is not used as a general card treatment.
-
