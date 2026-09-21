@@ -32,6 +32,7 @@
     "test:phase22": "tsx --conditions=react-server tests/phase22-hardening.test.ts",
     "test:phase23": "tsx --conditions=react-server tests/phase23-operations.test.ts",
     "test:phase23-profile": "tsx --conditions=react-server tests/phase23-profile.test.ts",
+    "test:phase25": "tsx --conditions=react-server tests/phase25-motion.test.ts",
     "test:auth": "tsx --conditions=react-server tests/auth-upgrade.test.ts"
   },
   "dependencies": {

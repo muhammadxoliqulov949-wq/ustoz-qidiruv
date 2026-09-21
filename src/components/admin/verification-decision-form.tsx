@@ -131,7 +131,7 @@ export function VerificationDecisionForm({
       </div>
 
       {open && isPending ? (
-        <div id={feedbackId} className="flex flex-col gap-2 rounded-lg border border-line bg-surface-muted p-4">
+        <div id={feedbackId} className="motion-feedback flex flex-col gap-2 rounded-lg border border-line bg-surface-muted p-4">
           <label htmlFor={`${feedbackId}-input`} className="text-sm font-medium text-ink-700">
             Sabab (majburiy, kamida {FEEDBACK_MIN_LENGTH} belgi)
           </label>
@@ -164,9 +164,9 @@ export function VerificationDecisionForm({
       ) : null}
 
       <p role="status" aria-live="polite" className="min-h-[1.25rem] text-sm">
-        {pending ? <span className="text-ink-500">Saqlanmoqda…</span> : null}
-        {done ? <span className="font-medium text-ink-900">{done}</span> : null}
-        {error ? <span className="font-medium text-danger-ink">{error}</span> : null}
+        {pending ? <span className="motion-feedback text-ink-500">Saqlanmoqda…</span> : null}
+        {done ? <span className="motion-feedback font-medium text-ink-900">{done}</span> : null}
+        {error ? <span className="motion-feedback font-medium text-danger-ink">{error}</span> : null}
       </p>
     </div>
   );

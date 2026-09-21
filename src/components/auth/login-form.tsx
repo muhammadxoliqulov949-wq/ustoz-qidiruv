@@ -220,7 +220,7 @@ export function LoginForm({ initialNext = null, initialError = null }: LoginForm
           {forgotOpen ? (
             <p
               id="forgot-password-panel"
-              className="rounded-lg border border-line bg-surface-muted px-3.5 py-2.5 text-sm text-ink-500"
+              className="motion-feedback rounded-lg border border-line bg-surface-muted px-3.5 py-2.5 text-sm text-ink-500"
             >
               Parolni tiklash bo‘yicha qo‘llab-quvvatlash xizmatiga murojaat qiling
               yoki yangi hisob yarating.

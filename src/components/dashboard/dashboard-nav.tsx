@@ -51,7 +51,7 @@ function UnreadChip({
         // `relative` keeps the screen-reader label inside the chip, so the
         // absolutely positioned text cannot escape the scrollable tab strip
         // and add stray scroll width to the page.
-        "relative inline-flex min-w-[1.5rem] items-center justify-center rounded-pill bg-accent-600 px-1.5 py-px text-xs font-semibold text-white",
+        "motion-status relative inline-flex min-w-[1.5rem] items-center justify-center rounded-pill bg-accent-600 px-1.5 py-px text-xs font-semibold text-white",
         className,
       )}
     >
@@ -82,7 +82,7 @@ export function DashboardSidebarNav({
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   "relative flex items-center gap-3 rounded-lg py-2.5 pr-3 pl-4 text-base",
-                  "transition-colors duration-fast",
+                  "motion-control transition-colors duration-fast",
                   active
                     ? "bg-accent-50 font-semibold text-accent-700"
                     : "font-medium text-ink-700 hover:bg-ink-900/[0.045] hover:text-ink-900",
@@ -147,7 +147,7 @@ export function DashboardTabNav({
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   "inline-flex items-center gap-2 rounded-t-lg border-b-2 px-3 py-3 text-base whitespace-nowrap",
-                  "transition-colors duration-fast",
+                  "motion-control transition-colors duration-fast",
                   active
                     ? "border-accent-600 font-semibold text-accent-700"
                     : "border-transparent font-medium text-ink-700 hover:text-ink-900",

@@ -14,7 +14,7 @@ type Variant = "default" | "interactive" | "quiet";
 const variantClasses: Record<Variant, string> = {
   default: "border border-line bg-surface shadow-xs",
   interactive:
-    "border border-line bg-surface shadow-xs transition-[box-shadow,border-color] duration-base " +
+    "motion-card border border-line bg-surface shadow-xs " +
     "hover:border-line-strong hover:shadow-md focus-within:border-accent-600/40 focus-within:ring-[length:var(--size-focus-ring)] focus-within:ring-accent-600/25",
   /** Borderless, tinted — for grouped sections on the warm canvas. */
   quiet: "border-0 bg-ink-900/[0.035]",

@@ -163,8 +163,11 @@
   /* v4 namespaces: --transition-duration-* generates .duration-*;
      --ease-* generates .ease-*; the --default-* vars back bare `transition`. */
   --ease-standard: cubic-bezier(0.22, 0.61, 0.36, 1);
-  --transition-duration-fast: 150ms;
-  --transition-duration-base: 240ms;
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --transition-duration-fast: 140ms;
+  --transition-duration-base: 220ms;
+  --transition-duration-slow: 320ms;
   --default-transition-duration: var(--transition-duration-fast);
   --default-transition-timing-function: var(--ease-standard);
 
@@ -191,6 +194,12 @@
    */
   :root {
     --font-inter: "Inter Variable";
+    --motion-distance-sm: 0.25rem;
+    --motion-distance-md: 0.5rem;
+    --motion-distance-lg: 1rem;
+    --motion-scale-pressed: 0.99;
+    --motion-scale-dialog: 0.985;
+    --motion-opacity-muted: 0.62;
   }
 
   html {
@@ -223,10 +232,172 @@
       transition-duration: 0s !important;
       scroll-behavior: auto !important;
     }
+
+    .motion-layer[data-state="closed"] {
+      transition-delay: 0s !important;
+    }
   }
 
   ::selection {
     background-color: color-mix(in oklab, var(--color-accent-600) 18%, white);
+  }
+}
+
+/* ============================================================================
+   Phase 25 motion system
+
+   State is carried by data attributes so dialogs and sheets can animate out
+   without a runtime animation package. Closed layers are inert/aria-hidden in
+   their components; visibility and pointer-events provide the visual guard.
+   ========================================================================== */
+
+@layer components {
+  .motion-control {
+    transition-timing-function: var(--ease-standard);
+  }
+
+  .motion-layer {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .motion-layer[data-state="open"] {
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  .motion-layer[data-state="closed"] {
+    transition: visibility 0s linear var(--transition-duration-base);
+  }
+
+  .motion-backdrop {
+    opacity: 0;
+    transition: opacity var(--transition-duration-base) var(--ease-exit);
+  }
+
+  .motion-layer[data-state="open"] .motion-backdrop,
+  .motion-backdrop[data-state="open"] {
+    opacity: 1;
+    transition-timing-function: var(--ease-enter);
+  }
+
+  .motion-menu {
+    opacity: 0;
+    transform: translate3d(0, calc(-1 * var(--motion-distance-sm)), 0);
+    transition:
+      opacity var(--transition-duration-fast) var(--ease-exit),
+      transform var(--transition-duration-base) var(--ease-exit);
+  }
+
+  .motion-layer[data-state="open"] .motion-menu,
+  .motion-menu[data-state="open"] {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+    transition-timing-function: var(--ease-enter);
+  }
+
+  .motion-sheet {
+    opacity: 0;
+    transform: translate3d(0, var(--motion-distance-lg), 0);
+    transition:
+      opacity var(--transition-duration-base) var(--ease-exit),
+      transform var(--transition-duration-slow) var(--ease-exit);
+  }
+
+  .motion-layer[data-state="open"] .motion-sheet,
+  .motion-sheet[data-state="open"] {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+    transition-timing-function: var(--ease-enter);
+  }
+
+  .motion-dialog {
+    opacity: 0;
+    transform: translate3d(0, var(--motion-distance-md), 0)
+      scale(var(--motion-scale-dialog));
+    transition:
+      opacity var(--transition-duration-base) var(--ease-exit),
+      transform var(--transition-duration-slow) var(--ease-exit);
+  }
+
+  .motion-layer[data-state="open"] .motion-dialog,
+  .motion-dialog[data-state="open"] {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    transition-timing-function: var(--ease-enter);
+  }
+
+  .motion-card {
+    transition-property: transform, border-color, box-shadow;
+    transition-duration: var(--transition-duration-base);
+    transition-timing-function: var(--ease-standard);
+  }
+
+  .motion-card-media {
+    transition: transform var(--transition-duration-slow) var(--ease-standard);
+  }
+
+  .motion-feedback {
+    animation: motion-feedback-in var(--transition-duration-base) var(--ease-enter)
+      both;
+  }
+
+  .motion-status {
+    transition:
+      color var(--transition-duration-fast) var(--ease-standard),
+      background-color var(--transition-duration-fast) var(--ease-standard),
+      border-color var(--transition-duration-fast) var(--ease-standard),
+      opacity var(--transition-duration-fast) var(--ease-standard);
+  }
+
+  .motion-skeleton {
+    animation: motion-skeleton 1.6s var(--ease-standard) infinite alternate;
+  }
+
+  .motion-hero-reveal {
+    animation: motion-reveal var(--transition-duration-slow) var(--ease-enter)
+      both;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .motion-card:hover {
+    transform: translate3d(0, calc(-1 * var(--motion-distance-sm)), 0);
+  }
+
+  .motion-card:hover .motion-card-media {
+    transform: scale(1.018);
+  }
+}
+
+@keyframes motion-feedback-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, calc(-1 * var(--motion-distance-sm)), 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes motion-skeleton {
+  from {
+    opacity: var(--motion-opacity-muted);
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes motion-reveal {
+  from {
+    opacity: 0;
+    transform: translate3d(0, var(--motion-distance-sm), 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
   }
 }
 

@@ -95,13 +95,18 @@ export function TeacherFilterSheet({
         {teachersPage.sheet.open}
       </Button>
 
-      {open ? (
-        <div className="fixed inset-0 z-[60] lg:hidden" onKeyDown={trapTab}>
+      <div
+        data-state={open ? "open" : "closed"}
+        aria-hidden={!open}
+        inert={!open ? true : undefined}
+        className="motion-layer fixed inset-0 z-[60] lg:hidden"
+        onKeyDown={trapTab}
+      >
           <button
             type="button"
             aria-label={teachersPage.sheet.close}
             onClick={close}
-            className="absolute inset-0 cursor-default bg-ink-900/25"
+            className="motion-backdrop absolute inset-0 cursor-default bg-ink-900/25"
           />
           <div
             ref={panelRef}
@@ -109,7 +114,7 @@ export function TeacherFilterSheet({
             aria-modal="true"
             aria-labelledby={titleId}
             className={
-              "absolute inset-x-0 bottom-0 flex max-h-[88dvh] flex-col " +
+              "motion-sheet absolute inset-x-0 bottom-0 flex max-h-[88dvh] flex-col " +
               "rounded-t-3xl bg-surface shadow-raised sm:mx-auto sm:max-w-md"
             }
           >
@@ -130,8 +135,7 @@ export function TeacherFilterSheet({
               </Button>
             </div>
           </div>
-        </div>
-      ) : null}
+      </div>
     </>
   );
 }

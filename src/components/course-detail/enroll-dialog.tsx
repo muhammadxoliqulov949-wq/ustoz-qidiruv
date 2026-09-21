@@ -110,14 +110,19 @@ export function EnrollDialog({
         {triggerLabel}
       </Button>
 
-      {open ? (
-        <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center sm:p-6" onKeyDown={trapTab}>
+      <div
+        data-state={open ? "open" : "closed"}
+        aria-hidden={!open}
+        inert={!open ? true : undefined}
+        className="motion-layer fixed inset-0 z-[60] flex items-end justify-center sm:items-center sm:p-6"
+        onKeyDown={trapTab}
+      >
           {/* Backdrop (click to dismiss) */}
           <button
             type="button"
             aria-label="Dialogni yopish"
             onClick={close}
-            className="absolute inset-0 cursor-default bg-ink-900/25"
+            className="motion-backdrop absolute inset-0 cursor-default bg-ink-900/25"
           />
           <div
             ref={dialogRef}
@@ -126,7 +131,7 @@ export function EnrollDialog({
             aria-labelledby={titleId}
             tabIndex={-1}
             className={cn(
-              "relative z-10 w-full max-w-md rounded-t-3xl bg-surface shadow-raised outline-none",
+              "motion-dialog relative z-10 w-full max-w-md rounded-t-3xl bg-surface shadow-raised outline-none",
               "sm:rounded-3xl",
               "flex max-h-[88dvh] flex-col",
             )}
@@ -192,8 +197,7 @@ export function EnrollDialog({
               </p>
             </div>
           </div>
-        </div>
-      ) : null}
+      </div>
     </>
   );
 }

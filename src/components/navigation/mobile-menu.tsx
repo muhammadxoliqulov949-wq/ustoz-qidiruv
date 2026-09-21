@@ -11,8 +11,8 @@ import { becomeTeacherNav, loginNav, primaryNav } from "@/data/site";
 /**
  * Compact (mobile/tablet) navigation panel — part of the simple top-header
  * architecture. Final bottom navigation is intentionally out of Phase 1.
- * Conditionally rendered (no animation machinery); Escape/backdrop close and
- * scroll lock are handled by <Header>.
+ * CSS state transitions keep open/close calm without adding an animation
+ * dependency; Escape/backdrop close and scroll lock are handled by <Header>.
  */
 /**
  * Why the panel closes are TYPED (Phase 24): a close caused by Escape or by
@@ -70,8 +70,6 @@ export function MobileMenu({
     }
   };
 
-  if (!open) return null;
-
   return (
     <>
       {/* Backdrop.
@@ -82,23 +80,30 @@ export function MobileMenu({
       <button
         type="button"
         aria-label="Menyuni yopish"
+        aria-hidden={!open}
+        tabIndex={open ? 0 : -1}
+        inert={!open ? true : undefined}
+        data-state={open ? "open" : "closed"}
         onClick={() => onClose("backdrop")}
-        className="fixed inset-0 -z-10 h-dvh w-full cursor-default bg-ink-900/10 backdrop-blur-[2px] lg:hidden"
+        className="motion-layer motion-backdrop fixed inset-0 -z-10 h-dvh w-full cursor-default bg-ink-900/10 lg:hidden"
       />
 
       <div
         ref={panelRef}
         id={id}
+        data-state={open ? "open" : "closed"}
+        aria-hidden={!open}
+        inert={!open ? true : undefined}
         role="dialog"
         aria-modal="true"
         aria-label="Sayt navigatsiyasi"
         onKeyDown={trapTab}
-        className={cn("absolute inset-x-0 top-full z-10 mt-2 lg:hidden")}
+        className={cn("motion-layer absolute inset-x-0 top-full z-10 mt-2 lg:hidden")}
       >
         <nav
           aria-label="Mobil navigatsiya"
           className={cn(
-            "mx-auto flex w-full max-w-lg flex-col gap-1 rounded-2xl p-3",
+            "motion-menu mx-auto flex w-full max-w-lg flex-col gap-1 rounded-2xl p-3",
             "border border-ink-900/[0.06] bg-surface/95 shadow-raised backdrop-blur-xl",
             /*
              * The panel hangs below a 72px header and the page behind it is

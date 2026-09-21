@@ -54,7 +54,7 @@ export function OnboardingWizard({ initialRole, initialNext = null, signedIn = f
       <div className="flex flex-col gap-4" aria-busy="true">
         <div className="h-1.5 rounded-pill bg-line" />
         <div className="rounded-xl border border-line bg-surface p-6 shadow-xs">
-          <div className="flex animate-pulse flex-col gap-4">
+          <div className="motion-skeleton flex flex-col gap-4">
             <div className="h-8 w-2/3 rounded-lg bg-ink-900/[0.06]" />
             <div className="h-24 rounded-lg bg-ink-900/[0.04]" />
             <div className="h-24 rounded-lg bg-ink-900/[0.04]" />

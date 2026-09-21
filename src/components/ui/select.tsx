@@ -64,7 +64,7 @@ export const SelectField = forwardRef<HTMLSelectElement, SelectFieldProps>(
           <p
             id={hintId}
             {...(error ? { role: "alert" } : {})}
-            className={cn("text-sm", error ? "text-danger" : "text-ink-500")}
+            className={cn("motion-feedback text-sm", error ? "text-danger" : "text-ink-500")}
           >
             {error ?? hint}
           </p>
