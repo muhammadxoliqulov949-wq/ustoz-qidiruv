@@ -16,7 +16,7 @@ export function Hero() {
       aria-labelledby="hero-title"
       className="flex flex-col items-center pb-18 pt-[calc(var(--height-header)+3rem)] md:pb-26 md:pt-[calc(var(--height-header)+5rem)]"
     >
-      <div className="site-container flex flex-col items-center text-center">
+      <div className="motion-hero-reveal site-container flex flex-col items-center text-center">
         <p className="mb-4 text-sm font-semibold tracking-[0.1em] text-accent-600 uppercase">
           {hero.eyebrow}
         </p>

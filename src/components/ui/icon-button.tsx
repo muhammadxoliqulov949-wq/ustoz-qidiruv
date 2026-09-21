@@ -62,7 +62,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
         aria-label={label}
         title={label}
         className={cn(
-          "inline-flex shrink-0 items-center justify-center select-none",
+          "motion-control inline-flex shrink-0 items-center justify-center select-none",
           "transition-colors duration-fast",
           "disabled:pointer-events-none disabled:opacity-55",
           "[&>svg]:size-5 [&>svg]:shrink-0",

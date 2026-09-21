@@ -44,7 +44,7 @@ export function TeacherCard({ teacher, className }: TeacherCardProps) {
             alt={name}
             fill
             sizes="(min-width: 80rem) 280px, (min-width: 48rem) 46vw, calc(100vw - 40px)"
-            className="object-cover object-[center_18%] transition-transform duration-base motion-reduce:transition-none group-hover:scale-[1.015]"
+            className="motion-card-media object-cover object-[center_18%]"
           />
         ) : null}
       </div>

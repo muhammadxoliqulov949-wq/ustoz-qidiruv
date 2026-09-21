@@ -60,7 +60,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        "inline-flex items-center justify-center rounded-pill font-medium whitespace-nowrap",
+        "motion-status inline-flex items-center justify-center rounded-pill font-medium whitespace-nowrap",
         sizeClasses[size],
         variantClasses[variant][tone],
         className,

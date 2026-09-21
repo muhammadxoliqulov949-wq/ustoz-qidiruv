@@ -61,7 +61,7 @@ export function CourseCard({ course, className, priority = false }: CourseCardPr
             fill
             sizes="(min-width: 80rem) 280px, (min-width: 64rem) 376px, (min-width: 48rem) 340px, calc(100vw - 40px)"
             priority={priority}
-            className="object-cover transition-transform duration-base motion-reduce:transition-none group-hover:scale-[1.02]"
+            className="motion-card-media object-cover"
           />
         ) : null}
         <SaveButton

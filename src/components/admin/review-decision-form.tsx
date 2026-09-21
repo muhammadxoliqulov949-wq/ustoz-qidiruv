@@ -135,7 +135,7 @@ export function ReviewDecisionForm({
       {open && canReject ? (
         <div
           id={reasonId}
-          className="flex flex-col gap-2 rounded-lg border border-line bg-surface-muted p-4"
+          className="motion-feedback flex flex-col gap-2 rounded-lg border border-line bg-surface-muted p-4"
         >
           <p className="text-sm leading-relaxed text-ink-700">{REVIEW_REJECT_CONFIRMATION_NOTE}</p>
           <label htmlFor={`${reasonId}-input`} className="text-sm font-medium text-ink-700">
@@ -168,9 +168,9 @@ export function ReviewDecisionForm({
       ) : null}
 
       <p role="status" aria-live="polite" className="min-h-[1.25rem] text-sm">
-        {pending ? <span className="text-ink-500">Saqlanmoqda…</span> : null}
-        {done ? <span className="font-medium text-ink-900">{done}</span> : null}
-        {error ? <span className="font-medium text-danger-ink">{error}</span> : null}
+        {pending ? <span className="motion-feedback text-ink-500">Saqlanmoqda…</span> : null}
+        {done ? <span className="motion-feedback font-medium text-ink-900">{done}</span> : null}
+        {error ? <span className="motion-feedback font-medium text-danger-ink">{error}</span> : null}
       </p>
     </div>
   );

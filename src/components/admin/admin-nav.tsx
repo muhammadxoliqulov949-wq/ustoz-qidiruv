@@ -73,7 +73,7 @@ function badgeFor(item: AdminNavItem, counts: AdminNavCounts | undefined): numbe
 
 function CountBadge({ value, label = "kutilmoqda" }: { value: number; label?: string }) {
   return (
-    <span className="ms-auto rounded-pill bg-accent-600 px-2 py-px text-xs font-semibold text-white tabular-nums">
+    <span className="motion-status ms-auto rounded-pill bg-accent-600 px-2 py-px text-xs font-semibold text-white tabular-nums">
       {value}
       <span className="sr-only"> ta {label}</span>
     </span>
@@ -96,7 +96,7 @@ export function AdminSidebarNav({ counts }: { counts?: AdminNavCounts }) {
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   "relative flex items-center gap-3 rounded-lg py-2.5 pr-3 pl-4 text-base",
-                  "transition-colors duration-fast",
+                  "motion-control transition-colors duration-fast",
                   active
                     ? "bg-accent-50 font-semibold text-accent-700"
                     : "font-medium text-ink-700 hover:bg-ink-900/[0.045] hover:text-ink-900",
@@ -147,7 +147,7 @@ export function AdminTabNav({ counts }: { counts?: AdminNavCounts }) {
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   "inline-flex items-center gap-2 rounded-t-lg border-b-2 px-3 py-3 text-base whitespace-nowrap",
-                  "transition-colors duration-fast",
+                  "motion-control transition-colors duration-fast",
                   active
                     ? "border-accent-600 font-semibold text-accent-700"
                     : "border-transparent font-medium text-ink-700 hover:text-ink-900",

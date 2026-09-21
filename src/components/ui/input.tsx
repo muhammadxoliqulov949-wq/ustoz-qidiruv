@@ -116,7 +116,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
            */
           {...(error ? { role: "alert" } : {})}
           className={cn(
-            "flex items-start gap-1 text-sm",
+            "motion-feedback flex items-start gap-1 text-sm",
             error ? "text-danger" : "text-ink-500",
           )}
         >
