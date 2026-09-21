@@ -88,7 +88,7 @@ export function CourseReviews({ course, reviews, eligibility, own, canSubmit }: 
                   <Avatar name={review.author} size="md" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-ink-900">{review.author}</p>
-                    <p className="text-xs text-ink-400">{formatDateUz(review.date)}</p>
+                    <p className="text-xs text-ink-500">{formatDateUz(review.date)}</p>
                   </div>
                   {/* Value only, no stars-per-unit claim beyond the number. */}
                   <span

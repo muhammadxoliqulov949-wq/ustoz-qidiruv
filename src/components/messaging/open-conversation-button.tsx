@@ -45,7 +45,7 @@ export function OpenConversationButton({
         {pending ? "Ochilmoqda…" : label}
       </Button>
       <span role="status" aria-live="polite" className="text-sm">
-        {error ? <span className="font-medium text-red-700">{error}</span> : null}
+        {error ? <span className="font-medium text-danger-ink">{error}</span> : null}
       </span>
     </span>
   );

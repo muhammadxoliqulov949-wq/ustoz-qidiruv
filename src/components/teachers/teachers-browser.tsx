@@ -280,9 +280,10 @@ export function TeachersBrowser({
 
           {results.length > 0 ? (
             <ul className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
-              {results.map((row) => (
+              {results.map((row, index) => (
                 <li key={row.teacher.id} className="flex">
-                  <TeacherBrowseCard row={row} className="w-full" />
+                  {/* The first card is the page's LCP candidate (Phase 24). */}
+                  <TeacherBrowseCard row={row} className="w-full" priority={index === 0} />
                 </li>
               ))}
             </ul>

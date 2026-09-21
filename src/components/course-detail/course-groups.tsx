@@ -44,7 +44,7 @@ export function CourseGroups({ basePath, groups, selectedGroupId }: CourseGroups
               <span
                 className={cn(
                   "shrink-0 text-xs font-medium",
-                  full ? "text-ink-400" : "text-accent-700",
+                  full ? "text-ink-500" : "text-accent-700",
                 )}
               >
                 {full ? "Guruh to‘lgan" : `${group.seatsRemaining} ta joy qoldi`}
@@ -54,7 +54,7 @@ export function CourseGroups({ basePath, groups, selectedGroupId }: CourseGroups
               {group.days.join(", ")} · soat {group.startTime} · boshlanish{" "}
               {formatDateUz(group.startDate)}
             </span>
-            <span className="mt-0.5 block text-xs text-ink-400">
+            <span className="mt-0.5 block text-xs text-ink-500">
               {group.location
                 ? group.format === "hybrid"
                   ? `Sinf: ${group.location} · onlayn ham`

@@ -45,7 +45,7 @@ export function StudentStep({ stepId, answers, errors, onChange }: StudentStepPr
           error={errors.phone}
           onChange={(phone) => onChange({ phone })}
         />
-        <p className="text-sm text-ink-400">
+        <p className="text-sm text-ink-500">
           Telefon raqami — kelajakda hisobingizga ulanadigan yagona identifikator;
           hozircha faqat shu brauzerdagi onboarding holatida saqlanadi.
         </p>
@@ -122,7 +122,7 @@ export function StudentStep({ stepId, answers, errors, onChange }: StudentStepPr
         error={errors.languages}
         options={onboardingLanguages.map((tag) => ({ value: tag, label: languageLabel(tag) }))}
       />
-      <p className="text-sm text-ink-400">
+      <p className="text-sm text-ink-500">
         Bu tanlov hozircha faqat onboarding holatida saqlanadi — tavsiya
         tizimi backend ulanganda shu ma’lumotni ishlatadi. Hozircha hech
         qanday “sizga tavsiya” ro‘yxati ko‘rsatilmaydi.

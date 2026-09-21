@@ -229,9 +229,10 @@ export function CoursesBrowser({
 
           {results.length > 0 ? (
             <ul className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
-              {results.map((course) => (
+              {results.map((course, index) => (
                 <li key={course.id} className="flex">
-                  <CourseCard course={course} className="w-full" />
+                  {/* The first card is the page's LCP candidate (Phase 24). */}
+                  <CourseCard course={course} className="w-full" priority={index === 0} />
                 </li>
               ))}
             </ul>

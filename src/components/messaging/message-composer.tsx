@@ -4,6 +4,8 @@ import { useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Send } from "lucide-react";
 import { Button } from "@/components/ui";
+import { fieldBaseClasses } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { sendMessageAction } from "@/server/actions/messaging";
 import { MESSAGE_BODY_MAX_LENGTH, MESSAGING_COPY } from "@/lib/messaging";
 
@@ -80,7 +82,14 @@ export function MessageComposer({ conversationId }: { conversationId: string }) 
             send();
           }
         }}
-        className="w-full rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 text-base leading-relaxed text-ink-900 shadow-xs outline-none focus-visible:border-accent-500 focus-visible:ring-2 focus-visible:ring-accent-200"
+        className={cn(
+          // The ONE field skin (ui/input.ts). The hand-rolled ring it replaced
+          // referenced `ring-accent-200`, a step that does not exist in the
+          // token scale, so Tailwind emitted no colour at all and the focus
+          // indicator fell back to currentColor (Phase 24 a11y fix).
+          fieldBaseClasses,
+          "rounded-lg px-3.5 py-2.5 text-base leading-relaxed",
+        )}
       />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -89,7 +98,7 @@ export function MessageComposer({ conversationId }: { conversationId: string }) 
         </p>
         <p
           className={
-            tooLong ? "text-xs font-medium text-red-700" : "text-xs text-ink-500"
+            tooLong ? "text-xs font-medium text-danger-ink" : "text-xs text-ink-500"
           }
         >
           {value.length} / {MESSAGE_BODY_MAX_LENGTH}
@@ -104,7 +113,7 @@ export function MessageComposer({ conversationId }: { conversationId: string }) 
         {/* Always in the DOM: the announcement has a place to land. */}
         <p role="status" aria-live="polite" className="min-h-[1.25rem] text-sm">
           {status ? (
-            <span className={status.tone === "ok" ? "font-medium text-ink-900" : "font-medium text-red-700"}>
+            <span className={status.tone === "ok" ? "font-medium text-ink-900" : "font-medium text-danger-ink"}>
               {status.text}
             </span>
           ) : null}

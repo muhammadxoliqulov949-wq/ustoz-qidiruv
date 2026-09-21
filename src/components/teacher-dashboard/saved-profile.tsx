@@ -120,7 +120,7 @@ export function TeacherSavedProfile({ profile }: { profile: TeacherProfileRow | 
           ) : null}
         </>
       )}
-      <p className="mt-3 text-xs text-ink-400">
+      <p className="mt-3 text-xs text-ink-500">
         {profile?.verification === "verified" ? (
           "Profilingiz tasdiqlangan. Ommaviy katalogda chiqish uchun kamida bitta kursingiz e’lon qilingan bo‘lishi kerak."
         ) : (

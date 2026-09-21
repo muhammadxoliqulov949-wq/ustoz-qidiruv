@@ -30,7 +30,7 @@ export function CourseSyllabus({ course }: { course: Course }) {
             <div className="min-w-0">
               <h3 className="text-base font-semibold text-ink-900">
                 {module.title}
-                <span className="ml-2 text-sm font-normal text-ink-400">
+                <span className="ml-2 text-sm font-normal text-ink-500">
                   {module.lessons} dars
                 </span>
               </h3>

@@ -60,7 +60,7 @@ export function PayButton({
         {pending ? (
           <span className="text-ink-500">Payme sahifasiga o‘tkazilmoqda…</span>
         ) : null}
-        {error ? <span className="font-medium text-red-700">{error}</span> : null}
+        {error ? <span className="font-medium text-danger-ink">{error}</span> : null}
       </p>
     </div>
   );

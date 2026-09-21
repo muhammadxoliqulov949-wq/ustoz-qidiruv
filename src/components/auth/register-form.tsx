@@ -200,7 +200,7 @@ export function RegisterForm({
             <div className="w-full border-t border-line" />
           </div>
           <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-surface px-3 font-medium text-ink-400">yoki</span>
+            <span className="bg-surface px-3 font-medium text-ink-500">yoki</span>
           </div>
         </div>
 
@@ -296,7 +296,7 @@ export function RegisterForm({
               </AuthNotice>
             ) : null}
 
-            <p className="text-center text-xs leading-relaxed text-ink-400">
+            <p className="text-center text-xs leading-relaxed text-ink-500">
               {method === "email"
                 ? "Davom etish bilan hisobingiz yaratiladi. Agar ushbu email tasdiqlanmagan hisobga tegishli bo‘lsa, tasdiqlash xati yuboriladi."
                 : "Davom etish bilan hisobingiz yaratiladi va onboarding savollariga o‘tasiz."}

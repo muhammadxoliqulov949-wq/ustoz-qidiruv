@@ -12,6 +12,14 @@ import { SaveButton } from "./save-button";
 export interface CourseCardProps {
   course: Course;
   className?: string;
+  /**
+   * Phase 24 (LCP): the first card of a results grid IS the Largest Contentful
+   * Paint on /courses and /categories/[slug], and Next flagged it exactly for
+   * that ("add loading=eager"). Only that card gets `priority` — preloading a
+   * whole grid would compete with the document for bandwidth and make the
+   * metric worse, not better.
+   */
+  priority?: boolean;
 }
 
 /**
@@ -23,7 +31,7 @@ export interface CourseCardProps {
  * focus is painted by Card's focus-within ring. Image scale is the only
  * hover flourish; no permanent CTA inside the card.
  */
-export function CourseCard({ course, className }: CourseCardProps) {
+export function CourseCard({ course, className, priority = false }: CourseCardProps) {
   const {
     id,
     slug,
@@ -52,6 +60,7 @@ export function CourseCard({ course, className }: CourseCardProps) {
             alt=""
             fill
             sizes="(min-width: 80rem) 280px, (min-width: 64rem) 376px, (min-width: 48rem) 340px, calc(100vw - 40px)"
+            priority={priority}
             className="object-cover transition-transform duration-base motion-reduce:transition-none group-hover:scale-[1.02]"
           />
         ) : null}

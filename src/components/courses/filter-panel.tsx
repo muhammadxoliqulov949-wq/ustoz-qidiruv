@@ -130,7 +130,7 @@ export function FilterPanel({
                     placeholder="0"
                     className={cn(
                       "h-9 w-full rounded-lg border border-line-strong bg-surface px-2.5",
-                      "text-sm text-ink-900 placeholder:text-ink-400",
+                      "text-sm text-ink-900 placeholder:text-ink-500",
                       "transition-colors duration-fast hover:border-ink-300",
                       focusRing,
                     )}
@@ -148,7 +148,7 @@ export function FilterPanel({
                     placeholder="∞"
                     className={cn(
                       "h-9 w-full rounded-lg border border-line-strong bg-surface px-2.5",
-                      "text-sm text-ink-900 placeholder:text-ink-400",
+                      "text-sm text-ink-900 placeholder:text-ink-500",
                       "transition-colors duration-fast hover:border-ink-300",
                       focusRing,
                     )}

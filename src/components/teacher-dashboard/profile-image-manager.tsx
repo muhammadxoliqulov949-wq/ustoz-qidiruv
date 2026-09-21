@@ -113,7 +113,7 @@ export function ProfileImageManager({
             ? "sr-only"
             : status.tone === "ok"
               ? "text-sm font-medium text-accent-700"
-              : "text-sm font-medium text-red-700"
+              : "text-sm font-medium text-danger-ink"
         }
       >
         {status?.text ?? ""}

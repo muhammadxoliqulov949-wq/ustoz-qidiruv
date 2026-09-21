@@ -62,7 +62,7 @@ export default async function VerifyEmailPage({
             <p className="text-sm font-medium">{result.message}</p>
           </div>
           <div className="flex flex-col gap-2">
-            <p className="text-sm text-ink-600">
+            <p className="text-sm text-ink-700">
               Yangi tasdiqlash havolasini olish uchun emailingizni kiriting:
             </p>
             <ResendVerificationForm />
@@ -88,7 +88,7 @@ export default async function VerifyEmailPage({
         intro="Agar ushbu email tasdiqlanmagan hisobga tegishli bo‘lsa, tasdiqlash xati yuborildi."
       >
         <Card className="flex flex-col gap-5">
-          <div className="flex items-center gap-4 rounded-xl bg-accent-50/70 p-4 text-accent-900">
+          <div className="flex items-center gap-4 rounded-xl bg-accent-50/70 p-4 text-accent-700">
             <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-accent-600 text-white">
               <Mail className="size-5" />
             </div>
@@ -98,7 +98,7 @@ export default async function VerifyEmailPage({
                   ? `Kiritilgan manzil: ${maskedEmail}`
                   : "Tasdiqlash holati"}
               </span>
-              <span className="text-ink-600">
+              <span className="text-ink-700">
                 Agar ushbu email tasdiqlanmagan hisobga tegishli bo‘lsa, tasdiqlash xati yuborildi. Xatdagi havolani bosib hisobingizni faollashtiring.
               </span>
             </div>

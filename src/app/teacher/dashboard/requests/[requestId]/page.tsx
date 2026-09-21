@@ -92,7 +92,7 @@ export default async function RequestDetailPage({
         <h2 className="text-xl font-semibold text-ink-900">Yozilish tafsilotlari</h2>
         <dl className="mt-4 grid gap-x-6 gap-y-4 sm:grid-cols-2">
           <div>
-            <dt className="text-sm text-ink-400">Kurs</dt>
+            <dt className="text-sm text-ink-500">Kurs</dt>
             <dd className="mt-0.5 font-medium text-ink-900">
               <Link
                 href={`/courses/${request.courseSlug}`}
@@ -103,29 +103,29 @@ export default async function RequestDetailPage({
             </dd>
           </div>
           <div>
-            <dt className="text-sm text-ink-400">Guruh</dt>
+            <dt className="text-sm text-ink-500">Guruh</dt>
             <dd className="mt-0.5 font-medium text-ink-900">{request.groupTitle}</dd>
           </div>
           <div>
-            <dt className="text-sm text-ink-400">Format</dt>
+            <dt className="text-sm text-ink-500">Format</dt>
             <dd className="mt-0.5 font-medium text-ink-900">
               {courseFormatLabels[request.groupFormat ?? request.courseFormat]}
             </dd>
           </div>
           <div>
-            <dt className="text-sm text-ink-400">Jadval</dt>
+            <dt className="text-sm text-ink-500">Jadval</dt>
             <dd className="mt-0.5 font-medium text-ink-900">
               {request.groupDays.join(", ")} · {request.groupStartTime}
               {request.groupEndTime ? `–${request.groupEndTime}` : ""}
             </dd>
           </div>
           <div>
-            <dt className="text-sm text-ink-400">Boshlanish sanasi</dt>
+            <dt className="text-sm text-ink-500">Boshlanish sanasi</dt>
             <dd className="mt-0.5 font-medium text-ink-900">{request.groupStartDate}</dd>
           </div>
           {request.groupLocation ? (
             <div>
-              <dt className="text-sm text-ink-400">Manzil</dt>
+              <dt className="text-sm text-ink-500">Manzil</dt>
               <dd className="mt-0.5 font-medium text-ink-900">{request.groupLocation}</dd>
             </div>
           ) : null}
@@ -133,7 +133,7 @@ export default async function RequestDetailPage({
 
         {request.note ? (
           <div className="mt-5">
-            <h3 className="text-sm text-ink-400">O‘quvchi izohi</h3>
+            <h3 className="text-sm text-ink-500">O‘quvchi izohi</h3>
             {/* Rendered as text by React — stored markup is inert. */}
             <p className="mt-1 text-base text-ink-700">“{request.note}”</p>
           </div>
@@ -190,7 +190,7 @@ export default async function RequestDetailPage({
         <ol className="mt-3 flex flex-col gap-2">
           {request.history.map((event) => (
             <li key={event.id} className="text-sm text-ink-700">
-              <span className="text-ink-400">{formatDate(event.createdAt)}</span>{" "}
+              <span className="text-ink-500">{formatDate(event.createdAt)}</span>{" "}
               {event.fromStatus
                 ? `${ENROLLMENT_STATUS_LABEL[event.fromStatus]} → ${ENROLLMENT_STATUS_LABEL[event.toStatus]}`
                 : ENROLLMENT_STATUS_LABEL[event.toStatus]}

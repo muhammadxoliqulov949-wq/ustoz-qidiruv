@@ -68,7 +68,7 @@ export function InfoLink({ href, children }: { href: string; children: ReactNode
   return (
     <Link
       href={href}
-      className="font-medium text-accent-700 underline underline-offset-2 transition-colors duration-fast hover:text-accent-800 focus-visible:ring-[length:var(--size-focus-ring)] focus-visible:ring-accent-600/35 focus-visible:outline-none"
+      className="font-medium text-accent-700 underline underline-offset-2 transition-colors duration-fast hover:text-accent-600 focus-visible:ring-[length:var(--size-focus-ring)] focus-visible:ring-accent-600/35 focus-visible:outline-none"
     >
       {children}
     </Link>

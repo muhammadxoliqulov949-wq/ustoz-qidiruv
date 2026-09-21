@@ -29,7 +29,15 @@ export default function RootLayout({
   children: ReactNode;
 }>) {
   return (
-    <html lang="uz" className="h-full">
+    /*
+     * `data-scroll-behavior="smooth"` is required by Next 16 whenever the
+     * stylesheet turns on `scroll-behavior: smooth` (globals.css does, inside a
+     * `prefers-reduced-motion: no-preference` query): without the attribute the
+     * router cannot tell that a route change should jump instantly, and it warns
+     * at runtime. The attribute is a declaration, not a style — the media query
+     * in CSS stays the single source of truth for WHEN scrolling is smooth.
+     */
+    <html lang="uz" className="h-full" data-scroll-behavior="smooth">
       <body className="flex min-h-full flex-col font-sans antialiased">
         <a
           href="#main"

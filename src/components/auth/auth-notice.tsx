@@ -32,7 +32,7 @@ export function AuthNotice({
       className={cn(
         "rounded-xl border p-4",
         variant === "warning"
-          ? "border-warning/30 bg-[#fdf3e3]"
+          ? "border-warning/30 bg-warning-soft"
           : "border-line bg-surface-muted",
         className,
       )}
@@ -40,7 +40,7 @@ export function AuthNotice({
       <p
         className={cn(
           "flex items-center gap-2 text-sm font-semibold",
-          variant === "warning" ? "text-[#9a6207]" : "text-ink-900",
+          variant === "warning" ? "text-warning-ink" : "text-ink-900",
         )}
       >
         <Icon

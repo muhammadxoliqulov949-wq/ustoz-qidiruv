@@ -186,7 +186,7 @@ export function OnboardingComplete({
     <div className="flex flex-col gap-5">
       {/* Profile preview — everything below is what the flow actually knows. */}
       <div className="rounded-xl border border-line bg-surface-muted p-5">
-        <p className="text-xs font-semibold tracking-wide text-ink-400 uppercase">
+        <p className="text-xs font-semibold tracking-wide text-ink-500 uppercase">
           Profil ko‘rinishi — UI holati
         </p>
         <div className="mt-3 flex items-start gap-4">
@@ -233,7 +233,7 @@ export function OnboardingComplete({
             {answers.approach}
           </p>
         ) : null}
-        <p className="mt-3 text-xs text-ink-400">
+        <p className="mt-3 text-xs text-ink-500">
           Kurs yaratish, narx va guruhlar ustoz panelidagi “Kurslarim”
           bo‘limida qo‘shiladi. Bu preview’da ular haqida hech qanday
           ma’lumot yo‘q va bo‘lmasligi kerak.

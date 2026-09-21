@@ -34,8 +34,8 @@ export function ChangePasswordForm() {
       <div><h2 className="text-xl font-semibold text-ink-900">Parolni o‘zgartirish</h2><p className="mt-1 text-sm text-ink-500">Joriy parol tekshiriladi; muvaffaqiyatli o‘zgartirish barcha boshqa sessiyalarni tugatadi.</p></div>
       <Input label="Joriy parol" name="currentPassword" type="password" autoComplete="current-password" required />
       <div className="grid gap-4 sm:grid-cols-2"><Input label="Yangi parol" name="newPassword" type="password" autoComplete="new-password" minLength={8} maxLength={72} required /><Input label="Yangi parolni takrorlang" name="confirmPassword" type="password" autoComplete="new-password" minLength={8} maxLength={72} required /></div>
-      {error ? <p role="alert" className="text-sm font-medium text-red-700">{error}</p> : null}
-      {message ? <p role="status" className="text-sm font-medium text-emerald-800">{message}</p> : null}
+      {error ? <p role="alert" className="text-sm font-medium text-danger-ink">{error}</p> : null}
+      {message ? <p role="status" className="text-sm font-medium text-success-ink">{message}</p> : null}
       <div><Button type="submit" disabled={pending}>{pending ? "Saqlanmoqda…" : "Parolni yangilash"}</Button></div>
     </form>
   );
@@ -57,11 +57,11 @@ export function DeactivateAccountForm() {
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-4 rounded-xl border border-red-200 bg-red-50/50 p-5">
-      <div><h2 className="text-xl font-semibold text-red-900">Hisobni deaktivasiyalash</h2><p className="mt-1 text-sm leading-relaxed text-red-800">Bu amal kirishni to‘xtatadi va ommaviy ustoz profilini yashiradi. Yozilish, to‘lov va audit yozuvlari o‘chirilmaydi. Bu amalni ilova ichida qaytarib bo‘lmaydi.</p></div>
+    <form onSubmit={submit} className="flex flex-col gap-4 rounded-xl border border-danger/25 bg-danger-soft/60 p-5">
+      <div><h2 className="text-xl font-semibold text-danger-ink">Hisobni deaktivasiyalash</h2><p className="mt-1 text-sm leading-relaxed text-danger-ink">Bu amal kirishni to‘xtatadi va ommaviy ustoz profilini yashiradi. Yozilish, to‘lov va audit yozuvlari o‘chirilmaydi. Bu amalni ilova ichida qaytarib bo‘lmaydi.</p></div>
       <Input label="Joriy parol" name="password" type="password" autoComplete="current-password" required />
       <Input label="Tasdiqlash uchun DEACTIVATE yozing" name="confirmation" autoComplete="off" required maxLength={10} />
-      {error ? <p role="alert" className="text-sm font-medium text-red-800">{error}</p> : null}
+      {error ? <p role="alert" className="text-sm font-medium text-danger-ink">{error}</p> : null}
       <div><Button type="submit" variant="danger" disabled={pending}>{pending ? "Bajarilmoqda…" : "Hisobni deaktivasiyalash"}</Button></div>
     </form>
   );

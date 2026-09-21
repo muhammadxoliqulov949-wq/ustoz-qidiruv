@@ -191,7 +191,16 @@ export function AdminFilterLink({
       >
         {label}
         {typeof count === "number" ? (
-          <span className="tabular-nums text-ink-500">
+          /*
+           * Phase 24 (contrast): on the ACTIVE pill the count sits on the
+           * accent-50 tint, where ink-500 measures 4.38:1 — just under AA for
+           * 13px text. The active pill therefore uses the accent-700 "text on
+           * soft" role (9.6:1); the inactive pill keeps ink-500 on white
+           * (4.98:1). Same type, same size, only the role-correct colour.
+           */
+          <span
+            className={`tabular-nums ${active ? "text-accent-700" : "text-ink-500"}`}
+          >
             {count}
             <span className="sr-only"> ta</span>
           </span>

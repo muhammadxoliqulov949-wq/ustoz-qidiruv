@@ -20,9 +20,16 @@ import type { TeacherRow } from "@/data/teacher-rows";
 export function TeacherBrowseCard({
   row,
   className,
+  priority = false,
 }: {
   row: TeacherRow;
   className?: string;
+  /**
+   * Phase 24 (LCP): the first card of the /teachers grid is the Largest
+   * Contentful Paint of that page and Next flagged it as lazy-loaded. Only the
+   * first card is promoted — see the same prop on CourseCard.
+   */
+  priority?: boolean;
 }) {
   const { teacher, cities, formats, minPriceUzs, courseIds } = row;
   const { id, slug, name, photo, verified, specialization } = teacher;
@@ -47,6 +54,7 @@ export function TeacherBrowseCard({
             alt={name}
             fill
             sizes="(min-width: 80rem) 280px, (min-width: 48rem) 46vw, calc(100vw - 40px)"
+            priority={priority}
             className="object-cover object-[center_18%] transition-transform duration-base motion-reduce:transition-none group-hover:scale-[1.015]"
           />
         ) : null}

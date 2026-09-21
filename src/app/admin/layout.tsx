@@ -132,7 +132,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
           </p>
           <Link
             href="/"
-            className="text-sm font-medium text-accent-700 underline underline-offset-2 max-lg:hidden"
+            className="-my-1 inline-block py-1 text-sm font-medium text-accent-700 underline underline-offset-2 max-lg:hidden"
           >
             Ommaviy saytga qaytish
           </Link>

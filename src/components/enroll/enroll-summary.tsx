@@ -74,7 +74,7 @@ export function EnrollSummary({ course, group, className }: EnrollSummaryProps) 
               <span
                 className={cn(
                   "shrink-0 text-xs font-medium",
-                  isFull(group) ? "text-ink-400" : "text-accent-700",
+                  isFull(group) ? "text-ink-500" : "text-accent-700",
                 )}
               >
                 {isFull(group) ? "Guruh to‘lgan" : `${group.seatsRemaining} ta joy bor`}
@@ -101,12 +101,12 @@ export function EnrollSummary({ course, group, className }: EnrollSummaryProps) 
         <span className="text-base font-semibold text-ink-900">{course.priceSummary}</span>
       </div>
       {course.priceUzs > 0 ? (
-        <p className="mt-1.5 text-xs leading-relaxed text-ink-400">
+        <p className="mt-1.5 text-xs leading-relaxed text-ink-500">
           To‘lov bosqichi backend bilan keladi — karta ma’lumotlari hozircha
           so‘ralmaydi.
         </p>
       ) : (
-        <p className="mt-1.5 text-xs text-ink-400">Bepul kurs — to‘lov bosqichi yo‘q.</p>
+        <p className="mt-1.5 text-xs text-ink-500">Bepul kurs — to‘lov bosqichi yo‘q.</p>
       )}
     </aside>
   );

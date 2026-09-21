@@ -36,7 +36,7 @@ export function CopyCourseButton({ courseId }: { courseId: string }) {
         Nusxadan yangi qoralama
       </Button>
       {error ? (
-        <span role="alert" className="text-sm text-red-700">
+        <span role="alert" className="text-sm text-danger-ink">
           {error}
         </span>
       ) : null}

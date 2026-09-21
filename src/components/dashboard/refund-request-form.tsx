@@ -74,7 +74,7 @@ export function RefundRequestForm({
   if (done) {
     return (
       <div className="flex flex-col gap-1.5">
-        <p role="status" aria-live="polite" className="text-sm font-medium text-emerald-800">
+        <p role="status" aria-live="polite" className="text-sm font-medium text-success-ink">
           {done}
         </p>
         <p className="text-sm text-ink-500">{REFUND_REQUEST_NOTICE}</p>
@@ -101,7 +101,7 @@ export function RefundRequestForm({
             className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink-900 outline-none focus-visible:border-accent-500"
             placeholder="Masalan: guruh jadvali menga mos kelmadi."
           />
-          <p className="text-xs text-ink-400">
+          <p className="text-xs text-ink-500">
             {trimmed.length}/{REFUND_REASON_MAX_LENGTH} belgi
             {tooShort ? ` — kamida ${REFUND_REASON_MIN_LENGTH} belgi kerak` : ""}
           </p>
@@ -139,7 +139,7 @@ export function RefundRequestForm({
 
       <p role="status" aria-live="polite" className="min-h-[1.25rem] text-sm">
         {pending ? <span className="text-ink-500">So‘rov yuborilmoqda…</span> : null}
-        {error ? <span className="font-medium text-red-700">{error}</span> : null}
+        {error ? <span className="font-medium text-danger-ink">{error}</span> : null}
       </p>
     </div>
   );

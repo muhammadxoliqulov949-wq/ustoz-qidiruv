@@ -58,6 +58,7 @@ export const TextareaField = forwardRef<HTMLTextAreaElement, TextareaFieldProps>
         {hint || error || counter ? (
           <p
             id={hintId}
+            {...(error ? { role: "alert" } : {})}
             className={cn(
               "flex items-start justify-between gap-3 text-sm",
               error ? "text-danger" : "text-ink-500",
@@ -73,7 +74,7 @@ export const TextareaField = forwardRef<HTMLTextAreaElement, TextareaFieldProps>
               {error ?? hint}
             </span>
             {counter ? (
-              <span className="ml-auto shrink-0 tabular-nums text-ink-400">
+              <span className="ml-auto shrink-0 tabular-nums text-ink-500">
                 {counter.value} / {counter.max}
               </span>
             ) : null}

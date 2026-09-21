@@ -167,19 +167,19 @@ export default async function TeacherProfilePage({
 
           <dl className="mt-6 grid max-w-xl grid-cols-3 gap-x-6 rounded-xl border border-line bg-surface p-4 text-sm shadow-xs sm:p-5">
             <div>
-              <dt className="text-ink-400">Tajriba</dt>
+              <dt className="text-ink-500">Tajriba</dt>
               <dd className="mt-0.5 font-semibold text-ink-900">
                 {teacher.experienceYears} yil
               </dd>
             </div>
             <div>
-              <dt className="text-ink-400">O‘quvchilar</dt>
+              <dt className="text-ink-500">O‘quvchilar</dt>
               <dd className="mt-0.5 font-semibold text-ink-900">
                 {formatCount(teacher.students)}
               </dd>
             </div>
             <div>
-              <dt className="text-ink-400">Kurslar</dt>
+              <dt className="text-ink-500">Kurslar</dt>
               <dd className="mt-0.5 font-semibold text-ink-900">
                 {own.length > 0 ? (
                   <>

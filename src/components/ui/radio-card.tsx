@@ -32,6 +32,10 @@ export interface RadioCardGroupProps {
 const columnClasses: Record<1 | 2 | 3, string> = {
   1: "grid-cols-1",
   2: "grid-cols-1 sm:grid-cols-2",
+  // Phase 24: 3 columns in a 26rem auth card (inner ~368px) overflows at
+  // 360-1440. Keep the 3-up intent but make the grid and cards truly
+  // shrinkable so the page never gets a horizontal scrollbar. The card itself
+  // also reduces padding at the smallest breakpoint to preserve usable text width.
   3: "grid-cols-1 sm:grid-cols-3",
 };
 
@@ -50,11 +54,11 @@ export function RadioCardGroup({
   return (
     <fieldset
       aria-describedby={cn(describedBy, errorId) || undefined}
-      className="min-w-0 border-0 p-0"
+      className="min-w-0 w-full border-0 p-0"
     >
       <legend className="mb-2 px-0 text-sm font-medium text-ink-700">{legend}</legend>
 
-      <div className={cn("grid gap-3", columnClasses[columns])}>
+      <div className={cn("grid min-w-0 w-full gap-3", columnClasses[columns])}>
         {options.map((option) => {
           const selected = value === option.value;
           const inputId = `${groupId}-${option.value}`;
@@ -64,7 +68,11 @@ export function RadioCardGroup({
               key={option.value}
               htmlFor={inputId}
               className={cn(
-                "relative flex cursor-pointer items-start gap-3 rounded-xl border p-4",
+                // min-w-0 + overflow-hidden + w-full prevent the card from
+                // forcing the grid track wider than its container (the 83aac694
+                // desktop overflow fix). Padding drops to p-3 at the smallest
+                // breakpoint to keep ~58px+ for text in a 3-up 26rem card.
+                "relative flex min-w-0 w-full cursor-pointer items-start gap-2 overflow-hidden rounded-xl border p-3 sm:gap-3 sm:p-4",
                 "transition-[border-color,background-color,box-shadow] duration-fast",
                 selected
                   ? "border-accent-600 bg-accent-50 shadow-xs"
@@ -93,9 +101,9 @@ export function RadioCardGroup({
                   <Icon />
                 </span>
               ) : null}
-              <span className="min-w-0 flex-1">
-                <span className="flex items-center justify-between gap-2">
-                  <span className="text-base font-semibold text-ink-900">
+              <span className="min-w-0 flex-1 overflow-hidden">
+                <span className="flex min-w-0 items-center justify-between gap-2">
+                  <span className="min-w-0 break-words text-sm font-semibold text-ink-900 sm:text-base">
                     {option.label}
                     {selected ? <span className="sr-only"> — tanlangan</span> : null}
                   </span>
@@ -108,7 +116,7 @@ export function RadioCardGroup({
                   />
                 </span>
                 {option.description ? (
-                  <span className="mt-1 block text-sm leading-snug text-ink-500">
+                  <span className="mt-1 block break-words text-sm leading-snug text-ink-500">
                     {option.description}
                   </span>
                 ) : null}

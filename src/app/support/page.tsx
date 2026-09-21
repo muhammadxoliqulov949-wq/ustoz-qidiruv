@@ -63,7 +63,7 @@ export default async function SupportPage({
                 </div>
                 <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink-700">{ticket.message}</p>
                 {ticket.relatedEntityId ? <p className="text-xs text-ink-500">Bog‘liq yozuv: {ticket.relatedEntityType} · {ticket.relatedEntityId}</p> : null}
-                <p className="text-xs text-ink-400">Yangilangan: {formatAdminDateTime(ticket.updatedAt)}</p>
+                <p className="text-xs text-ink-500">Yangilangan: {formatAdminDateTime(ticket.updatedAt)}</p>
               </li>
             ))}
           </ul>

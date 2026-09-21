@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Menu, X } from "lucide-react";
@@ -9,7 +9,7 @@ import { useScrolled } from "@/lib/use-scrolled";
 import { ButtonLink, IconButton, SearchInput } from "@/components/ui";
 import { becomeTeacherNav, loginNav, primaryNav } from "@/data/site";
 import { Logo } from "./logo";
-import { MobileMenu } from "./mobile-menu";
+import { MobileMenu, type MobileMenuCloseReason } from "./mobile-menu";
 
 /* -------------------------------------------------------------------------- */
 /* Site header — Phase 1.                                                       */
@@ -28,6 +28,20 @@ const navLinkClass = cn(
 export function Header() {
   const scrolled = useScrolled(8);
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+
+  /**
+   * Closing the panel is a dialog close, so focus goes back to the control
+   * that opened it — unless the close was caused by picking a destination, in
+   * which case the router owns focus and yanking it back to the header would
+   * scroll the next page to the top.
+   */
+  const closeMenu = (reason: MobileMenuCloseReason) => {
+    setMenuOpen(false);
+    if (reason !== "navigate") {
+      requestAnimationFrame(() => menuButtonRef.current?.focus());
+    }
+  };
 
   // Menu open → lock body scroll and allow Escape to dismiss.
   useEffect(() => {
@@ -35,7 +49,11 @@ export function Header() {
     const { overflow } = document.body.style;
     document.body.style.overflow = "hidden";
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMenuOpen(false);
+      if (event.key !== "Escape") return;
+      // Same contract as closeMenu("escape"), inlined so the effect's
+      // dependency list stays exactly [menuOpen].
+      setMenuOpen(false);
+      requestAnimationFrame(() => menuButtonRef.current?.focus());
     };
     window.addEventListener("keydown", onKeyDown);
     return () => {
@@ -107,6 +125,7 @@ export function Header() {
             </ButtonLink>
 
             <IconButton
+              ref={menuButtonRef}
               label={menuOpen ? "Menyuni yopish" : "Menyu"}
               icon={menuOpen ? <X /> : <Menu />}
               onClick={() => setMenuOpen((open) => !open)}
@@ -118,7 +137,7 @@ export function Header() {
         </div>
 
         {/* Mobile / tablet menu */}
-        <MobileMenu id="mobile-menu" open={menuOpen} onClose={() => setMenuOpen(false)} />
+        <MobileMenu id="mobile-menu" open={menuOpen} onClose={closeMenu} />
       </div>
     </header>
   );

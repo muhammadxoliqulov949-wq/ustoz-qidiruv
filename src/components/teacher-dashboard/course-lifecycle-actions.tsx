@@ -34,5 +34,5 @@ export function CourseLifecycleActions({ courseId, status }: { courseId: string;
     });
   }
 
-  return <div className="flex flex-wrap items-center gap-2">{actions.map((action) => <Button key={action} type="button" size="sm" variant={action === "archive" ? "danger" : "outline"} disabled={pending} onClick={() => run(action)}>{pending ? "Saqlanmoqda…" : COURSE_LIFECYCLE_ACTION_LABEL[action]}</Button>)}{error ? <span role="alert" className="text-sm text-red-700">{error}</span> : null}</div>;
+  return <div className="flex flex-wrap items-center gap-2">{actions.map((action) => <Button key={action} type="button" size="sm" variant={action === "archive" ? "danger" : "outline"} disabled={pending} onClick={() => run(action)}>{pending ? "Saqlanmoqda…" : COURSE_LIFECYCLE_ACTION_LABEL[action]}</Button>)}{error ? <span role="alert" className="text-sm text-danger-ink">{error}</span> : null}</div>;
 }

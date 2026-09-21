@@ -185,7 +185,7 @@ export function EnrollDialog({
                   </ButtonLink>
                 </div>
               </div>
-              <p className="pb-4 text-center text-xs text-ink-400">
+              <p className="pb-4 text-center text-xs text-ink-500">
                 So‘rov hisobingizga saqlanadi va kabinetingizda ko‘rinadi.
                 Hisobga kirmagan bo‘lsangiz, shaklni to‘ldirishdan oldin
                 tizimga kiring yoki ro‘yxatdan o‘ting.

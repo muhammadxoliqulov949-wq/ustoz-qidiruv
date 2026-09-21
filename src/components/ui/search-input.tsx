@@ -149,7 +149,7 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(
             onClick={clearAndRefocus}
             className={cn(
               "absolute top-1/2 -translate-y-1/2 inline-flex items-center justify-center",
-              "rounded-pill text-ink-400 transition-colors duration-fast",
+              "rounded-pill text-ink-500 transition-colors duration-fast",
               "hover:bg-ink-900/[0.06] hover:text-ink-700",
               clearButton[size],
               focusRing,

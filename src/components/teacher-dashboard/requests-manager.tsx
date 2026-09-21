@@ -114,7 +114,7 @@ export function RequestsManager({
                   )}
                 >
                   {filter.label}
-                  <span className="text-ink-400">{total}</span>
+                  <span className="text-ink-500">{total}</span>
                 </Link>
               </li>
             );
@@ -147,7 +147,7 @@ export function RequestsManager({
                   <p className="mt-0.5 text-sm text-ink-500">
                     {request.courseTitle} · {request.groupTitle}
                   </p>
-                  <p className="mt-0.5 text-sm text-ink-400">
+                  <p className="mt-0.5 text-sm text-ink-500">
                     Yuborilgan: {formatDate(request.createdAt)}
                   </p>
                   {request.note ? (

@@ -171,7 +171,7 @@ export function TeacherStep({ stepId, answers, errors, onChange }: TeacherStepPr
             options={onboardingLanguages.map((tag) => ({ value: tag, label: languageLabel(tag) }))}
           />
         </div>
-        <p className="text-sm text-ink-400">
+        <p className="text-sm text-ink-500">
           Gibrid (onlayn + sinf) formati kurs yaratilganda belgilanadi —
           shuning uchun bu yerda so‘ralmaydi.
         </p>
@@ -201,7 +201,7 @@ export function TeacherStep({ stepId, answers, errors, onChange }: TeacherStepPr
           hint={`O‘qitish yondashuvingiz — kamida ${APPROACH_MIN} belgi. Profildagi “O‘qitish uslubi” bo‘limiga yoziladi.`}
           onChange={(event) => onChange({ approach: event.target.value })}
         />
-        <p className="text-sm text-ink-400">
+        <p className="text-sm text-ink-500">
           Kurs dasturi, narx va guruhlar bu yerda so‘ralmaydi — kurs yaratish
           ustoz panelidagi “Kurslarim” bo‘limida bajariladi.
         </p>

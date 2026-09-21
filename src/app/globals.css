@@ -33,9 +33,14 @@
 
   --color-ink-900: #17181a; /* headings */
   --color-ink-700: #3f4248; /* body copy */
-  --color-ink-500: #6b7078; /* secondary / supporting text */
-  --color-ink-400: #9499a1; /* placeholders, hints */
-  --color-ink-300: #c3c6cc; /* disabled text */
+  --color-ink-500: #6b7078; /* secondary / supporting text — the LIGHTEST ink
+                               allowed for words (4.98:1 on surface, 4.8:1 on
+                               canvas, so it clears WCAG AA 4.5:1) */
+  --color-ink-400: #9499a1; /* DECORATIVE ONLY: aria-hidden icon strokes and
+                               non-text affordances. 2.86:1 on surface — below
+                               the AA text threshold, so Phase 24 moved every
+                               text/placeholder usage up to ink-500. */
+  --color-ink-300: #c3c6cc; /* disabled text (exempt from AA by WCAG 1.4.3) */
 
   --color-line: #e8e7e2; /* default borders (warm, matches canvas) */
   --color-line-strong: #d8d7d1; /* emphasized borders */
@@ -58,6 +63,25 @@
   --color-info: #2563eb;
   /* Rating stars only — the single non-brand hue in cards. */
   --color-rating: #d99a3d;
+
+  /* --- Semantic text/tint pairs (Phase 24 accessibility) ---------------------
+     The plain hues above are for SOLID badges and status dots: on white they
+     sit below the 4.5:1 AA threshold for small text (#16a34a is 3.3:1). Every
+     place that needs coloured WORDS on a light surface uses the *-ink value on
+     the matching *-soft tint instead:
+       success-ink #157a3d on white = 5.4:1 · on success-soft = 4.9:1
+       warning-ink #9a6207 on white = 5.0:1 · on warning-soft = 4.6:1
+       danger-ink  #b42318 on white = 6.6:1 · on danger-soft  = 6.2:1
+     These are the exact values the Badge/AuthNotice components were already
+     painting from hard-coded hex literals; promoting them here removes the last
+     ad-hoc palette values from the component tree (and the off-token
+     `text-red-700` / `text-emerald-800` copies of them). */
+  --color-success-soft: #e9f7ee;
+  --color-success-ink: #157a3d;
+  --color-warning-soft: #fdf3e3;
+  --color-warning-ink: #9a6207;
+  --color-danger-soft: #fdeceb;
+  --color-danger-ink: #b42318;
 
   /* --- Typography ----------------------------------------------------------- */
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
