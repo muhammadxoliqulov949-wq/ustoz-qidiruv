@@ -197,7 +197,7 @@ export function FilterPanel({
   );
 
   if (variant === "sidebar") {
-    return <Card className="p-5">{body}</Card>;
+    return <Card className="depth-featured p-5">{body}</Card>;
   }
   return body;
 }

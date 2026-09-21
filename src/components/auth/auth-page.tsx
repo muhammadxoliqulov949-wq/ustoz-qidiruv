@@ -43,10 +43,10 @@ export interface AuthPageProps {
 
 export function AuthPage({ title, intro, children, width = "narrow" }: AuthPageProps) {
   return (
-    <div className="site-container py-14 sm:py-18 lg:py-24">
+    <div className="depth-canvas site-container py-14 sm:py-18 lg:py-24">
       <div
         className={cn(
-          "mx-auto flex w-full flex-col gap-6",
+          "depth-featured mx-auto flex w-full flex-col gap-6 rounded-3xl p-6 sm:p-8",
           width === "narrow" ? "max-w-[26rem]" : "max-w-[46rem]",
         )}
       >
