@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
 /* Phase 24 QA harness — responsive + functional + interactive checks
    Runs without external browser binaries (network-restricted env).
    - Responsive: checks for page-level overflow risks, clipped text risks,
@@ -8,7 +9,7 @@
    - Interactive: I1-I7 checklist verification via source inspection
 */
 
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 
 const ROOT = process.cwd();
@@ -179,7 +180,7 @@ for (const check of interactiveChecks) {
     } else {
       fail(`${check.id}: ${check.name}`, `missing markers: ${missing.join(", ")} in ${check.file}`);
     }
-  } catch (e) {
+  } catch {
     fail(`${check.id}: ${check.name}`, `file not found: ${check.file}`);
   }
 }
@@ -191,10 +192,12 @@ console.log("\n# Functional QA");
 // Since we have PGlite dev DB, we can run a simplified messaging flow
 
 async function runFunctional() {
-  // Setup env for PGlite
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Phase 24 QA harness must not run with NODE_ENV=production");
+  }
+
   process.env.DB_DRIVER = "pglite";
   process.env.PGLITE_DATA_DIR = ".data/pglite";
-  process.env.NODE_ENV = "test";
 
   try {
     const { getDb, schema } = await import("../src/server/db/client");
@@ -238,9 +241,6 @@ async function runFunctional() {
 
     // B: messaging — enrollment -> teacher accept -> Ustozga yozish
     console.log("\n# Functional B: messaging rerun");
-    const { PGlite } = await import("@electric-sql/pglite");
-    // Use existing PGlite data dir, but we already have db connection
-    // Let's do a full flow using services
 
     const { newId } = await import("../src/server/auth/ids");
     const { hashPassword } = await import("../src/server/auth/password");
