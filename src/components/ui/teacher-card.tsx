@@ -59,7 +59,7 @@ export function TeacherCard({ teacher, className }: TeacherCardProps) {
           {verified ? <VerifiedMark /> : null}
         </div>
 
-        <p className="text-sm text-ink-500">{specialization}</p>
+        <p className="text-[0.8125rem] font-medium tracking-wide text-ink-500 uppercase">{specialization}</p>
 
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
           <Rating value={rating} reviews={reviews} />
@@ -68,7 +68,7 @@ export function TeacherCard({ teacher, className }: TeacherCardProps) {
           </span>
         </div>
 
-        <div className="mt-auto flex flex-wrap items-center gap-1.5 rounded-lg bg-surface-warm px-3 py-2.5">
+        <div className="mt-auto flex flex-wrap items-center gap-1.5 rounded-xl border border-white/8 bg-white/[0.04] px-3 py-2.5 backdrop-blur-sm">
           {languages.map((lang) => (
             <Badge key={lang} variant="neutral" size="sm">
               {lang}

@@ -28,9 +28,9 @@ export function Logo({
       <span
         aria-hidden="true"
         className={cn(
-          "grid size-8 shrink-0 place-items-center rounded-lg",
-          "bg-accent-600 font-sans text-sm font-bold text-white",
-          "transition-transform duration-fast group-hover:scale-105",
+          "grid size-8 shrink-0 place-items-center rounded-lg border border-white/10",
+          "bg-accent-600 font-sans text-sm font-bold text-white shadow-sm",
+          "transition-transform duration-fast group-hover:scale-105 group-hover:shadow-[0_0_20px_-6px_rgb(46_191_122/0.6)]",
         )}
       >
         U

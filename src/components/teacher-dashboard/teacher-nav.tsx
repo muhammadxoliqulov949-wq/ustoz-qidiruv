@@ -68,8 +68,8 @@ export function TeacherSidebarNav({
                   "relative flex items-center gap-3 rounded-lg py-2.5 pr-3 pl-4 text-base",
                   "motion-control transition-colors duration-fast",
                   active
-                    ? "bg-accent-50 font-semibold text-accent-700"
-                    : "font-medium text-ink-700 hover:bg-ink-900/[0.045] hover:text-ink-900",
+                    ? "bg-accent-50 font-semibold text-accent-400 ring-1 ring-accent-600/15 ring-inset"
+                    : "font-medium text-ink-700 hover:bg-white/[0.06] hover:text-ink-900",
                   focusRing,
                 )}
               >
@@ -110,7 +110,7 @@ export function TeacherTabNav({
   return (
     <nav
       aria-label="Ustoz paneli"
-      className="-mx-5 border-b border-line px-5 md:-mx-8 md:px-8 lg:hidden"
+      className="-mx-5 border-b border-white/8 px-5 md:-mx-8 md:px-8 lg:hidden"
     >
       <ul
           ref={stripRef}
@@ -128,7 +128,7 @@ export function TeacherTabNav({
                   "inline-flex items-center gap-2 rounded-t-lg border-b-2 px-3 py-3 text-base whitespace-nowrap",
                   "motion-control transition-colors duration-fast",
                   active
-                    ? "border-accent-600 font-semibold text-accent-700"
+                    ? "border-accent-600 font-semibold text-accent-400"
                     : "border-transparent font-medium text-ink-700 hover:text-ink-900",
                   focusRing,
                 )}

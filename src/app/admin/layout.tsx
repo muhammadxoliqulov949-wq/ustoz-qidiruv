@@ -67,7 +67,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
      */
     return (
       <div className="site-container py-14 lg:py-20">
-        <div className="mx-auto flex w-full max-w-[42rem] flex-col gap-5 rounded-xl border border-line bg-surface p-6 shadow-xs md:p-8">
+        <div className="mx-auto flex w-full max-w-[42rem] flex-col gap-5 rounded-2xl border border-white/12 bg-surface p-7 depth-featured shadow-xs md:p-8">
           <h1 className="text-2xl font-semibold tracking-[-0.015em] text-ink-900 md:text-3xl">
             {ADMIN_ACCESS_DENIED_TITLE}
           </h1>
@@ -82,7 +82,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
           </div>
           <p className="text-sm text-ink-500">
             Administrator huquqi faqat serverdagi buyruq orqali beriladi
-            (<code className="rounded bg-ink-900/[0.05] px-1.5 py-0.5">npm run admin:create</code>).
+            (<code className="rounded bg-white/[0.06] border border-white/10 px-1.5 py-0.5">npm run admin:create</code>).
             Sayt ichida uni olish yo‘li yo‘q.
           </p>
         </div>
@@ -116,7 +116,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
         {/* ------------------------------- sidebar ------------------------------- */}
         <div className="flex flex-col gap-5 lg:sticky lg:top-28">
           <div className="depth-featured rounded-xl p-4">
-            <p className="text-sm font-semibold tracking-[0.02em] text-accent-700 uppercase">
+            <p className="text-sm font-semibold tracking-[0.02em] text-accent-400 uppercase">
               {ADMIN_AREA_TITLE}
             </p>
             <p className="mt-2 text-sm leading-relaxed text-ink-700">
@@ -132,7 +132,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
           </p>
           <Link
             href="/"
-            className="-my-1 inline-block py-1 text-sm font-medium text-accent-700 underline underline-offset-2 max-lg:hidden"
+            className="-my-1 inline-block py-1 text-sm font-medium text-accent-400 underline underline-offset-2 max-lg:hidden"
           >
             Ommaviy saytga qaytish
           </Link>

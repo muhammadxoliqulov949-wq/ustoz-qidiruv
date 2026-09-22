@@ -74,7 +74,7 @@ export function CourseCard({ course, className, priority = false }: CourseCardPr
 
       <div className="flex flex-1 flex-col gap-3 p-5 sm:p-6">
         <div className="flex items-center gap-2">
-          <Badge variant="neutral">{courseFormatLabels[format]}</Badge>
+          <Badge variant={format === "online" ? "accent" : format === "offline" ? "warning" : "neutral"} tone="soft">{courseFormatLabels[format]}</Badge>
           {location && format !== "online" ? (
             <span className="inline-flex min-w-0 items-center gap-1 text-sm text-ink-500">
               <MapPin aria-hidden="true" className="size-3.5 shrink-0" />
@@ -83,7 +83,7 @@ export function CourseCard({ course, className, priority = false }: CourseCardPr
           ) : null}
         </div>
 
-        <h3 className="text-lg leading-snug font-semibold text-balance text-ink-900">
+        <h3 className="text-[1.0625rem] leading-snug font-semibold tracking-[-0.012em] text-balance text-ink-900 line-clamp-2">
           <Link href={`/courses/${slug}`} className={stretchedLink}>
             <span className="line-clamp-2">{title}</span>
           </Link>
@@ -103,11 +103,11 @@ export function CourseCard({ course, className, priority = false }: CourseCardPr
           </span>
         </div>
 
-        <div className="mt-auto flex items-baseline justify-between rounded-lg bg-accent-50/70 px-3 py-2.5">
+        <div className="mt-auto flex items-baseline justify-between rounded-xl border border-white/8 bg-white/[0.04] px-3.5 py-2.5 backdrop-blur-sm">
           <p
             className={cn(
-              "text-lg font-semibold",
-              priceUzs > 0 ? "text-ink-900" : "text-accent-700",
+              "text-[1.05rem] font-bold tracking-[-0.015em]",
+              priceUzs > 0 ? "text-ink-900" : "text-accent-400",
             )}
           >
             {formatPrice(priceUzs)}
@@ -115,6 +115,9 @@ export function CourseCard({ course, className, priority = false }: CourseCardPr
               <span className="text-sm font-normal text-ink-500"> / oyiga</span>
             ) : null}
           </p>
+          {priceUzs === 0 ? (
+            <Badge variant="accent" size="sm">Bepul</Badge>
+          ) : null}
         </div>
       </div>
     </Card>

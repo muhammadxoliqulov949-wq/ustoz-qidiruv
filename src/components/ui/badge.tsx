@@ -7,23 +7,23 @@ type Size = "sm" | "md";
 
 const variantClasses: Record<Variant, Record<Tone, string>> = {
   neutral: {
-    soft: "bg-ink-900/[0.055] text-ink-700 ring-line ring-1 ring-inset",
-    solid: "bg-ink-900 text-white",
+    soft: "bg-white/[0.07] text-ink-700 ring-white/10 ring-1 ring-inset backdrop-blur-sm",
+    solid: "bg-white text-[#0A1411]",
   },
   accent: {
-    soft: "bg-accent-50 text-accent-700",
+    soft: "bg-accent-50 text-accent-400 ring-accent-600/20 ring-1 ring-inset",
     solid: "bg-accent-600 text-white",
   },
   success: {
-    soft: "bg-success-soft text-success-ink",
+    soft: "bg-success-soft text-success-ink ring-white/5 ring-1 ring-inset",
     solid: "bg-success text-white",
   },
   warning: {
-    soft: "bg-warning-soft text-warning-ink",
-    solid: "bg-warning text-white",
+    soft: "bg-warning-soft text-warning-ink ring-white/5 ring-1 ring-inset",
+    solid: "bg-amber-500 text-[#1A1200]",
   },
   danger: {
-    soft: "bg-danger-soft text-danger-ink",
+    soft: "bg-danger-soft text-danger-ink ring-white/5 ring-1 ring-inset",
     solid: "bg-danger text-white",
   },
 };

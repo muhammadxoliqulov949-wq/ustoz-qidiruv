@@ -131,9 +131,8 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(
           className={cn(
             fieldBaseClasses,
             shellSize[size],
-            // Pill-shaped + slightly stronger presence than a plain Input
-            "border-2 shadow-sm",
-            size === "xl" && "shadow-raised",
+            "border-white/14 bg-white/[0.08] backdrop-blur-md shadow-sm",
+            size === "xl" && "shadow-raised border-white/14",
             // Neutralize UA search-field decorations
             "[appearance:none] [&::-webkit-search-cancel-button]:hidden",
             "[&::-webkit-search-decoration]:hidden",
@@ -166,8 +165,8 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(
           <button
             type="submit"
             className={cn(
-              "absolute top-1/2 right-2 hidden h-11 -translate-y-1/2 items-center gap-2",
-              "rounded-lg bg-accent-600 px-4 text-base font-medium text-white",
+              "absolute top-1/2 right-2 hidden h-10 -translate-y-1/2 items-center gap-2",
+              "rounded-lg bg-accent-600 px-5 text-sm font-semibold tracking-[-0.01em] text-white shadow-[0_0_20px_-8px_rgb(22_146_90/0.9)]",
               "transition-colors duration-fast hover:bg-accent-500 active:bg-accent-700",
               "sm:inline-flex",
               focusRing,

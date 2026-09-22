@@ -181,11 +181,11 @@ export function AdminFilterLink({
         href={href}
         aria-current={active ? "true" : undefined}
         className={cn(
-          "inline-flex items-center gap-2 rounded-pill border px-3 py-1.5 text-sm",
+          "inline-flex items-center gap-2 rounded-pill border px-3 py-1.5 text-sm backdrop-blur-sm",
           "transition-colors duration-fast",
           active
-            ? "border-accent-600 bg-accent-50 font-semibold text-accent-700"
-            : "border-line bg-surface font-medium text-ink-700 hover:border-ink-300 hover:text-ink-900",
+            ? "border-accent-600/50 bg-accent-50 font-semibold text-accent-400 ring-1 ring-accent-600/20 ring-inset"
+            : "border-white/12 bg-white/[0.05] font-medium text-ink-700 hover:border-white/18 hover:text-ink-900 hover:bg-white/[0.08]",
           focusRing,
         )}
       >
@@ -199,7 +199,7 @@ export function AdminFilterLink({
            * (4.98:1). Same type, same size, only the role-correct colour.
            */
           <span
-            className={`tabular-nums ${active ? "text-accent-700" : "text-ink-500"}`}
+            className={`tabular-nums ${active ? "text-accent-400" : "text-ink-500"}`}
           >
             {count}
             <span className="sr-only"> ta</span>

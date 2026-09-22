@@ -85,7 +85,7 @@ export function MobileMenu({
         inert={!open ? true : undefined}
         data-state={open ? "open" : "closed"}
         onClick={() => onClose("backdrop")}
-        className="motion-layer motion-backdrop fixed inset-0 -z-10 h-dvh w-full cursor-default bg-ink-900/10 lg:hidden"
+        className="motion-layer motion-backdrop fixed inset-0 -z-10 h-dvh w-full cursor-default bg-[#020806]/60 backdrop-blur-[2px] lg:hidden"
       />
 
       <div
@@ -104,7 +104,7 @@ export function MobileMenu({
           aria-label="Mobil navigatsiya"
           className={cn(
             "motion-menu mx-auto flex w-full max-w-lg flex-col gap-1 rounded-2xl p-3",
-            "border border-ink-900/[0.06] bg-surface/95 shadow-raised backdrop-blur-xl",
+            "depth-floating border-white/10 shadow-raised",
             /*
              * The panel hangs below a 72px header and the page behind it is
              * scroll-locked, so on a short viewport (360x640, or any phone in
@@ -133,9 +133,9 @@ export function MobileMenu({
               prefetch={item.prefetch} // unbuilt routes stay inert (site.ts data)
               onClick={() => onClose("navigate")}
               className={cn(
-                "flex items-center justify-between rounded-lg px-3 py-2.5",
-                "text-lg font-medium text-ink-900 transition-colors duration-fast",
-                "hover:bg-ink-900/[0.045] active:bg-ink-900/[0.07]",
+                "flex items-center justify-between rounded-xl px-3 py-2.5",
+                "text-base font-medium text-ink-900 transition-colors duration-fast",
+                "hover:bg-white/[0.06] active:bg-white/[0.09]",
                 "outline-none focus-visible:ring-[length:var(--size-focus-ring)] focus-visible:ring-accent-600/35",
               )}
             >
@@ -147,7 +147,7 @@ export function MobileMenu({
             </Link>
           ))}
 
-          <hr className="my-2 border-line" />
+          <hr className="my-2 border-white/8" />
 
           <div className="flex flex-col gap-2 p-1">
             <ButtonLink

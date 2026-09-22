@@ -11,7 +11,7 @@ import { footerGroups } from "@/data/site";
  */
 export function Footer() {
   return (
-    <footer className="mt-18 border-t border-line bg-surface md:mt-26">
+    <footer className="mt-18 border-t border-white/[0.07] bg-[#0A1411] md:mt-26">
       <div className="site-container py-12 md:py-18">
         <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <div className="flex flex-col items-start gap-4 xl:col-span-2">
@@ -50,7 +50,7 @@ export function Footer() {
           ))}
         </div>
 
-        <div className="mt-12 flex flex-col gap-2 border-t border-line pt-4 text-sm text-ink-500 md:flex-row md:items-center md:justify-between">
+        <div className="mt-12 flex flex-col gap-2 border-t border-white/[0.07] pt-6 text-sm text-ink-500 md:flex-row md:items-center md:justify-between">
           <p>© {new Date().getFullYear()} USTOZ. Barcha huquqlar himoyalangan.</p>
           <p>O‘zbekiston — Toshkent</p>
         </div>

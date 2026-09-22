@@ -20,8 +20,8 @@ import { MobileMenu, type MobileMenuCloseReason } from "./mobile-menu";
 /* -------------------------------------------------------------------------- */
 
 const navLinkClass = cn(
-  "inline-flex items-center rounded-lg px-3 py-2 text-base font-medium",
-  "text-ink-700 transition-colors duration-fast hover:bg-ink-900/[0.045] hover:text-ink-900",
+  "inline-flex items-center rounded-lg px-3 py-2 text-[0.9375rem] font-medium tracking-[-0.01em]",
+  "text-ink-700 transition-colors duration-fast hover:bg-white/[0.06] hover:text-ink-900",
   "outline-none focus-visible:ring-[length:var(--size-focus-ring)] focus-visible:ring-accent-600/35",
 );
 
@@ -75,8 +75,8 @@ export function Header() {
             "transition-[background-color,border-color,box-shadow,backdrop-filter]",
             "duration-base sm:px-4",
             floating
-              ? "border border-ink-900/[0.06] bg-surface/75 shadow-md backdrop-blur-xl supports-[backdrop-filter]:bg-surface/65"
-              : "border border-transparent bg-transparent",
+              ? "depth-floating border-white/10 shadow-raised"
+              : "border border-white/[0.06] bg-surface/30 backdrop-blur-xl supports-[backdrop-filter]:bg-surface/28",
           )}
         >
           <Logo />

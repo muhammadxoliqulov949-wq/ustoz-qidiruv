@@ -18,7 +18,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#f7f7f5",
+  themeColor: "#070F0E",
   width: "device-width",
   initialScale: 1,
 };
@@ -38,10 +38,10 @@ export default function RootLayout({
      * in CSS stays the single source of truth for WHEN scrolling is smooth.
      */
     <html lang="uz" className="h-full" data-scroll-behavior="smooth">
-      <body className="flex min-h-full flex-col font-sans antialiased">
+      <body className="flex min-h-full flex-col bg-canvas font-sans text-ink-900 antialiased">
         <a
           href="#main"
-          className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[60] focus:rounded-lg focus:bg-surface focus:px-4 focus:py-2 focus:text-base focus:font-medium focus:shadow-raised"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[60] focus:rounded-lg focus:bg-surface focus:text-ink-900 focus:px-4 focus:py-2 focus:text-base focus:font-medium focus:shadow-raised"
         >
           Kontentga o‘tish
         </a>

@@ -29,7 +29,7 @@ export function QuickFilters({ filters, className }: QuickFiltersProps) {
       role="group"
       aria-label="Tezkor filtrlar"
       className={cn(
-        "flex flex-wrap items-center justify-center gap-2",
+        "flex flex-wrap items-center justify-start gap-2",
         className,
       )}
     >

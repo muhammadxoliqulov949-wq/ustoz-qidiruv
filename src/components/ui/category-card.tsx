@@ -35,11 +35,11 @@ export function CategoryCard({ category, courseCount, className }: CategoryCardP
       >
         <span
           aria-hidden="true"
-          className="grid size-12 place-items-center rounded-xl border border-accent-600/10 bg-accent-50 text-accent-700 shadow-sm [&>svg]:size-[23px] [&>svg]:stroke-[1.75]"
+          className="grid size-12 place-items-center rounded-xl border border-white/10 bg-white/[0.06] text-accent-400 shadow-sm backdrop-blur-sm [&>svg]:size-[23px] [&>svg]:stroke-[1.75]"
         >
           <Icon />
         </span>
-        <span className="text-lg leading-snug font-semibold text-ink-900">
+        <span className="text-[1.0625rem] leading-snug font-semibold tracking-[-0.015em] text-ink-900">
           {category.name}
         </span>
         {typeof courseCount === "number" ? (
