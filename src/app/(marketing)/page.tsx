@@ -44,8 +44,8 @@ import {
 
 export const dynamic = "force-dynamic";
 
-/** Row sizes the approved grid is balanced for: 6 course cards, 4 teachers. */
-const COURSE_PICKS = 6;
+/** Row sizes the approved grid is balanced for: 4 course cards, 4 teachers — matches 3-rasm reference (2×2 on tablet, 4 on xl). */
+const COURSE_PICKS = 4;
 const TEACHER_PICKS = 4;
 
 export default async function HomePage() {

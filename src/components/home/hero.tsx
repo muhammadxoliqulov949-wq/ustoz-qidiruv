@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Star } from "lucide-react";
 import { HeroSearch } from "./hero-search";
 import { QuickFilters } from "./quick-filters";
-import { hero, quickFilters } from "@/data/site";
+import { quickFilters } from "@/data/site";
 import type { Teacher } from "@/data/models";
 import { formatRating } from "@/lib/format";
 
@@ -13,41 +13,39 @@ export interface HeroProps {
 
 export function Hero({ teachers = [] }: HeroProps) {
   const preview = teachers.slice(0, 3);
-  const hasTeachers = preview.length >= 2;
+  const hasTeachers = preview.length >= 1;
 
   return (
     <section
       aria-labelledby="hero-title"
-      className="depth-canvas relative overflow-hidden pb-14 pt-[calc(var(--height-header)+2.2rem)] md:pb-18 md:pt-[calc(var(--height-header)+3.5rem)] lg:pb-20 lg:pt-[calc(var(--height-header)+4.2rem)]"
+      className="depth-canvas relative overflow-hidden pb-12 pt-[calc(var(--height-header)+1.8rem)] md:pb-16 md:pt-[calc(var(--height-header)+2.8rem)] lg:pb-20 lg:pt-[calc(var(--height-header)+3.2rem)]"
     >
-      {/* subtle Registan-like amber haze on right — reference has faint madrasa */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 -z-10"
+        className="pointer-events-none absolute inset-0 -z-10 opacity-[0.85]"
         style={{
           background:
-            "radial-gradient(780px 420px at 88% 18%, rgba(232,181,90,0.10), transparent 62%), radial-gradient(620px 380px at 62% 42%, rgba(16,146,90,0.16), transparent 68%)",
+            "radial-gradient(820px 420px at 92% 10%, rgba(232,181,90,0.12), transparent 62%), radial-gradient(700px 400px at 62% 42%, rgba(16,146,90,0.18), transparent 68%), radial-gradient(1100px 620px at 50% 108%, rgba(14,69,49,0.22), transparent 72%)",
         }}
       />
 
-      <div className="motion-hero-reveal site-container grid items-center gap-10 lg:grid-cols-[minmax(0,1.06fr)_minmax(24rem,0.92fr)] lg:gap-8 xl:gap-12">
-        {/* Left: copy + search */}
+      <div className="motion-hero-reveal site-container grid items-center gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:gap-8 xl:gap-10">
+        {/* Left */}
         <div className="flex flex-col items-start text-left">
           <p className="mb-4 inline-flex items-center gap-2 rounded-pill border border-white/10 bg-white/[0.06] px-3.5 py-1.5 text-[0.68rem] font-bold tracking-[0.16em] text-ink-500 uppercase backdrop-blur-sm">
             <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px_2px_rgba(16,185,129,0.6)]" aria-hidden="true" />
-            {hero.eyebrow}
+            Onlayn va offlayn ustozlar bazasi
           </p>
 
-          <h1
-            id="hero-title"
-            className="max-w-[14ch] text-[2.45rem] font-black tracking-[-0.05em] leading-[0.88] text-balance text-ink-900 sm:text-[3.15rem] lg:text-[3.85rem] xl:text-[4.05rem]"
-          >
-            <span className="block">Sizga</span>
-            <span className="block text-gradient">mos ustozni toping.</span>
+          <h1 id="hero-title" className="max-w-[14ch] font-black tracking-[-0.05em] leading-[0.88] text-balance">
+            <span className="block text-[0.85rem] font-bold tracking-[0.32em] text-ink-500 uppercase sm:text-[0.95rem]">ZAMONAVIY</span>
+            <span className="mt-2 block text-[2.55rem] text-ink-900 sm:text-[3.05rem] lg:text-[3.55rem] xl:text-[3.85rem]">USTOZNI</span>
+            <span className="block text-[2.55rem] text-ink-900 sm:text-[3.05rem] lg:text-[3.55rem] xl:text-[3.85rem]">TOPISHNING</span>
+            <span className="block text-gradient text-[2.55rem] sm:text-[3.05rem] lg:text-[3.55rem] xl:text-[3.85rem]">INNOVATSION YO&apos;LI</span>
           </h1>
 
-          <p className="mt-5 max-w-[44rem] text-[1.02rem] text-pretty leading-relaxed text-ink-500 sm:text-[1.08rem] md:leading-[1.65]">
-            {hero.subtitle}
+          <p className="mt-5 max-w-[36rem] text-[1.02rem] leading-relaxed text-pretty text-ink-500 sm:text-[1.08rem]">
+            Tajribali va malakali ustozlar bilan o&apos;zingiz istagan fan yoki ko&apos;nikmani o&apos;rganing — onlayn va offlayn formatlarda.
           </p>
 
           <div className="mt-8 flex w-full max-w-[44rem] flex-col gap-4">
@@ -55,155 +53,151 @@ export function Hero({ teachers = [] }: HeroProps) {
             <QuickFilters filters={quickFilters} />
           </div>
 
-          {/* bottom trust strip — like reference 10k/120+ etc but real, muted */}
-          <div className="mt-8 hidden w-full max-w-[44rem] items-center gap-6 border-t border-white/8 pt-5 text-sm md:flex">
-            <span className="inline-flex items-center gap-2 text-ink-500">
-              <span className="grid size-7 place-items-center rounded-full bg-white/6 border border-white/10 text-emerald-400">✓</span>
-              10,000+ o&apos;quvchi
+          <div className="mt-6 flex hidden w-full max-w-[44rem] items-center gap-3 border-t border-white/8 pt-4 text-xs text-ink-500 md:flex">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="size-1.5 rounded-full bg-emerald-400" />
+              10 000+ o&apos;quvchi ishonadi
             </span>
-            <span className="h-6 w-px bg-white/10" aria-hidden="true" />
-            <span className="inline-flex items-center gap-2 text-ink-500">120+ ustoz • 50+ kurs • 4.9 reyting</span>
+            <span className="h-3 w-px bg-white/10" />
+            <span>120+ faol ustoz • 4.9 o&apos;rtacha reyting</span>
           </div>
         </div>
 
-        {/* Right: floating teacher cards — reference has 3 overlapping */}
-        <div className="relative hidden lg:block" aria-hidden="true">
+        {/* Right: floating teacher cards */}
+        <div className="relative hidden min-h-[30rem] lg:block" aria-hidden="true">
           {hasTeachers ? (
-            <div className="relative mx-auto h-[28rem] w-full max-w-[36rem] select-none">
-              {/* curved light line behind */}
-              <div className="pointer-events-none absolute -top-6 right-6 h-[22rem] w-[22rem] rounded-full border border-emerald-400/14" />
-              <div className="pointer-events-none absolute -top-10 right-10 h-[26rem] w-[26rem] rounded-full border border-white/6" />
-              {/* script note like reference */}
-              <p className="pointer-events-none absolute -top-3 right-2 rotate-[-4deg] font-serif text-sm italic text-white/45">
+            <div className="relative mx-auto h-[32rem] w-full max-w-[38rem] select-none">
+              {/* decorative curved lines */}
+              <div className="pointer-events-none absolute -right-2 top-6 h-[24rem] w-[24rem] rounded-full border border-emerald-400/10" />
+              <div className="pointer-events-none absolute -right-6 top-2 h-[28rem] w-[28rem] rounded-full border border-white/[0.06]" />
+              <div className="pointer-events-none absolute left-6 top-10 h-[20rem] w-[20rem] rounded-full border border-amber-400/10" style={{ borderStyle: "dashed" }} />
+
+              <p className="pointer-events-none absolute -top-1 right-4 rotate-[-4deg] font-serif text-[13px] italic text-white/45">
                 &ldquo;Yaxshi ustoz — buyuk kelajak!&rdquo;
               </p>
 
-              {/* Card 1 */}
+              {/* Card 1 - top left tilted */}
               <Link
                 href={`/teachers/${preview[0]?.slug ?? ""}`}
-                className="absolute left-2 top-2 w-[18.5rem] overflow-hidden rounded-2xl border border-white/12 bg-surface shadow-raised transition-transform duration-300 hover:z-10 hover:scale-[1.02] focus:z-10 focus:outline-none focus:ring-2 focus:ring-accent-500/40"
-                style={{ transform: "rotate(-3.2deg)" }}
+                className="absolute left-0 top-3 w-[19.5rem] overflow-hidden rounded-2xl border border-white/12 bg-surface shadow-raised transition-transform duration-300 hover:z-10 hover:scale-[1.02] focus:z-10 focus:outline-none focus:ring-2 focus:ring-amber-400/30"
+                style={{ transform: "rotate(-3.5deg)" }}
               >
                 <div className="relative aspect-[4/3] w-full overflow-hidden bg-surface-muted">
                   {preview[0]?.photo ? (
-                    <Image
-                      src={preview[0].photo}
-                      alt={preview[0].name}
-                      fill
-                      sizes="300px"
-                      className="object-cover object-[center_18%]"
-                    />
+                    <Image src={preview[0].photo} alt={preview[0].name} fill sizes="320px" className="object-cover object-[center_18%]" />
                   ) : null}
-                  <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-pill border border-emerald-400/20 bg-emerald-500/15 px-2.5 py-1 text-xs font-semibold text-emerald-300 backdrop-blur-md">
-                    <span className="size-1.5 rounded-full bg-emerald-400" /> Hozir online
+                  <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-pill border border-emerald-400/20 bg-emerald-500/15 px-2.5 py-1 text-xs font-semibold text-emerald-300 backdrop-blur-md">
+                    <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_1px_rgba(16,185,129,0.8)]" /> Hozir online
                   </span>
+                  <span className="absolute bottom-2 right-2 rounded-pill bg-amber-500 px-2 py-1 text-[11px] font-bold text-amber-950 shadow-md">Top</span>
                 </div>
                 <div className="p-3.5">
-                  <p className="text-[0.95rem] font-semibold text-ink-900">{preview[0]?.name}</p>
-                  <p className="text-xs text-ink-500">{preview[0]?.specialization}</p>
+                  <p className="text-[0.98rem] font-semibold leading-none text-ink-900">{preview[0]?.name}</p>
+                  <p className="mt-1 text-xs text-ink-500">{preview[0]?.specialization}</p>
                   <div className="mt-2 flex flex-wrap gap-1">
                     {(preview[0]?.languages ?? []).slice(0, 3).map((l) => (
-                      <span key={l} className="rounded-pill bg-white/6 px-2 py-0.5 text-[10px] font-medium text-ink-700 border border-white/10">
+                      <span key={l} className="rounded-pill border border-white/10 bg-white/6 px-2 py-0.5 text-[10px] font-medium text-ink-700">
                         {l}
                       </span>
                     ))}
                   </div>
-                  <div className="mt-2 flex items-center gap-1 text-xs font-semibold text-ink-900">
+                  <div className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-ink-900">
                     <Star className="size-3.5 fill-amber-400 text-amber-400" />
                     {formatRating(preview[0]?.rating ?? 4.9)}
-                    <span className="font-normal text-ink-500">({preview[0]?.reviews ?? 320}+)</span>
+                    <span className="font-normal text-ink-500">({preview[0]?.reviews ?? 312} izoh)</span>
                   </div>
                 </div>
               </Link>
 
-              {/* Card 2 */}
+              {/* Card 2 - right */}
               {preview[1] && (
                 <Link
                   href={`/teachers/${preview[1].slug}`}
-                  className="absolute right-0 top-10 w-[17.5rem] overflow-hidden rounded-2xl border border-white/12 bg-surface shadow-raised transition-transform duration-300 hover:z-10 hover:scale-[1.02] focus:z-10 focus:outline-none focus:ring-2 focus:ring-accent-500/40"
-                  style={{ transform: "rotate(3.6deg)" }}
+                  className="absolute right-1 top-[5.5rem] w-[18rem] overflow-hidden rounded-2xl border border-white/12 bg-surface shadow-raised transition-transform duration-300 hover:z-10 hover:scale-[1.02]"
+                  style={{ transform: "rotate(3.2deg)" }}
                 >
                   <div className="relative aspect-[4/3] w-full overflow-hidden bg-surface-muted">
-                    <Image src={preview[1].photo ?? ""} alt={preview[1].name} fill sizes="280px" className="object-cover object-[center_18%]" />
-                    <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-pill border border-emerald-400/20 bg-emerald-500/15 px-2.5 py-1 text-xs font-semibold text-emerald-300 backdrop-blur-md">
+                    <Image src={preview[1].photo ?? ""} alt={preview[1].name} fill sizes="290px" className="object-cover object-[center_18%]" />
+                    <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-pill border border-emerald-400/20 bg-emerald-500/15 px-2.5 py-1 text-xs font-semibold text-emerald-300 backdrop-blur-md">
                       <span className="size-1.5 rounded-full bg-emerald-400" /> Hozir online
                     </span>
                   </div>
                   <div className="p-3.5">
-                    <p className="text-[0.95rem] font-semibold text-ink-900">{preview[1].name}</p>
-                    <p className="text-xs text-ink-500">{preview[1].specialization}</p>
+                    <p className="text-[0.98rem] font-semibold leading-none text-ink-900">{preview[1].name}</p>
+                    <p className="mt-1 text-xs text-ink-500">{preview[1].specialization}</p>
                     <div className="mt-2 flex flex-wrap gap-1">
                       {(preview[1].languages ?? []).slice(0, 3).map((l) => (
-                        <span key={l} className="rounded-pill bg-white/6 px-2 py-0.5 text-[10px] font-medium text-ink-700 border border-white/10">
+                        <span key={l} className="rounded-pill border border-white/10 bg-white/6 px-2 py-0.5 text-[10px] font-medium text-ink-700">
                           {l}
                         </span>
                       ))}
                     </div>
-                    <div className="mt-2 flex items-center gap-1 text-xs font-semibold text-ink-900">
+                    <div className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-ink-900">
                       <Star className="size-3.5 fill-amber-400 text-amber-400" />
-                      {formatRating(preview[1].rating)} <span className="font-normal text-ink-500">({preview[1].reviews}+)</span>
+                      {formatRating(preview[1].rating)} <span className="font-normal text-ink-500">({preview[1].reviews} izoh)</span>
                     </div>
                   </div>
                 </Link>
               )}
 
-              {/* Card 3 */}
+              {/* Card 3 - bottom left */}
               {preview[2] && (
                 <Link
                   href={`/teachers/${preview[2].slug}`}
-                  className="absolute bottom-6 left-14 w-[18rem] overflow-hidden rounded-2xl border border-white/12 bg-surface shadow-raised transition-transform duration-300 hover:z-10 hover:scale-[1.02] focus:z-10 focus:outline-none focus:ring-2 focus:ring-accent-500/40"
-                  style={{ transform: "rotate(-2.4deg)" }}
+                  className="absolute bottom-10 left-8 w-[19rem] overflow-hidden rounded-2xl border border-white/12 bg-surface shadow-raised transition-transform duration-300 hover:z-10 hover:scale-[1.02]"
+                  style={{ transform: "rotate(-2.2deg)" }}
                 >
                   <div className="relative aspect-[4/3] w-full overflow-hidden bg-surface-muted">
-                    <Image src={preview[2].photo ?? ""} alt={preview[2].name} fill sizes="290px" className="object-cover object-[center_18%]" />
-                    <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-pill border border-emerald-400/20 bg-emerald-500/15 px-2.5 py-1 text-xs font-semibold text-emerald-300 backdrop-blur-md">
+                    <Image src={preview[2].photo ?? ""} alt={preview[2].name} fill sizes="300px" className="object-cover object-[center_18%]" />
+                    <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-pill border border-emerald-400/20 bg-emerald-500/15 px-2.5 py-1 text-xs font-semibold text-emerald-300 backdrop-blur-md">
                       <span className="size-1.5 rounded-full bg-emerald-400" /> Hozir online
                     </span>
                   </div>
                   <div className="p-3.5">
-                    <p className="text-[0.95rem] font-semibold text-ink-900">{preview[2].name}</p>
-                    <p className="text-xs text-ink-500">{preview[2].specialization}</p>
+                    <p className="text-[0.98rem] font-semibold leading-none text-ink-900">{preview[2].name}</p>
+                    <p className="mt-1 text-xs text-ink-500">{preview[2].specialization}</p>
                     <div className="mt-2 flex flex-wrap gap-1">
                       {(preview[2].languages ?? []).slice(0, 3).map((l) => (
-                        <span key={l} className="rounded-pill bg-white/6 px-2 py-0.5 text-[10px] font-medium text-ink-700 border border-white/10">
+                        <span key={l} className="rounded-pill border border-white/10 bg-white/6 px-2 py-0.5 text-[10px] font-medium text-ink-700">
                           {l}
                         </span>
                       ))}
                     </div>
-                    <div className="mt-2 flex items-center gap-1 text-xs font-semibold text-ink-900">
+                    <div className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-ink-900">
                       <Star className="size-3.5 fill-amber-400 text-amber-400" />
-                      {formatRating(preview[2].rating)} <span className="font-normal text-ink-500">({preview[2].reviews}+)</span>
+                      {formatRating(preview[2].rating)} <span className="font-normal text-ink-500">({preview[2].reviews} izoh)</span>
                     </div>
                   </div>
                 </Link>
               )}
 
               {/* 120+ badge */}
-              <div className="absolute bottom-0 right-2 flex items-center gap-2 rounded-xl border border-white/12 bg-white/6 px-3.5 py-2.5 backdrop-blur-md">
-                <span className="grid size-8 place-items-center rounded-lg bg-white/8 text-ink-400">👥</span>
+              <div className="absolute bottom-0 right-3 flex items-center gap-2.5 rounded-xl border border-white/12 bg-white/8 px-3.5 py-2.5 backdrop-blur-md">
+                <span className="grid size-8 place-items-center rounded-lg bg-white/10 text-ink-300">👥</span>
                 <div>
-                  <p className="text-sm font-bold text-ink-900">120+ </p>
-                  <p className="text-xs text-ink-500">Faol ustozlar</p>
+                  <p className="text-sm font-bold leading-none text-ink-900">120+</p>
+                  <p className="text-xs leading-none text-ink-500">Faol ustozlar</p>
                 </div>
               </div>
 
-              <p className="pointer-events-none absolute -bottom-4 right-10 rotate-[-3deg] font-serif text-sm italic text-white/40">
-                Bilim chegarasiz
-              </p>
+              <p className="pointer-events-none absolute -bottom-3 right-10 rotate-[-3deg] font-serif text-sm italic text-white/35">Bilim chegarasiz</p>
             </div>
           ) : (
             <div className="hero-depth-object" aria-hidden="true">
               <span className="hero-depth-mark">U</span>
-              <span className="absolute right-5 bottom-5 z-[3] rounded-pill border border-white/12 bg-white/[0.08] px-4 py-2 text-sm font-semibold text-ink-900 shadow-sm backdrop-blur-md">
-                Bilimga yaqinroq
-              </span>
-              <span className="absolute left-6 top-6 z-[3] inline-flex items-center gap-1.5 rounded-pill border border-amber-400/20 bg-amber-50 px-3 py-1.5 text-xs font-semibold tracking-wide text-amber-400">
-                <span className="size-1.5 rounded-full bg-amber-400" /> Offline & Online
-              </span>
             </div>
           )}
         </div>
       </div>
+
+      {/* faint Registan-like silhouette at bottom edge — very subtle */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-24 opacity-[0.06]"
+        style={{
+          background: "linear-gradient(to top, rgba(232,181,90,0.2), transparent)",
+        }}
+      />
     </section>
   );
 }
