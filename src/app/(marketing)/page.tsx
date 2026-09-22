@@ -71,7 +71,7 @@ export default async function HomePage() {
 
   return (
     <>
-      <Hero />
+      <Hero teachers={teachers} />
       <PopularCategories courseCounts={courseCounts} />
       <RecommendedCourses courses={courses} />
       <FormatEditorial />

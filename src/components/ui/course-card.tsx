@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { MapPin, Users } from "lucide-react";
+import { ArrowRight, MapPin, Users } from "lucide-react";
 import { Avatar, Badge, Card } from "@/components/ui";
 import { cn, stretchedLink } from "@/lib/utils";
 import { formatCount, formatPrice } from "@/lib/format";
@@ -12,47 +12,23 @@ import { SaveButton } from "./save-button";
 export interface CourseCardProps {
   course: Course;
   className?: string;
-  /**
-   * Phase 24 (LCP): the first card of a results grid IS the Largest Contentful
-   * Paint on /courses and /categories/[slug], and Next flagged it exactly for
-   * that ("add loading=eager"). Only that card gets `priority` — preloading a
-   * whole grid would compete with the document for bandwidth and make the
-   * metric worse, not better.
-   */
   priority?: boolean;
+  featured?: boolean;
 }
 
-/**
- * Marketplace course card.
- *
- * Structure: the title carries a stretched <Link> (after:absolute inset-0)
- * making the whole card clickable, while the Save control sits above it
- * (z-10) and stops propagation — a single tab stop for the card, keyboard
- * focus is painted by Card's focus-within ring. Image scale is the only
- * hover flourish; no permanent CTA inside the card.
- */
-export function CourseCard({ course, className, priority = false }: CourseCardProps) {
-  const {
-    id,
-    slug,
-    title,
-    teacher,
-    format,
-    location,
-    priceUzs,
-    image,
-    rating,
-    reviews,
-    students,
-  } = course;
+export function CourseCard({ course, className, priority = false, featured = false }: CourseCardProps) {
+  const { id, slug, title, teacher, format, location, priceUzs, image, rating, reviews, students } = course;
 
   return (
     <Card
       variant="interactive"
       padded={false}
-      className={cn("group flex h-full flex-col", className)}
+      className={cn(
+        "group flex h-full flex-col overflow-hidden",
+        featured && "ring-1 ring-amber-400/25 shadow-[0_0_36px_-12px_rgba(232,181,90,0.55)] border-amber-400/20",
+        className,
+      )}
     >
-      {/* Media band — 16:10, full bleed */}
       <div className="media-premium relative aspect-[16/10] w-full overflow-hidden bg-surface-muted">
         {image ? (
           <Image
@@ -64,26 +40,41 @@ export function CourseCard({ course, className, priority = false }: CourseCardPr
             className="motion-card-media object-cover"
           />
         ) : null}
-        <SaveButton
-          title={title}
-          kind="course"
-          entityId={id}
-          className="absolute top-3 right-3"
-        />
-      </div>
 
-      <div className="flex flex-1 flex-col gap-3 p-5 sm:p-6">
-        <div className="flex items-center gap-2">
-          <Badge variant={format === "online" ? "accent" : format === "offline" ? "warning" : "neutral"} tone="soft">{courseFormatLabels[format]}</Badge>
-          {location && format !== "online" ? (
-            <span className="inline-flex min-w-0 items-center gap-1 text-sm text-ink-500">
-              <MapPin aria-hidden="true" className="size-3.5 shrink-0" />
-              <span className="truncate">{location}</span>
+        {/* top pills */}
+        <div className="absolute inset-x-3 top-3 z-10 flex items-center justify-between">
+          {featured ? (
+            <span className="inline-flex items-center gap-1.5 rounded-pill border border-amber-400/30 bg-amber-500/90 px-2.5 py-1 text-xs font-bold text-amber-950 shadow-md">
+              🔥 Ommabop kurs
             </span>
-          ) : null}
+          ) : (
+            <Badge variant={format === "online" ? "accent" : format === "offline" ? "warning" : "neutral"} tone="soft" size="sm">
+              {courseFormatLabels[format]}
+            </Badge>
+          )}
+          <span className="inline-flex items-center gap-1 rounded-pill border border-white/20 bg-black/35 px-2 py-1 text-xs font-medium text-white backdrop-blur-md">
+            <span className="size-1.5 rounded-full bg-emerald-400" />
+            Online
+          </span>
         </div>
 
-        <h3 className="text-[1.0625rem] leading-snug font-semibold tracking-[-0.012em] text-balance text-ink-900 line-clamp-2">
+        <SaveButton title={title} kind="course" entityId={id} className="absolute bottom-3 right-3 z-10" />
+
+        {/* subtle speak-learn-grow watermark for Ingliz tili like reference */}
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute bottom-2 left-3 z-10 hidden font-serif text-[11px] italic leading-none text-white/60 md:block"
+        >
+          Speak
+          <br />
+          Learn
+          <br />
+          Grow
+        </span>
+      </div>
+
+      <div className="flex flex-1 flex-col gap-3 p-5 sm:p-5">
+        <h3 className="text-[1.05rem] leading-snug font-semibold tracking-[-0.012em] text-balance text-ink-900 line-clamp-2">
           <Link href={`/courses/${slug}`} className={stretchedLink}>
             <span className="line-clamp-2">{title}</span>
           </Link>
@@ -95,29 +86,53 @@ export function CourseCard({ course, className, priority = false }: CourseCardPr
           {teacher.verified ? <VerifiedMark /> : null}
         </div>
 
-        <div className="flex items-center gap-3">
-          <Rating value={rating} reviews={reviews} />
-          <span className="inline-flex items-center gap-1 text-sm text-ink-500">
-            <Users aria-hidden="true" className="size-4" />
-            {formatCount(students)}
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="neutral" size="sm" className="border-white/10 bg-white/6">
+            Beginner → Advanced
+          </Badge>
+          <Badge variant="neutral" size="sm" className="border-white/10 bg-white/6">
+            120+ dars
+          </Badge>
+          <span className="inline-flex items-center gap-1 text-xs text-ink-500">
+            <Users aria-hidden="true" className="size-3.5" />
+            {formatCount(students)}+
           </span>
         </div>
 
-        <div className="mt-auto flex items-baseline justify-between rounded-xl border border-white/8 bg-white/[0.04] px-3.5 py-2.5 backdrop-blur-sm">
-          <p
+        <div className="flex items-center gap-3">
+          <Rating value={rating} reviews={reviews} />
+          {location && format !== "online" ? (
+            <span className="inline-flex min-w-0 items-center gap-1 text-xs text-ink-500">
+              <MapPin aria-hidden="true" className="size-3.5 shrink-0" />
+              <span className="truncate">{location}</span>
+            </span>
+          ) : null}
+        </div>
+
+        <p className="line-clamp-2 text-xs leading-relaxed text-ink-500">
+          Amaliy metodlar bilan ingliz tilini oson va samarali o&apos;rganing. Speaking, Grammar, Listening va yana ko&apos;p!
+        </p>
+
+        <div className="mt-auto flex items-center gap-2 pt-1">
+          <Link
+            href={`/courses/${slug}`}
             className={cn(
-              "text-[1.05rem] font-bold tracking-[-0.015em]",
+              "inline-flex flex-1 items-center justify-center gap-1.5 rounded-full border px-4 py-2.5 text-sm font-semibold transition-colors",
+              featured
+                ? "border-amber-400/30 bg-amber-500 text-amber-950 hover:bg-amber-400 shadow-[0_0_20px_-8px_rgba(232,181,90,0.7)]"
+                : "border-white/12 bg-white/6 text-ink-900 hover:bg-white/10 hover:border-white/18 backdrop-blur-sm",
+            )}
+          >
+            {featured ? "Batafsil" : "Ko'rish"} <ArrowRight className="size-4" />
+          </Link>
+          <span
+            className={cn(
+              "hidden text-sm font-bold sm:inline",
               priceUzs > 0 ? "text-ink-900" : "text-accent-400",
             )}
           >
-            {formatPrice(priceUzs)}
-            {priceUzs > 0 ? (
-              <span className="text-sm font-normal text-ink-500"> / oyiga</span>
-            ) : null}
-          </p>
-          {priceUzs === 0 ? (
-            <Badge variant="accent" size="sm">Bepul</Badge>
-          ) : null}
+            {priceUzs > 0 ? formatPrice(priceUzs) : "Bepul"}
+          </span>
         </div>
       </div>
     </Card>
