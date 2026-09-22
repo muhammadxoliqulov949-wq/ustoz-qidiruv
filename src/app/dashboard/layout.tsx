@@ -57,11 +57,11 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   ]);
   return (
     <OnboardingProvider>
-      <div className="site-container py-8 lg:py-12">
+      <div className="depth-canvas site-container py-8 lg:py-12">
         <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[16rem_minmax(0,1fr)] lg:items-start lg:gap-10">
           {/* ------------------------------ sidebar ------------------------------ */}
           <div className="flex flex-col gap-5 lg:sticky lg:top-28">
-            <div className="rounded-xl border border-line bg-surface p-4 shadow-xs">
+            <div className="depth-featured rounded-xl p-4">
               <DashboardIdentity
                 name={profile?.name ?? ""}
                 onboardingCompleted={profile?.onboardingCompleted ?? false}

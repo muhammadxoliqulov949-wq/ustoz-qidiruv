@@ -73,7 +73,7 @@ export function TeacherOverviewPanels({ directory, demoEnabled = false }: { dire
               </h2>
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 {stats.map((stat) => (
-                  <Card key={stat.label} className="flex flex-col gap-1">
+                  <Card key={stat.label} className="metric-card flex flex-col gap-1">
                     <p className="text-sm font-medium text-ink-500">{stat.label}</p>
                     <p className="text-2xl font-semibold text-ink-900">{stat.value}</p>
                     <p className="text-sm text-ink-500">{stat.hint}</p>
@@ -83,7 +83,7 @@ export function TeacherOverviewPanels({ directory, demoEnabled = false }: { dire
             </section>
 
             <section aria-labelledby="tw-next">
-              <Card className="flex flex-col gap-2">
+              <Card className="depth-featured flex flex-col gap-2">
                 <Badge variant="accent">Tavsiya etilgan qadam</Badge>
                 <h2 id="tw-next" className="text-xl font-semibold text-ink-900">
                   {nextAction.title}

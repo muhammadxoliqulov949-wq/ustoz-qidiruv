@@ -163,7 +163,7 @@ export default async function CourseDetailPage({
           {/* ------------------------------------------------------------ */}
           {/* Left column: identity + media + sections                     */}
           {/* ------------------------------------------------------------ */}
-          <div className="min-w-0">
+          <div className="detail-hero min-w-0 p-5 sm:p-7 lg:p-8">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="neutral">{courseFormatLabels[course.format]}</Badge>
               {course.location && course.format !== "online" ? (
@@ -209,7 +209,7 @@ export default async function CourseDetailPage({
             </div>
 
             {course.image ? (
-              <div className="relative mt-7 aspect-[16/9] w-full overflow-hidden rounded-xl border border-line bg-surface-muted sm:aspect-[2/1]">
+              <div className="media-premium relative mt-7 aspect-[16/9] w-full overflow-hidden rounded-2xl border border-accent-600/10 bg-surface-muted shadow-md sm:aspect-[2/1]">
                 <Image
                   src={course.image}
                   alt={`${course.title} — kurs muhiti`}
@@ -270,7 +270,7 @@ export default async function CourseDetailPage({
                   </div>
                 </div>
 
-                <dl className="mt-8 grid grid-cols-2 gap-x-6 gap-y-4 rounded-xl border border-line bg-surface p-5 text-sm shadow-xs sm:grid-cols-4 sm:p-6">
+                <dl className="depth-card mt-8 grid grid-cols-2 gap-x-6 gap-y-4 rounded-2xl border p-5 text-sm sm:grid-cols-4 sm:p-6">
                   <div>
                     <dt className="text-ink-500">Daraja</dt>
                     <dd className="mt-0.5 font-medium text-ink-900">

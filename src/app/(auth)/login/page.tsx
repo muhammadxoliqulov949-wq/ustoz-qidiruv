@@ -44,6 +44,7 @@ export default async function LoginPage({
     <AuthPage
       title="Hisobingizga kiring"
       intro="Google yoki emailingiz bilan kiring. Telefon orqali ochilgan mavjud hisoblar ham qo‘llab-quvvatlanadi."
+      width="medium"
     >
       <LoginForm initialNext={next} initialError={error} />
     </AuthPage>

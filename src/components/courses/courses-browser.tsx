@@ -172,7 +172,7 @@ export function CoursesBrowser({
   };
 
   return (
-    <div className="site-container flex flex-col gap-8 pb-18 pt-14 md:gap-10 md:pb-26 md:pt-18">
+    <div className="depth-canvas site-container flex flex-col gap-8 pb-18 pt-14 md:gap-10 md:pb-26 md:pt-18">
       {/* Page opener + search */}
       <div className="flex flex-col gap-2">
         {breadcrumb}

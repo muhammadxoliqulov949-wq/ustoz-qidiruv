@@ -37,7 +37,7 @@ export function TeacherCard({ teacher, className }: TeacherCardProps) {
       padded={false}
       className={cn("group flex h-full flex-col", className)}
     >
-      <div className="relative aspect-[5/4] w-full overflow-hidden bg-surface-muted">
+      <div className="media-premium relative aspect-[5/4] w-full overflow-hidden bg-surface-muted">
         {photo ? (
           <Image
             src={photo}
@@ -49,7 +49,7 @@ export function TeacherCard({ teacher, className }: TeacherCardProps) {
         ) : null}
       </div>
 
-      <div className="flex flex-1 flex-col gap-1.5 p-6">
+      <div className="flex flex-1 flex-col gap-2 p-5 sm:p-6">
         <div className="flex items-center gap-1.5">
           <h3 className="text-lg leading-snug font-semibold text-ink-900">
             <Link href={`/teachers/${slug}`} className={stretchedLink}>
@@ -68,7 +68,7 @@ export function TeacherCard({ teacher, className }: TeacherCardProps) {
           </span>
         </div>
 
-        <div className="mt-auto flex flex-wrap items-center gap-1.5 border-t border-line pt-3.5">
+        <div className="mt-auto flex flex-wrap items-center gap-1.5 rounded-lg bg-surface-warm px-3 py-2.5">
           {languages.map((lang) => (
             <Badge key={lang} variant="neutral" size="sm">
               {lang}

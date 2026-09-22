@@ -31,7 +31,7 @@ function StatCard({
   icon: typeof Heart;
 }) {
   return (
-    <Card variant="interactive" className="relative flex flex-col gap-1">
+    <Card variant="interactive" className="metric-card relative flex flex-col gap-1">
       <p className="flex items-center gap-2 text-sm font-medium text-ink-500">
         <Icon aria-hidden="true" className="size-4 shrink-0" />
         {label}
@@ -148,7 +148,7 @@ export function OverviewPanels({ catalog }: { catalog: DashCatalog }) {
 
       {/* --------------------------- next action ---------------------------- */}
       <section aria-labelledby="dash-next">
-        <Card className="flex flex-col gap-2">
+        <Card className="depth-featured flex flex-col gap-2">
           <Badge variant="accent">Tavsiya etilgan qadam</Badge>
           <h2 id="dash-next" className="text-xl font-semibold text-ink-900">
             {nextAction.title}

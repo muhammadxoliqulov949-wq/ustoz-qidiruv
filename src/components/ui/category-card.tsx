@@ -29,17 +29,17 @@ export function CategoryCard({ category, courseCount, className }: CategoryCardP
       <Link
         href={`/categories/${category.slug}`}
         className={cn(
-          "flex h-full flex-col items-center justify-center gap-3 px-4 py-7 text-center",
+          "flex h-full flex-col items-start justify-center gap-3 px-5 py-7 text-left",
           stretchedLink,
         )}
       >
         <span
           aria-hidden="true"
-          className="grid size-11 place-items-center rounded-lg bg-accent-50 text-accent-700 [&>svg]:size-[22px] [&>svg]:stroke-[1.75]"
+          className="grid size-12 place-items-center rounded-xl border border-accent-600/10 bg-accent-50 text-accent-700 shadow-sm [&>svg]:size-[23px] [&>svg]:stroke-[1.75]"
         >
           <Icon />
         </span>
-        <span className="text-base leading-snug font-medium text-ink-900">
+        <span className="text-lg leading-snug font-semibold text-ink-900">
           {category.name}
         </span>
         {typeof courseCount === "number" ? (

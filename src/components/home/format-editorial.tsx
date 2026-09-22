@@ -25,8 +25,8 @@ export function FormatEditorial() {
         {formatEditorial.items.map((item) => {
           const Icon = formatIcons[item.id as "online" | "offline"];
           return (
-            <Card key={item.id} variant="quiet" padded={false}>
-              <div className="flex h-full flex-col gap-4 p-12">
+            <Card key={item.id} variant="quiet" padded={false} className="overflow-hidden border border-accent-600/10">
+              <div className="flex h-full flex-col gap-4 p-8 sm:p-10 lg:p-12">
                 <span
                   aria-hidden="true"
                   className="grid size-12 place-items-center rounded-xl bg-surface text-accent-700 shadow-xs [&>svg]:size-6 [&>svg]:stroke-[1.75]"

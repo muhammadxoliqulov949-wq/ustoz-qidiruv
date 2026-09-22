@@ -107,8 +107,8 @@ export default async function TeacherProfilePage({
       {/* --------------------------------------------------------------- */}
       {/* Profile hero                                                      */}
       {/* --------------------------------------------------------------- */}
-      <header className="grid gap-8 md:grid-cols-[15rem_minmax(0,1fr)] lg:gap-10">
-        <div className="relative mx-auto aspect-[4/5] w-full max-w-[15rem] overflow-hidden rounded-xl border border-line bg-surface-muted md:mx-0">
+      <header className="detail-hero grid gap-8 p-5 sm:p-7 md:grid-cols-[15rem_minmax(0,1fr)] lg:gap-10 lg:p-8">
+        <div className="media-premium relative mx-auto aspect-[4/5] w-full max-w-[15rem] overflow-hidden rounded-2xl border border-accent-600/10 bg-surface-muted shadow-md md:mx-0">
           {teacher.photo ? (
             <Image
               src={teacher.photo}
@@ -165,7 +165,7 @@ export default async function TeacherProfilePage({
             ) : null}
           </div>
 
-          <dl className="mt-6 grid max-w-xl grid-cols-3 gap-x-6 rounded-xl border border-line bg-surface p-4 text-sm shadow-xs sm:p-5">
+          <dl className="depth-card mt-6 grid max-w-xl grid-cols-3 gap-x-6 rounded-2xl border p-4 text-sm sm:p-5">
             <div>
               <dt className="text-ink-500">Tajriba</dt>
               <dd className="mt-0.5 font-semibold text-ink-900">

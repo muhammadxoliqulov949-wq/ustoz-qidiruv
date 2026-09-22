@@ -20,7 +20,7 @@ export function Section({ id, ariaLabelledby, className, children }: SectionProp
     <section
       id={id}
       aria-labelledby={ariaLabelledby}
-      className={cn("site-container pt-18 md:pt-26", className)}
+      className={cn("visual-section site-container px-5 pt-18 md:px-8 md:pt-26 xl:px-10", className)}
     >
       {children}
     </section>

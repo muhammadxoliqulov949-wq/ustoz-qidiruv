@@ -43,7 +43,7 @@ export function CourseTeacher({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-line bg-surface shadow-xs sm:grid sm:grid-cols-[15rem_1fr]">
+    <div className="depth-card overflow-hidden rounded-2xl border sm:grid sm:grid-cols-[15rem_1fr]">
       <div className="relative aspect-[4/5] sm:aspect-auto">
         {teacher.photo ? (
           <Image

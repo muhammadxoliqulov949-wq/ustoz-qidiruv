@@ -53,7 +53,7 @@ export function CourseCard({ course, className, priority = false }: CourseCardPr
       className={cn("group flex h-full flex-col", className)}
     >
       {/* Media band — 16:10, full bleed */}
-      <div className="relative aspect-[16/10] w-full overflow-hidden bg-surface-muted">
+      <div className="media-premium relative aspect-[16/10] w-full overflow-hidden bg-surface-muted">
         {image ? (
           <Image
             src={image}
@@ -72,7 +72,7 @@ export function CourseCard({ course, className, priority = false }: CourseCardPr
         />
       </div>
 
-      <div className="flex flex-1 flex-col gap-3 p-6">
+      <div className="flex flex-1 flex-col gap-3 p-5 sm:p-6">
         <div className="flex items-center gap-2">
           <Badge variant="neutral">{courseFormatLabels[format]}</Badge>
           {location && format !== "online" ? (
@@ -103,7 +103,7 @@ export function CourseCard({ course, className, priority = false }: CourseCardPr
           </span>
         </div>
 
-        <div className="mt-auto flex items-baseline justify-between border-t border-line pt-3.5">
+        <div className="mt-auto flex items-baseline justify-between rounded-lg bg-accent-50/70 px-3 py-2.5">
           <p
             className={cn(
               "text-lg font-semibold",

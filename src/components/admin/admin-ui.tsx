@@ -144,7 +144,7 @@ export function AdminPanel({
   return (
     <section
       className={cn(
-        "flex flex-col gap-4 rounded-xl border border-line bg-surface p-5 shadow-xs md:p-6",
+        "depth-card flex flex-col gap-4 rounded-xl border p-5 md:p-6",
         className,
       )}
     >
