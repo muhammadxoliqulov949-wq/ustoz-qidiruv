@@ -49,14 +49,15 @@ export function SectionHeader({
         )}
       >
         {eyebrow ? (
-          <p className="text-sm font-semibold tracking-[0.08em] text-accent-600 uppercase">
+          <p className="inline-flex items-center gap-2 text-xs font-bold tracking-[0.14em] text-accent-400 uppercase">
+            <span className="size-1 rounded-full bg-accent-400 shadow-[0_0_8px_1px_rgb(46_191_122/0.6)]" aria-hidden="true" />
             {eyebrow}
           </p>
         ) : null}
         <Tag
           className={cn(
-            "font-semibold tracking-[-0.015em] text-balance text-ink-900",
-            Tag === "h2" ? "text-2xl md:text-3xl" : "text-xl md:text-2xl",
+            "font-bold tracking-[-0.02em] text-balance text-ink-900",
+            Tag === "h2" ? "text-[1.65rem] md:text-[1.85rem]" : "text-xl md:text-2xl",
           )}
         >
           {title}

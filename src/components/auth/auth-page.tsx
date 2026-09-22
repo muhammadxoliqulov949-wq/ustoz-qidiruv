@@ -14,7 +14,7 @@ export function PrototypeNotice({ className }: { className?: string }) {
   return (
     <p
       className={cn(
-        "flex items-start gap-2 rounded-lg border border-line bg-surface-muted px-3.5 py-2.5",
+        "flex items-start gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2.5 backdrop-blur-sm",
         "text-sm text-ink-500",
         className,
       )}
@@ -43,10 +43,10 @@ export interface AuthPageProps {
 
 export function AuthPage({ title, intro, children, width = "narrow" }: AuthPageProps) {
   return (
-    <div className="depth-canvas site-container py-14 sm:py-18 lg:py-24">
+    <div className="depth-canvas min-h-[calc(100dvh-var(--height-header)-8rem)] site-container py-10 sm:py-14 lg:py-20">
       <div
         className={cn(
-          "depth-featured mx-auto flex w-full flex-col gap-6 rounded-3xl p-6 sm:p-8",
+          "depth-featured mx-auto flex w-full flex-col gap-6 rounded-3xl p-6 sm:p-8 border border-white/10",
           width === "narrow"
             ? "max-w-[26rem]"
             : width === "medium"
@@ -54,8 +54,8 @@ export function AuthPage({ title, intro, children, width = "narrow" }: AuthPageP
               : "max-w-[46rem]",
         )}
       >
-        <header className="flex flex-col gap-2">
-          <h1 className="text-3xl font-semibold tracking-tight text-ink-900 sm:text-4xl">
+        <header className="flex flex-col gap-2.5">
+          <h1 className="text-[1.7rem] font-bold tracking-[-0.025em] text-ink-900 sm:text-[2rem] leading-[1.05]">
             {title}
           </h1>
           {intro ? (

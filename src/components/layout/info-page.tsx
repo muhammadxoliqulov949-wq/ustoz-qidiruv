@@ -22,19 +22,19 @@ export function InfoPage({
   children: ReactNode;
 }) {
   return (
-    <div className="site-container flex flex-col gap-10 pb-18 pt-14 md:gap-12 md:pb-26 md:pt-18">
-      <div className="flex flex-col gap-2">
-        <p className="text-sm font-semibold tracking-[0.08em] text-accent-600 uppercase">
+    <div className="depth-canvas site-container flex flex-col gap-10 pb-18 pt-14 md:gap-12 md:pb-26 md:pt-18">
+      <div className="flex flex-col gap-3">
+        <p className="inline-flex items-center gap-2 text-xs font-bold tracking-[0.14em] text-accent-400 uppercase">
           {eyebrow}
         </p>
-        <h1 className="text-4xl font-semibold tracking-[-0.02em] text-balance text-ink-900 md:text-5xl">
+        <h1 className="text-4xl font-bold tracking-[-0.03em] text-balance text-ink-900 md:text-5xl leading-[0.95]">
           {title}
         </h1>
         <p className="max-w-2xl text-base text-pretty text-ink-500 md:text-lg">
           {intro}
         </p>
       </div>
-      <div className="flex max-w-3xl flex-col gap-12 md:gap-14">{children}</div>
+      <div className="flex max-w-3xl flex-col gap-10 md:gap-12">{children}</div>
     </div>
   );
 }
@@ -68,7 +68,7 @@ export function InfoLink({ href, children }: { href: string; children: ReactNode
   return (
     <Link
       href={href}
-      className="font-medium text-accent-700 underline underline-offset-2 transition-colors duration-fast hover:text-accent-600 focus-visible:ring-[length:var(--size-focus-ring)] focus-visible:ring-accent-600/35 focus-visible:outline-none"
+      className="font-medium text-accent-400 underline underline-offset-2 decoration-accent-600/30 transition-colors duration-fast hover:text-accent-600 focus-visible:ring-[length:var(--size-focus-ring)] focus-visible:ring-accent-600/35 focus-visible:outline-none"
     >
       {children}
     </Link>

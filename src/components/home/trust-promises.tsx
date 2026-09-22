@@ -20,10 +20,10 @@ export function TrustPromises() {
         {trustPromises.items.map((item) => {
           const Icon = trustIcons[item.icon as TrustIconKey];
           return (
-            <li key={item.id} className="depth-quiet flex flex-col gap-3 rounded-2xl p-5">
+            <li key={item.id} className="depth-quiet flex flex-col gap-3 rounded-2xl p-5 hover:border-white/12 transition-colors duration-300">
               <span
                 aria-hidden="true"
-                className="grid size-11 place-items-center rounded-xl bg-accent-50 text-accent-700 shadow-sm [&>svg]:size-5 [&>svg]:stroke-[1.75]"
+                className="grid size-11 place-items-center rounded-xl border border-white/10 bg-white/[0.06] text-accent-400 shadow-sm backdrop-blur-sm [&>svg]:size-5 [&>svg]:stroke-[1.75]"
               >
                 <Icon />
               </span>

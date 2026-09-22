@@ -12,12 +12,12 @@ import { cn } from "@/lib/utils";
 type Variant = "default" | "interactive" | "quiet";
 
 const variantClasses: Record<Variant, string> = {
-  default: "depth-card border bg-surface shadow-xs",
+  default: "depth-card border-white/10 bg-surface shadow-sm",
   interactive:
-    "motion-card depth-card border bg-surface " +
-    "hover:border-accent-600/25 hover:shadow-raised focus-within:border-accent-600/40 focus-within:ring-[length:var(--size-focus-ring)] focus-within:ring-accent-600/25",
-  /** Borderless, tinted — for grouped sections on the warm canvas. */
-  quiet: "depth-quiet",
+    "motion-card depth-card border-white/10 bg-surface " +
+    "hover:border-white/14 hover:shadow-raised hover:shadow-[0_12px_40px_-18px_rgb(0_0_0/0.7)] focus-within:border-accent-600/30 focus-within:ring-[length:var(--size-focus-ring)] focus-within:ring-accent-600/25",
+  /** Quiet grouped surface */
+  quiet: "depth-quiet border-white/10",
 };
 
 export interface CardProps

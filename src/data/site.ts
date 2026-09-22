@@ -37,21 +37,19 @@ export type QuickFilter = {
 };
 
 export const quickFilters: QuickFilter[] = [
-  { id: "toshkent", label: "Toshkent", href: "/courses?city=toshkent" },
-  { id: "online", label: "Online", href: "/courses?format=online" },
-  { id: "offline", label: "Offline", href: "/courses?format=offline" },
-  { id: "bepul", label: "Bepul kurslar", href: "/courses?price=free" },
+  { id: "toshkent", label: "Ingliz tili", href: "/courses?city=toshkent" },
+  { id: "online", label: "Matematika", href: "/courses?format=online" },
+  { id: "offline", label: "IT Kurslari", href: "/courses?format=offline" },
+  { id: "bepul", label: "Arab tili", href: "/courses?price=free" },
 ];
 
 export const hero = {
   eyebrow: "Onlayn va offlayn ustozlar bazasi",
   title: "Sizga mos ustozni toping.",
   subtitle:
-    "Kurslar va ustozlarni bir joyda toping — onlayn yoki shahringizda " +
-    "offlayn. Yo‘nalish, format va byudjet bo‘yicha filtrlab, o‘zingizga mos " +
-    "o‘qituvchini bir necha daqiqada toping.",
+    "Tajribali va malakali ustozlar bilan o'zingiz istagan fan yoki ko'nikmani o'rganing — onlayn va offlayn formatlarda.",
   searchLabel: "Kurs yoki ustoz qidirish",
-  searchPlaceholder: "Nima o‘rganmoqchisiz?",
+  searchPlaceholder: "Fan, ustoz ismi yoki yo'nalishni kiriting...",
 } as const;
 
 /** Browse pages copy — /courses and /categories results (Phase 3).
@@ -220,51 +218,51 @@ export const trustPromises = {
 
 /** “How USTOZ works” — three editorial steps. */
 export const howItWorks = {
-  title: "Ustoz qanday ishlaydi?",
+  title: "Qanday ishlaydi",
   steps: [
     {
       id: "find",
       number: "01",
       title: "Qidiring",
-      text: "O‘rganmoqchi bo‘lgan yo‘nalishingizni toping.",
+      text: "Fan, yo'nalish yoki ustoz ismini kiriting va qidiruvni boshlang.",
     },
     {
       id: "choose",
       number: "02",
-      title: "Tanlang",
-      text: "Kurslar va ustozlarni taqqoslang.",
+      title: "Taqqoslang",
+      text: "Ustozlarning reytingi, tajribasi, narxi va joylashuvini solishtiring.",
     },
     {
       id: "start",
       number: "03",
-      title: "Boshlang",
-      text: "Kursga yoziling va o‘rganishni boshlang.",
+      title: "Bog'laning",
+      text: "Tanlagan ustozingiz bilan bog'laning va birinchi darsni boshlang.",
     },
   ],
 } as const;
 
 /** Online/Offline editorial duet. */
 export const formatEditorial = {
-  title: "Qayerda bo‘lsangiz ham o‘rganing.",
+  title: "Sizga mos formatda o'rganing",
   items: [
     {
       id: "online",
-      title: "Online",
-      text: "Uydan, sayohatda yoki dam olish kunlari — istalgan joydan turib onlayn kurslarga yozilishingiz mumkin.",
-      action: { label: "Online kurslarni ko‘rish", href: "/courses?format=online" },
+      title: "Onlayn ta'lim",
+      text: "Uyda, ishda yoki yo'lda — istalgan joydan onlayn darslarga qo'shiling. Video darslar, jonli uchrashuvlar va amaliy topshiriqlar.",
+      action: { label: "Onlayn darslarni ko'rish", href: "/courses?format=online" },
     },
     {
       id: "offline",
-      title: "Offline",
-      text: "Shahringizdagi yaqin kurslar va ustozlarni toping: guruh bilan, yuzma-yuz, tanish muhitda o‘qing.",
-      action: { label: "Offline kurslarni topish", href: "/courses?format=offline" },
+      title: "Oflayn ta'lim",
+      text: "Shahringizdagi sinfda, guruh bilan, ustoz yonida — an'anaviy muhitda, yuzma-yuz o'rganing.",
+      action: { label: "Oflayn darslarni topish", href: "/courses?format=offline" },
     },
   ],
 } as const;
 
 /** Teacher acquisition CTA. */
 export const teacherCta = {
-  title: "Bilimingizni ulashing.",
-  text: "Kurs yarating, o‘quvchilaringizni toping va darslaringizni USTOZ orqali boshqaring.",
-  action: { label: "Ustoz bo‘lish", href: "/register?role=teacher" },
+  title: "Bilimingizni ulashing, o'quvchilaringizni toping",
+  text: "O'z bilimingizni minglab o'quvchilar bilan ulashing. Kurs yarating, jadvalingizni boshqaring va daromad qiling — barchasi USTOZ platformasida.",
+  action: { label: "Ustoz bo'lish", href: "/register?role=teacher" },
 } as const;

@@ -172,16 +172,16 @@ export function CoursesBrowser({
   };
 
   return (
-    <div className="depth-canvas site-container flex flex-col gap-8 pb-18 pt-14 md:gap-10 md:pb-26 md:pt-18">
-      {/* Page opener + search */}
-      <div className="flex flex-col gap-2">
+    <div className="depth-canvas site-container flex flex-col gap-8 pb-18 pt-10 md:gap-10 md:pb-26 md:pt-14">
+      <div className="marketplace-header flex flex-col gap-3 p-6 sm:p-8">
         {breadcrumb}
         {eyebrow ? (
-          <p className="text-sm font-semibold tracking-[0.08em] text-accent-600 uppercase">
+          <p className="inline-flex items-center gap-2 text-xs font-bold tracking-[0.14em] text-accent-400 uppercase">
+            <span className="size-1 rounded-full bg-accent-400" aria-hidden="true" />
             {eyebrow}
           </p>
         ) : null}
-        <h1 className="text-4xl font-semibold tracking-[-0.02em] text-balance text-ink-900 md:text-5xl">
+        <h1 className="text-[2rem] font-bold tracking-[-0.032em] text-balance text-ink-900 md:text-[2.6rem] leading-[0.95]">
           {title}
         </h1>
         {description ? (
@@ -189,7 +189,7 @@ export function CoursesBrowser({
             {description}
           </p>
         ) : null}
-        <div className="mt-4 max-w-2xl">
+        <div className="mt-2 max-w-2xl">
           {/* Remount when the URL query changes (back/forward) so the field
               always mirrors canonical state. */}
           <CoursesSearch

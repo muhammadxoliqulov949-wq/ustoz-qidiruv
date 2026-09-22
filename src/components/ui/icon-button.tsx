@@ -16,9 +16,9 @@ const boxClasses: Record<Size, string> = {
 };
 
 const variantClasses: Record<Variant, string> = {
-  ghost: "text-ink-700 hover:bg-ink-900/[0.05] active:bg-ink-900/[0.08]",
+  ghost: "text-ink-700 hover:bg-white/[0.06] hover:text-ink-900 active:bg-white/[0.09]",
   outline:
-    "border border-line-strong bg-surface text-ink-700 hover:border-ink-300 hover:bg-surface-muted",
+    "border border-white/12 bg-white/[0.06] text-ink-700 hover:border-white/16 hover:bg-white/[0.08]",
   solid: "bg-accent-600 text-white hover:bg-accent-500 active:bg-accent-700",
   /** For controls sitting on the dark header/hero surfaces. */
   onDark:

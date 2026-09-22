@@ -9,14 +9,14 @@ import { cn } from "@/lib/utils";
 /* on top of it — never re-declare input chrome anywhere else.                 */
 /* -------------------------------------------------------------------------- */
 export const fieldBaseClasses = cn(
-  "w-full border border-line-strong bg-surface text-ink-900 shadow-xs",
+  "w-full border border-white/12 bg-white/[0.06] text-ink-900 shadow-xs backdrop-blur-sm",
   "placeholder:text-ink-500",
-  "transition-[border-color,box-shadow] duration-fast",
-  "hover:border-ink-300",
-  "focus:border-accent-600 focus:outline-none",
+  "transition-[border-color,box-shadow,background-color] duration-fast",
+  "hover:border-white/18 hover:bg-white/[0.08]",
+  "focus:border-accent-600/60 focus:outline-none focus:bg-surface",
   "focus:ring-[length:var(--size-focus-ring)] focus:ring-accent-600/25",
-  "aria-[invalid=true]:border-danger",
-  "disabled:cursor-not-allowed disabled:opacity-60",
+  "aria-[invalid=true]:border-danger/60 aria-[invalid=true]:bg-danger-soft/40",
+  "disabled:cursor-not-allowed disabled:opacity-55",
   "read-only:cursor-default read-only:bg-surface-muted read-only:shadow-none",
 );
 

@@ -20,16 +20,16 @@ const base =
 
 const variantClasses: Record<Variant, string> = {
   primary:
-    "bg-accent-600 text-white shadow-xs hover:bg-accent-500 active:bg-accent-700 active:scale-[0.99]",
+    "bg-accent-600 text-white shadow-[0_0_22px_-12px_rgb(46_191_122/0.85)] hover:bg-accent-500 hover:shadow-[0_0_28px_-10px_rgb(46_191_122/0.9)] active:bg-accent-700 active:scale-[0.99]",
   secondary:
-    "bg-ink-900 text-white shadow-xs hover:bg-ink-700 active:bg-ink-900 active:scale-[0.99]",
+    "bg-white text-[#0A1411] shadow-sm hover:bg-white/90 active:bg-white/80 active:scale-[0.99]",
   outline:
-    "border border-line-strong bg-surface text-ink-900 hover:border-ink-300 hover:bg-surface-muted active:bg-[#f1f1ee]",
-  ghost: "text-ink-700 hover:bg-ink-900/[0.05] active:bg-ink-900/[0.08]",
-  danger: "bg-danger text-white shadow-xs hover:bg-danger/90 active:bg-danger",
+    "border border-white/14 bg-white/[0.06] text-ink-900 backdrop-blur-sm hover:border-white/20 hover:bg-white/[0.10] active:bg-white/[0.08]",
+  ghost: "text-ink-700 hover:bg-white/[0.06] hover:text-ink-900 active:bg-white/[0.09]",
+  danger: "bg-danger text-white shadow-sm hover:bg-danger/90 active:bg-danger",
   /** On dark brand surfaces (emerald editorial cards). */
   invert:
-    "bg-white text-accent-700 shadow-xs hover:bg-accent-50 active:bg-accent-100",
+    "bg-white text-[#0E4531] shadow-sm hover:bg-white/92 active:bg-white/85",
 };
 
 const sizeClasses: Record<Size, string> = {

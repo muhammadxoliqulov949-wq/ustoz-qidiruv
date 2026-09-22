@@ -20,9 +20,9 @@ const shell = cn(
 );
 
 const restState =
-  "border-line-strong bg-surface text-ink-700 shadow-xs hover:border-ink-300 hover:text-ink-900";
+  "border-white/12 bg-white/[0.06] text-ink-700 backdrop-blur-sm hover:border-white/18 hover:text-ink-900 hover:bg-white/[0.09]";
 const selectedState =
-  "border-accent-600 bg-accent-50 text-accent-700 shadow-none";
+  "border-accent-600/40 bg-accent-50 text-accent-400 shadow-none ring-1 ring-accent-600/20";
 
 function PillIcon({ children }: { children: ReactNode }) {
   return (

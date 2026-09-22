@@ -1,116 +1,103 @@
 @import "tailwindcss";
 
 /* ============================================================================
-   USTOZ — Global design tokens (Phase 1)
-   Single source of truth for colors, spacing, typography, radius, shadows,
-   transitions and breakpoints. Components must reference these tokens —
-   no ad-hoc palette values outside this file (exception: translucent
-   foreground tints like white/90, and opacity modifiers).
-   ----------------------------------------------------------------------------
-   Usage mapping (Tailwind v4 generates utilities from @theme):
-     color:      --color-ink-900      -> text-ink-900 / bg-ink-900 / border-ink-100
-     font:       --font-sans          -> font-sans
-     size:       --spacing (4px grid) -> p-6 / gap-4 / pt-18 … (numeric only)
-     radius:     --radius-pill        -> rounded-pill
-     shadow:     --shadow-raised      -> shadow-raised
-     duration:   --transition-duration-fast  -> duration-fast
-     ease:       --ease-standard      -> ease-standard
+   USTOZ — Premium Dark Design System
+   Deep near-black emerald canvas, warm amber lighting, editorial typography,
+   glass/depth surfaces with thin emerald/amber borders and soft glow.
+   Single source of truth — components reference tokens, never raw hex outside.
    ============================================================================ */
 
 @theme {
-  /* --- Breakpoints (mobile-first; no 2xl by design — content stays inside
-         the 1280px container on very wide screens) ------------------------- */
+  /* --- Breakpoints --------------------------------------------------------- */
   --breakpoint-xs: 26rem;
   --breakpoint-sm: 40rem;
   --breakpoint-md: 48rem;
   --breakpoint-lg: 64rem;
   --breakpoint-xl: 80rem;
 
-  /* --- Canvas + ink scale -------------------------------------------------- */
-  --color-canvas: #f7f7f5; /* warm page background */
-  --color-surface: #ffffff; /* cards, inputs, floating surfaces */
-  --color-surface-muted: #fbfbf9; /* subtle inset surfaces */
-  --color-surface-warm: #f2f4ef;
-  --color-surface-elevated: #fffefa;
+  /* --- Canvas + surfaces (dark premium) ----------------------------------- */
+  --color-canvas: #070F0E; /* deep near-black emerald */
+  --color-canvas-soft: #0D1C19;
+  --color-surface: #121F1B; /* primary card / input */
+  --color-surface-muted: #0E1C18; /* subtle inset */
+  --color-surface-warm: #111F1C;
+  --color-surface-elevated: #162C25; /* elevated card */
+  --color-surface-glass: #121F1B;
 
-  --color-ink-900: #17181a; /* headings */
-  --color-ink-700: #3f4248; /* body copy */
-  --color-ink-500: #6b7078; /* secondary / supporting text — the LIGHTEST ink
-                               allowed for words (4.98:1 on surface, 4.8:1 on
-                               canvas, so it clears WCAG AA 4.5:1) */
-  --color-ink-400: #9499a1; /* DECORATIVE ONLY: aria-hidden icon strokes and
-                               non-text affordances. 2.86:1 on surface — below
-                               the AA text threshold, so Phase 24 moved every
-                               text/placeholder usage up to ink-500. */
-  --color-ink-300: #c3c6cc; /* disabled text (exempt from AA by WCAG 1.4.3) */
+  /* --- Ink (light on dark — headings → body → muted) ---------------------- */
+  --color-ink-900: #EFF4EF; /* headings — ~17:1 on canvas */
+  --color-ink-700: #C8D6CF; /* body — ~10:1 */
+  --color-ink-500: #8FA3A0; /* secondary — ~6.2:1, lightest for text */
+  --color-ink-400: #6B7E77; /* decorative icons only */
+  --color-ink-300: #4A5C56; /* disabled */
 
-  --color-line: #e8e7e2; /* default borders (warm, matches canvas) */
-  --color-line-strong: #d8d7d1; /* emphasized borders */
+  /* --- Lines / borders ---------------------------------------------------- */
+  --color-line: rgb(255 255 255 / 0.08);
+  --color-line-strong: rgb(255 255 255 / 0.14);
+  --color-line-emerald: rgb(46 191 122 / 0.18);
+  --color-line-amber: rgb(232 181 90 / 0.18);
 
-  /* --- Deep emerald accent scale (USTOZ Master Spec — finalized) -----------
-     Role map (components bind to roles, never raw hex):
-       50 = brand soft tint   600 = primary   500 = hover (darker)
-       700 = pressed / text-on-soft                                            */
-  --color-accent-50: #e7f3ed;  /* brand soft */
-  --color-accent-100: #d8ecdf;
-  --color-accent-400: #2f9e6c;
-  --color-accent-500: #12563e; /* hover */
-  --color-accent-600: #176b4d; /* primary brand */
-  --color-accent-700: #0e4531; /* pressed; also text-on-soft */
+  /* --- Emerald accent (brand) --------------------------------------------- */
+  --color-accent-50: #0E211B;
+  --color-accent-100: #123825;
+  --color-accent-400: #2EBF7A;
+  --color-accent-500: #1A9C5E;
+  --color-accent-600: #16925A; /* primary */
+  --color-accent-700: #0E4531; /* pressed / dark solid */
 
-  /* --- Semantic feedback colors (defined now, used from Phase 2+) --------- */
-  --color-success: #16a34a;
-  --color-warning: #d97706;
-  --color-danger: #dc2626;
-  --color-info: #2563eb;
-  /* Rating stars only — the single non-brand hue in cards. */
-  --color-rating: #d99a3d;
+  /* --- Amber accent (warm featured) --------------------------------------- */
+  --color-amber-50: #231E0D;
+  --color-amber-100: #3B2E12;
+  --color-amber-400: #E8B55A;
+  --color-amber-500: #D4A24E;
+  --color-amber-600: #B78A3A;
+  --color-amber-700: #8C6A2B;
 
-  /* --- Semantic text/tint pairs (Phase 24 accessibility) ---------------------
-     The plain hues above are for SOLID badges and status dots: on white they
-     sit below the 4.5:1 AA threshold for small text (#16a34a is 3.3:1). Every
-     place that needs coloured WORDS on a light surface uses the *-ink value on
-     the matching *-soft tint instead:
-       success-ink #157a3d on white = 5.4:1 · on success-soft = 4.9:1
-       warning-ink #9a6207 on white = 5.0:1 · on warning-soft = 4.6:1
-       danger-ink  #b42318 on white = 6.6:1 · on danger-soft  = 6.2:1
-     These are the exact values the Badge/AuthNotice components were already
-     painting from hard-coded hex literals; promoting them here removes the last
-     ad-hoc palette values from the component tree (and the off-token
-     `text-red-700` / `text-emerald-800` copies of them). */
-  --color-success-soft: #e9f7ee;
-  --color-success-ink: #157a3d;
-  --color-warning-soft: #fdf3e3;
-  --color-warning-ink: #9a6207;
-  --color-danger-soft: #fdeceb;
-  --color-danger-ink: #b42318;
+  /* --- Feedback (dark-tuned) ---------------------------------------------- */
+  --color-success: #22C55E;
+  --color-warning: #EAB308;
+  --color-danger: #EF4444;
+  --color-info: #38BDF8;
+  --color-rating: #E8B55A;
 
-  /* --- Typography ----------------------------------------------------------- */
+  --color-success-soft: #0F2418;
+  --color-success-ink: #4ADE80;
+  --color-warning-soft: #221E0F;
+  --color-warning-ink: #F0C75A;
+  --color-danger-soft: #2A1515;
+  --color-danger-ink: #F57A7A;
+
+  /* Legacy alias kept for components that read amber via warning */
+  --color-amber-ink: #E8B55A;
+
+  /* --- Typography --------------------------------------------------------- */
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 
-  --text-xs: 0.75rem; /* 12 */
+  --text-xs: 0.75rem;
   --text-xs--line-height: 1rem;
-  --text-sm: 0.8125rem; /* 13 */
+  --text-sm: 0.8125rem;
   --text-sm--line-height: 1.125rem;
-  --text-base: 1rem; /* 16 */
-  --text-base--line-height: 1.5; /* 16px / 24px — approved default body */
-  --text-lg: 1.0625rem; /* 17 */
+  --text-base: 1rem;
+  --text-base--line-height: 1.5;
+  --text-lg: 1.0625rem;
   --text-lg--line-height: 1.65;
-  --text-xl: 1.25rem; /* 20 */
+  --text-xl: 1.25rem;
   --text-xl--line-height: 1.5;
-  --text-2xl: 1.5rem; /* 24 */
+  --text-2xl: 1.5rem;
   --text-2xl--line-height: 1.35;
-  --text-3xl: 1.875rem; /* 30 */
+  --text-3xl: 1.875rem;
   --text-3xl--line-height: 1.25;
-  --text-4xl: 2.25rem; /* 36 */
-  --text-4xl--line-height: 1.15;
-  --text-5xl: 2.75rem; /* 44 */
-  --text-5xl--line-height: 1.08;
-  --text-6xl: 3.5rem; /* 56 */
-  --text-6xl--line-height: 1.04;
+  --text-4xl: 2.25rem;
+  --text-4xl--line-height: 1.10;
+  --text-5xl: 2.75rem;
+  --text-5xl--line-height: 1.05;
+  --text-6xl: 3.5rem;
+  --text-6xl--line-height: 1.02;
+  --text-7xl: 4.25rem;
+  --text-7xl--line-height: 1.0;
 
-  /* --- Spacing scale (4px base, named for intent) --------------------------- */
+  /* --- Spacing (4px grid) ------------------------------------------------- */
   --spacing-px: 1px;
   --spacing-0: 0;
   --spacing-0\.5: 0.125rem;
@@ -129,47 +116,29 @@
   --spacing-20: 5rem;
   --spacing-24: 6rem;
   --spacing-32: 8rem;
-  /*
-   * DESIGN-SCALE NOTE (real bug caught in browser QA):
-   * Named steps (--spacing-xs … --spacing-4xl) collided with Tailwind
-   * v4 bare-key resolution for max-width/min-width utilities, which
-   * also consult the spacing namespace. e.g. `max-w-4xl` compiled to
-   * `var(--spacing-4xl)` (104px!) and collapsed every shrink-to-fit
-   * text box.
-   * The numeric 4px grid stays the single scale:
-   *   card padding p-6 · inline gaps gap-4/6/8 · section rhythm
-   *   pt-18/pb-18 (mobile), pt-26/pb-26 (desktop) — utilities derive
-   *   from --spacing (0.25rem) so no custom keys are needed.
-   */
 
-  /* --- Radius ----------------------------------------------------------------
-     xl = 20px per Master Spec course/card radius (was 18px pre-spec).
-     3xl added for Phase 2 large editorial surfaces (32px CTA card).       */
+  /* --- Radius ------------------------------------------------------------- */
   --radius-sm: 0.375rem;
-  --radius-md: 0.625rem; /* inputs, small controls */
-  --radius-lg: 0.875rem; /* buttons, pills, icon buttons */
-  --radius-xl: 1.25rem; /* 20px — cards (Master Spec) */
-  --radius-2xl: 1.5rem; /* featured panels, search */
-  --radius-3xl: 2rem; /* 32px — large editorial surfaces */
-  --radius-pill: 624rem; /* badges, filter pills, avatars */
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+  --radius-xl: 1.25rem;
+  --radius-2xl: 1.5rem;
+  --radius-3xl: 2rem;
+  --radius-pill: 624rem;
 
-  /* --- Shadows (calm: one ambient layer, no harsh drops) ---------------------- */
-  --shadow-xs: 0 1px 2px 0 rgb(23 24 26 / 0.05);
-  --shadow-sm: 0 1px 2px 0 rgb(23 24 26 / 0.05), 0 1px 3px 0 rgb(23 24 26 / 0.04);
-  --shadow-md: 0 2px 4px -1px rgb(23 24 26 / 0.05),
-    0 8px 20px -8px rgb(23 24 26 / 0.1);
-  --shadow-raised: 0 4px 12px -4px rgb(23 24 26 / 0.08),
-    0 16px 40px -16px rgb(23 24 26 / 0.14);
-  --shadow-depth-1: 0 1px 2px rgb(23 24 26 / 0.04),
-    0 8px 24px -20px rgb(14 69 49 / 0.22);
-  --shadow-depth-2: 0 1px 1px rgb(255 255 255 / 0.86) inset,
-    0 18px 50px -30px rgb(14 69 49 / 0.3);
-  --shadow-depth-3: 0 1px 1px rgb(255 255 255 / 0.92) inset,
-    0 28px 72px -34px rgb(14 69 49 / 0.36);
+  /* --- Shadows (dark premium — depth + emerald/amber glows) --------------- */
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.38);
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 0.45), 0 8px 18px -12px rgb(0 0 0 / 0.55);
+  --shadow-md: 0 4px 16px -8px rgb(0 0 0 / 0.65), 0 16px 40px -18px rgb(0 0 0 / 0.7);
+  --shadow-raised: 0 8px 28px -14px rgb(0 0 0 / 0.72), 0 22px 56px -20px rgb(0 0 0 / 0.68);
+  --shadow-depth-1: 0 1px 0 rgb(255 255 255 / 0.06) inset,
+    0 8px 24px -20px rgb(0 0 0 / 0.62), 0 18px 48px -28px rgb(10 62 46 / 0.38);
+  --shadow-depth-2: 0 1px 0 rgb(255 255 255 / 0.09) inset,
+    0 14px 36px -20px rgb(0 0 0 / 0.70), 0 28px 64px -32px rgb(14 86 64 / 0.42);
+  --shadow-depth-3: 0 1px 0 rgb(255 255 255 / 0.11) inset,
+    0 18px 48px -18px rgb(0 0 0 / 0.74), 0 36px 84px -32px rgb(16 102 75 / 0.48);
 
-  /* --- Motion ------------------------------------------------------------------ */
-  /* v4 namespaces: --transition-duration-* generates .duration-*;
-     --ease-* generates .ease-*; the --default-* vars back bare `transition`. */
+  /* --- Motion ------------------------------------------------------------- */
   --ease-standard: cubic-bezier(0.22, 0.61, 0.36, 1);
   --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
@@ -179,15 +148,12 @@
   --default-transition-duration: var(--transition-duration-fast);
   --default-transition-timing-function: var(--ease-standard);
 
-  /* --- Component sizing ------------------------------------------------------------ */
-  --size-control-sm: 2.25rem; /* 36px */
-  --size-control-md: 2.75rem; /* 44px */
-  --size-control-lg: 3.25rem; /* 52px */
+  --size-control-sm: 2.25rem;
+  --size-control-md: 2.75rem;
+  --size-control-lg: 3.25rem;
   --size-focus-ring: 3px;
-
-  /* --- Layout ------------------------------------------------------------------------ */
-  --container-site: 80rem; /* 1280px main container */
-  --height-header: 4.5rem; /* 72px — also generates the h-header utility */
+  --container-site: 80rem;
+  --height-header: 4.5rem;
 }
 
 /* ============================================================================
@@ -195,11 +161,6 @@
    ========================================================================== */
 
 @layer base {
-  /*
-   * Self-hosted Inter (see layout.tsx → @fontsource-variable/inter).
-   * --font-inter stays the seam: swap to next/font or a newer subset here
-   * without touching the --font-sans token or any component.
-   */
   :root {
     --font-inter: "Inter Variable";
     --motion-distance-sm: 0.25rem;
@@ -208,15 +169,15 @@
     --motion-scale-pressed: 0.99;
     --motion-scale-dialog: 0.985;
     --motion-opacity-muted: 0.62;
-    --depth-highlight: rgb(255 255 255 / 0.8);
-    --depth-accent-glow: rgb(23 107 77 / 0.12);
+    --depth-highlight: rgb(255 255 255 / 0.09);
+    --depth-accent-glow: rgb(22 146 90 / 0.16);
+    --depth-amber-glow: rgb(212 162 78 / 0.14);
   }
 
   html {
     -webkit-text-size-adjust: 100%;
     text-rendering: optimizeLegibility;
-
-    /* Anchor jumps (detail-page section nav) glide when the OS says OK. */
+    color-scheme: dark;
     @media (prefers-reduced-motion: no-preference) {
       scroll-behavior: smooth;
     }
@@ -224,276 +185,271 @@
 
   body {
     @apply bg-canvas font-sans text-ink-900 antialiased;
+    /* Subtle canvas noise + emerald/amber depth — fixed so it doesn't repaint on scroll */
+    background-color: var(--color-canvas);
   }
 
-  /*
-   * Phase 17 a11y. The OS "reduce motion" setting is honoured globally, not
-   * only for the anchor scrolling above: approving or rejecting a refund is a
-   * financial decision and must not slide, fade or bounce for a user who asked
-   * their system for calm. 0s (not a tiny duration) is deliberate — "reduced"
-   * means no motion, and it keeps the computed style trivially assertable.
-   */
+  ::selection {
+    background-color: color-mix(in oklab, var(--color-accent-600) 28%, transparent);
+    color: white;
+  }
+
   @media (prefers-reduced-motion: reduce) {
-    *,
-    ::before,
-    ::after {
+    *, ::before, ::after {
       animation-duration: 0s !important;
       animation-iteration-count: 1 !important;
       transition-duration: 0s !important;
       scroll-behavior: auto !important;
     }
-
-    .motion-layer[data-state="closed"] {
-      transition-delay: 0s !important;
-    }
-  }
-
-  ::selection {
-    background-color: color-mix(in oklab, var(--color-accent-600) 18%, white);
+    .motion-layer[data-state="closed"] { transition-delay: 0s !important; }
   }
 }
 
 /* ============================================================================
-   Phase 25 motion system
-
-   State is carried by data attributes so dialogs and sheets can animate out
-   without a runtime animation package. Closed layers are inert/aria-hidden in
-   their components; visibility and pointer-events provide the visual guard.
+   Premium depth system — dark glass with emerald/amber lighting
+   Level 0 canvas → Level 1 quiet → Level 2 card → Level 3 featured → Level 4 floating
    ========================================================================== */
 
 @layer components {
+  /* Level 0 — page canvas with restrained emerald + amber glows */
   .depth-canvas {
-    background:
-      radial-gradient(circle at 82% 8%, var(--depth-accent-glow), transparent 27rem),
-      var(--color-canvas);
+    position: relative;
+    background-color: var(--color-canvas);
+    background-image:
+      radial-gradient(820px 520px at 14% -4%, rgb(22 146 90 / 0.26), transparent 62%),
+      radial-gradient(640px 420px at 92% 0%, rgb(232 181 90 / 0.16), transparent 64%),
+      radial-gradient(1100px 620px at 52% 108%, rgb(14 69 49 / 0.22), transparent 72%);
   }
 
+  /* Level 1 — quiet grouped surfaces (how-it-works steps, trust items, filters) */
   .depth-quiet {
-    border: 1px solid color-mix(in oklab, var(--color-line) 78%, white);
-    background: color-mix(in oklab, var(--color-surface-warm) 76%, white);
+    border: 1px solid rgb(255 255 255 / 0.07);
+    background: linear-gradient(145deg, rgb(18 31 27 / 0.96), rgb(15 28 24 / 0.88));
     box-shadow: var(--shadow-depth-1);
+    backdrop-filter: blur(10px);
   }
 
+  /* Level 2 — elevated cards (course, teacher, category) */
   .depth-card {
-    border-color: color-mix(in oklab, var(--color-line-strong) 72%, white);
-    background: linear-gradient(145deg, var(--color-surface-elevated), var(--color-surface));
+    border: 1px solid rgb(255 255 255 / 0.08);
+    background: linear-gradient(165deg, rgb(22 38 32 / 0.98), rgb(15 28 24 / 0.98));
     box-shadow: var(--shadow-depth-2);
+    backdrop-filter: blur(10px);
   }
 
+  /* Level 3 — featured surfaces (hero, marketplace header, detail hero, auth) */
   .depth-featured {
-    border: 1px solid color-mix(in oklab, var(--color-accent-600) 18%, white);
+    border: 1px solid rgb(46 191 122 / 0.16);
     background:
-      linear-gradient(145deg, rgb(255 255 255 / 0.96), rgb(242 248 244 / 0.94));
-    box-shadow: var(--shadow-depth-3);
-  }
-
-  .depth-floating {
-    border: 1px solid rgb(255 255 255 / 0.72);
-    background: rgb(255 255 255 / 0.88);
+      radial-gradient(520px 360px at 86% 18%, rgb(22 146 90 / 0.14), transparent 62%),
+      radial-gradient(420px 320px at 12% 88%, rgb(232 181 90 / 0.07), transparent 64%),
+      linear-gradient(165deg, rgb(20 40 33 / 0.98), rgb(14 30 26 / 0.96));
     box-shadow: var(--shadow-depth-3);
     backdrop-filter: blur(12px);
   }
 
+  /* Level 4 — floating (header when scrolled, dialogs, sheets, dropdowns) */
+  .depth-floating {
+    border: 1px solid rgb(255 255 255 / 0.10);
+    background: rgb(18 31 27 / 0.84);
+    box-shadow: var(--shadow-depth-3);
+    backdrop-filter: blur(16px) saturate(1.15);
+  }
+
+  /* Grouped editorial shell for homepage sections */
   .visual-section {
     position: relative;
     isolation: isolate;
   }
-
   .visual-section::before {
     content: "";
     position: absolute;
-    inset: 3rem 1.25rem -1.5rem;
+    inset: 2.75rem 1rem -1rem;
     z-index: -1;
     border-radius: var(--radius-3xl);
-    border: 1px solid color-mix(in oklab, var(--color-line) 68%, white);
-    background: linear-gradient(145deg, rgb(255 255 255 / 0.76), rgb(242 244 239 / 0.58));
+    border: 1px solid rgb(255 255 255 / 0.05);
+    background: linear-gradient(145deg, rgb(255 255 255 / 0.02), rgb(255 255 255 / 0.01));
+    pointer-events: none;
   }
 
+  /* Marketplace header / detail hero — conversion-focused featured surface */
   .marketplace-header {
     border-radius: var(--radius-3xl);
-    border: 1px solid color-mix(in oklab, var(--color-accent-600) 14%, white);
+    border: 1px solid rgb(46 191 122 / 0.15);
     background:
-      radial-gradient(circle at 86% 20%, rgb(23 107 77 / 0.12), transparent 18rem),
-      linear-gradient(145deg, rgb(255 255 255 / 0.96), rgb(242 248 244 / 0.88));
-    box-shadow: var(--shadow-depth-2);
+      radial-gradient(520px 360px at 88% 16%, rgb(22 146 90 / 0.18), transparent 58%),
+      radial-gradient(380px 280px at 10% 92%, rgb(232 181 90 / 0.08), transparent 62%),
+      linear-gradient(165deg, rgb(20 40 33 / 0.99), rgb(14 30 26 / 0.97));
+    box-shadow: var(--shadow-depth-3);
   }
 
   .detail-hero {
     border-radius: var(--radius-3xl);
-    border: 1px solid color-mix(in oklab, var(--color-accent-600) 16%, white);
-    background: linear-gradient(145deg, rgb(255 255 255 / 0.97), rgb(242 248 244 / 0.82));
+    border: 1px solid rgb(46 191 122 / 0.16);
+    background:
+      radial-gradient(560px 380px at 86% 14%, rgb(22 146 90 / 0.16), transparent 60%),
+      linear-gradient(165deg, rgb(20 40 33 / 0.99), rgb(14 30 26 / 0.97));
     box-shadow: var(--shadow-depth-2);
   }
 
+  /* Metric cards — strong hierarchy with emerald top accent */
   .metric-card {
     overflow: hidden;
-    border-top: 3px solid color-mix(in oklab, var(--color-accent-600) 62%, white);
+    border-top: 2px solid rgb(46 191 122 / 0.55);
+    box-shadow: var(--shadow-depth-2);
   }
 
+  /* Media band — emerald-tinted premium treatment */
   .media-premium {
     position: relative;
-    border-bottom: 1px solid color-mix(in oklab, var(--color-accent-600) 16%, white);
-    background:
-      linear-gradient(145deg, var(--color-accent-50), var(--color-surface-warm));
+    border-bottom: 1px solid rgb(46 191 122 / 0.14);
+    background: linear-gradient(145deg, #0E211B, #122A22);
+    overflow: hidden;
   }
-
   .media-premium::after {
     content: "";
     position: absolute;
     inset: 0;
     pointer-events: none;
-    background: linear-gradient(to top, rgb(14 69 49 / 0.12), transparent 42%);
+    background:
+      linear-gradient(to top, rgb(7 15 14 / 0.58) 0%, transparent 42%),
+      radial-gradient(420px 220px at 50% 0%, rgb(46 191 122 / 0.12), transparent 70%);
   }
 
+  /* Hero depth object — CSS-only editorial composition on the right */
   .hero-depth-object {
     position: relative;
     isolation: isolate;
-    min-height: 22rem;
+    min-height: 26rem;
     overflow: hidden;
     border-radius: var(--radius-3xl);
-    border: 1px solid color-mix(in oklab, var(--color-accent-600) 20%, white);
+    border: 1px solid rgb(46 191 122 / 0.18);
     background:
-      radial-gradient(circle at 72% 22%, rgb(255 255 255 / 0.94), transparent 13rem),
-      linear-gradient(145deg, #e8f3ec, #f8faf6 56%, #edf2e9);
+      radial-gradient(520px 320px at 68% 18%, rgb(255 255 255 / 0.08), transparent 56%),
+      radial-gradient(420px 280px at 92% 92%, rgb(232 181 90 / 0.10), transparent 58%),
+      linear-gradient(155deg, #142822, #0F201B 58%, #122A22);
     box-shadow: var(--shadow-depth-3);
   }
-
   .hero-depth-object::before,
   .hero-depth-object::after {
     content: "";
     position: absolute;
-    border-radius: 1.75rem;
-    border: 1px solid rgb(255 255 255 / 0.8);
-    background: linear-gradient(145deg, rgb(255 255 255 / 0.92), rgb(216 236 223 / 0.72));
-    box-shadow: 0 24px 48px -30px rgb(14 69 49 / 0.5);
-    transform: rotate(-8deg);
+    border-radius: 1.5rem;
+    border: 1px solid rgb(255 255 255 / 0.10);
+    background: linear-gradient(145deg, rgb(255 255 255 / 0.06), rgb(255 255 255 / 0.02));
+    box-shadow: 0 24px 48px -30px rgb(0 0 0 / 0.7);
+    backdrop-filter: blur(10px);
   }
-
-  .hero-depth-object::before { inset: 4rem 4.5rem 3.25rem 3.5rem; }
-  .hero-depth-object::after { inset: 6.5rem 2.25rem 1.75rem 7rem; transform: rotate(7deg); }
+  .hero-depth-object::before { inset: 3.5rem 4.2rem 3.8rem 3.2rem; transform: rotate(-2.2deg); }
+  .hero-depth-object::after  { inset: 6.5rem 2.4rem 2rem 6.2rem; transform: rotate(2.8deg); }
 
   .hero-depth-mark {
     position: absolute;
     inset: 50% auto auto 50%;
     z-index: 2;
     display: grid;
-    width: 5.5rem;
+    width: 5.25rem;
     aspect-ratio: 1;
     translate: -50% -50%;
     place-items: center;
-    border-radius: 1.5rem;
-    background: var(--color-accent-600);
+    border-radius: 1.25rem;
+    background: linear-gradient(145deg, #16925A, #0E4531);
     color: white;
     font-size: 2rem;
-    font-weight: 700;
-    box-shadow: 0 24px 48px -20px rgb(14 69 49 / 0.7);
-  }
-  .motion-control {
-    transition-timing-function: var(--ease-standard);
-  }
-
-  .motion-layer {
-    visibility: hidden;
-    pointer-events: none;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    border: 1px solid rgb(255 255 255 / 0.14);
+    box-shadow:
+      0 18px 44px -16px rgb(0 0 0 / 0.7),
+      0 0 32px -8px rgb(46 191 122 / 0.5),
+      0 1px 0 rgb(255 255 255 / 0.18) inset;
   }
 
-  .motion-layer[data-state="open"] {
-    visibility: visible;
-    pointer-events: auto;
+  /* Premium typography helpers */
+  .text-gradient {
+    background: linear-gradient(92deg, #3DD68C 0%, #E8B55A 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .text-gradient-soft {
+    background: linear-gradient(92deg, #6EE7A8 0%, #F0C66A 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
   }
 
-  .motion-layer[data-state="closed"] {
-    transition: visibility 0s linear var(--transition-duration-base);
+  /* Subtle amber ring for featured cards */
+  .ring-amber-subtle {
+    box-shadow: 0 0 0 1px rgb(232 181 90 / 0.14), var(--shadow-depth-2);
   }
 
+  /* Emerald glow on focus/hover */
+  .glow-emerald {
+    box-shadow:
+      0 0 0 1px rgb(46 191 122 / 0.18),
+      0 8px 24px -16px rgb(22 146 90 / 0.45),
+      var(--shadow-depth-2);
+  }
+
+  /* ------------------------------------------------------------------------
+     Motion system — preserved Phase 25, restrained CSS only
+     --------------------------------------------------------------------- */
+  .motion-control { transition-timing-function: var(--ease-standard); }
+  .motion-layer { visibility: hidden; pointer-events: none; }
+  .motion-layer[data-state="open"] { visibility: visible; pointer-events: auto; }
+  .motion-layer[data-state="closed"] { transition: visibility 0s linear var(--transition-duration-base); }
   .motion-backdrop {
     opacity: 0;
     transition: opacity var(--transition-duration-base) var(--ease-exit);
   }
-
   .motion-layer[data-state="open"] .motion-backdrop,
-  .motion-backdrop[data-state="open"] {
-    opacity: 1;
-    transition-timing-function: var(--ease-enter);
-  }
-
+  .motion-backdrop[data-state="open"] { opacity: 1; transition-timing-function: var(--ease-enter); }
   .motion-menu {
     opacity: 0;
     transform: translate3d(0, calc(-1 * var(--motion-distance-sm)), 0);
-    transition:
-      opacity var(--transition-duration-fast) var(--ease-exit),
+    transition: opacity var(--transition-duration-fast) var(--ease-exit),
       transform var(--transition-duration-base) var(--ease-exit);
   }
-
   .motion-layer[data-state="open"] .motion-menu,
   .motion-menu[data-state="open"] {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-    transition-timing-function: var(--ease-enter);
+    opacity: 1; transform: translate3d(0,0,0); transition-timing-function: var(--ease-enter);
   }
-
   .motion-sheet {
     opacity: 0;
     transform: translate3d(0, var(--motion-distance-lg), 0);
-    transition:
-      opacity var(--transition-duration-base) var(--ease-exit),
+    transition: opacity var(--transition-duration-base) var(--ease-exit),
       transform var(--transition-duration-slow) var(--ease-exit);
   }
-
   .motion-layer[data-state="open"] .motion-sheet,
   .motion-sheet[data-state="open"] {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-    transition-timing-function: var(--ease-enter);
+    opacity: 1; transform: translate3d(0,0,0); transition-timing-function: var(--ease-enter);
   }
-
   .motion-dialog {
     opacity: 0;
-    transform: translate3d(0, var(--motion-distance-md), 0)
-      scale(var(--motion-scale-dialog));
-    transition:
-      opacity var(--transition-duration-base) var(--ease-exit),
+    transform: translate3d(0, var(--motion-distance-md), 0) scale(var(--motion-scale-dialog));
+    transition: opacity var(--transition-duration-base) var(--ease-exit),
       transform var(--transition-duration-slow) var(--ease-exit);
   }
-
   .motion-layer[data-state="open"] .motion-dialog,
   .motion-dialog[data-state="open"] {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
-    transition-timing-function: var(--ease-enter);
+    opacity: 1; transform: translate3d(0,0,0) scale(1); transition-timing-function: var(--ease-enter);
   }
-
   .motion-card {
     transition-property: transform, border-color, box-shadow;
     transition-duration: var(--transition-duration-base);
     transition-timing-function: var(--ease-standard);
   }
-
-  .motion-card-media {
-    transition: transform var(--transition-duration-slow) var(--ease-standard);
-  }
-
-  .motion-feedback {
-    animation: motion-feedback-in var(--transition-duration-base) var(--ease-enter)
-      both;
-  }
-
+  .motion-card-media { transition: transform var(--transition-duration-slow) var(--ease-standard); }
+  .motion-feedback { animation: motion-feedback-in var(--transition-duration-base) var(--ease-enter) both; }
   .motion-status {
-    transition:
-      color var(--transition-duration-fast) var(--ease-standard),
+    transition: color var(--transition-duration-fast) var(--ease-standard),
       background-color var(--transition-duration-fast) var(--ease-standard),
       border-color var(--transition-duration-fast) var(--ease-standard),
       opacity var(--transition-duration-fast) var(--ease-standard);
   }
-
-  .motion-skeleton {
-    animation: motion-skeleton 1.6s var(--ease-standard) infinite alternate;
-  }
-
-  .motion-hero-reveal {
-    animation: motion-reveal var(--transition-duration-slow) var(--ease-enter)
-      both;
-  }
+  .motion-skeleton { animation: motion-skeleton 1.6s var(--ease-standard) infinite alternate; }
+  .motion-hero-reveal { animation: motion-reveal var(--transition-duration-slow) var(--ease-enter) both; }
 }
 
 @media (width < 48rem) {
@@ -502,62 +458,39 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .motion-card:hover {
-    transform: translate3d(0, calc(-1 * var(--motion-distance-sm)), 0);
-  }
-
-  .motion-card:hover .motion-card-media {
-    transform: scale(1.018);
-  }
+  .motion-card:hover { transform: translate3d(0, calc(-1 * var(--motion-distance-sm)), 0); }
+  .motion-card:hover .motion-card-media { transform: scale(1.022); }
+  .depth-card:hover, .depth-quiet:hover { border-color: rgb(255 255 255 / 0.12); }
 }
 
 @keyframes motion-feedback-in {
-  from {
-    opacity: 0;
-    transform: translate3d(0, calc(-1 * var(--motion-distance-sm)), 0);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
+  from { opacity: 0; transform: translate3d(0, calc(-1 * var(--motion-distance-sm)), 0); }
+  to   { opacity: 1; transform: translate3d(0,0,0); }
 }
-
 @keyframes motion-skeleton {
-  from {
-    opacity: var(--motion-opacity-muted);
-  }
-  to {
-    opacity: 1;
-  }
+  from { opacity: var(--motion-opacity-muted); }
+  to   { opacity: 1; }
+}
+@keyframes motion-reveal {
+  from { opacity: 0; transform: translate3d(0, var(--motion-distance-sm), 0); }
+  to   { opacity: 1; transform: translate3d(0,0,0); }
 }
 
-@keyframes motion-reveal {
-  from {
-    opacity: 0;
-    transform: translate3d(0, var(--motion-distance-sm), 0);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-}
+/* Scrollbar styling for dark premium */
+* { scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / 0.12) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: rgb(255 255 255 / 0.12); border-radius: 999px; }
+*::-webkit-scrollbar-track { background: transparent; }
 
 /* ============================================================================
-   Project utilities
+   Utilities
    ========================================================================== */
 
-/* Main site container: 1280px max, responsive page padding, centered. */
 @utility site-container {
   width: 100%;
   margin-inline: auto;
   max-width: var(--container-site);
-  padding-inline: 1.25rem; /* 20px — mobile */
-
-  @media (width >= 48rem) {
-    padding-inline: 2rem; /* 32px — tablet */
-  }
-
-  @media (width >= 80rem) {
-    padding-inline: 2.5rem; /* 40px — desktop, inside the 1280px shell */
-  }
+  padding-inline: 1.25rem;
+  @media (width >= 48rem) { padding-inline: 2rem; }
+  @media (width >= 80rem) { padding-inline: 2.5rem; }
 }
