@@ -598,6 +598,35 @@ body:has(.home-shell) {
   background: var(--home-bg, #050d0c);
 }
 
+/* One continuous, reversible scroll narrative for the public homepage. */
+.home-story {
+  --story-perspective: 1200px;
+  --story-depth-near: 5rem;
+  --story-depth-far: -8rem;
+  --story-parallax: 3rem;
+  --story-rotation: 3deg;
+  position: relative;
+}
+
+.home-story-chapter {
+  --story-enter: 1;
+  --story-exit: 0;
+  --story-focus: 1;
+  --story-progress: 0;
+  position: relative;
+  z-index: 1;
+  perspective: var(--story-perspective);
+}
+
+.home-story-scene {
+  position: relative;
+  transform-style: preserve-3d;
+}
+
+.home-story-chapter[data-story-visible="true"] .home-story-scene {
+  will-change: transform, opacity;
+}
+
 .home-shell .visual-section::before {
   display: none;
 }
@@ -607,9 +636,7 @@ body:has(.home-shell) {
   padding-top: clamp(5.5rem, 8vw, 8rem);
 }
 
-.home-trust-section {
-  padding-bottom: clamp(5.5rem, 8vw, 8rem);
-}
+.home-trust-section { padding-bottom: clamp(3rem, 5vw, 5rem); }
 
 .home-eyebrow {
   display: inline-flex;
@@ -790,8 +817,11 @@ body:has(.home-shell) .site-footer [class*="border-line"] { border-color: rgb(12
 /* Hero */
 .home-hero {
   position: relative;
-  min-height: min(54rem, calc(100svh - var(--height-header)));
-  padding: clamp(3.5rem, 7vw, 7rem) 0 2rem;
+  display: grid;
+  height: min(62rem, calc(100svh - 5.25rem));
+  min-height: 42rem;
+  grid-template-rows: minmax(0, 1fr) auto;
+  padding: clamp(1.1rem, 2.8svh, 2rem) 0 clamp(0.75rem, 1.8svh, 1.25rem);
   overflow: hidden;
   border-bottom: 1px solid rgb(118 198 169 / 0.12);
   background:
@@ -826,7 +856,8 @@ body:has(.home-shell) .site-footer [class*="border-line"] { border-color: rgb(12
   position: relative;
   z-index: 1;
   display: grid;
-  min-height: 37rem;
+  min-height: 0;
+  height: 100%;
   grid-template-columns: minmax(0, 1.02fr) minmax(29rem, 0.98fr);
   align-items: center;
   gap: clamp(2rem, 5vw, 5rem);
@@ -835,18 +866,18 @@ body:has(.home-shell) .site-footer [class*="border-line"] { border-color: rgb(12
 .home-hero-copy { max-width: 47rem; }
 
 .home-hero h1 {
-  margin-top: 1.25rem;
+  margin-top: clamp(0.75rem, 1.8svh, 1.25rem);
   color: var(--home-text);
-  font-size: clamp(3rem, 6vw, 5.8rem);
+  font-size: clamp(3.25rem, min(5.55vw, 8.7svh), 5.65rem);
   font-weight: 760;
-  line-height: 0.95;
+  line-height: 0.93;
   letter-spacing: -0.064em;
   text-wrap: balance;
 }
 
 .home-hero-lede {
   max-width: 43rem;
-  margin-top: 1.6rem;
+  margin-top: clamp(1rem, 2.2svh, 1.5rem);
   color: #b1c0bb;
   font-size: clamp(1rem, 1.55vw, 1.2rem);
   line-height: 1.65;
@@ -854,7 +885,7 @@ body:has(.home-shell) .site-footer [class*="border-line"] { border-color: rgb(12
 
 .home-hero-search-wrap {
   max-width: 47rem;
-  margin-top: 2.25rem;
+  margin-top: clamp(1.25rem, 2.8svh, 2rem);
 }
 
 .home-hero-search input {
@@ -879,7 +910,7 @@ body:has(.home-shell) .site-footer [class*="border-line"] { border-color: rgb(12
   display: flex;
   align-items: center;
   gap: 0.8rem;
-  margin-top: 1.25rem;
+  margin-top: clamp(0.75rem, 1.6svh, 1.15rem);
   color: #93a49f;
   font-size: 0.8rem;
 }
@@ -902,7 +933,8 @@ body:has(.home-shell) .site-footer [class*="border-line"] { border-color: rgb(12
 
 .home-hero-stage {
   position: relative;
-  min-height: 36rem;
+  min-height: 0;
+  height: min(32rem, 64svh);
   perspective: 1100px;
 }
 
@@ -1055,8 +1087,8 @@ body:has(.home-shell) .site-footer [class*="border-line"] { border-color: rgb(12
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 1rem;
-  margin-top: 2rem;
-  padding-top: 1.4rem;
+  margin-top: clamp(0.45rem, 1.4svh, 0.9rem);
+  padding-top: clamp(0.65rem, 1.5svh, 1rem);
   border-top: 1px solid rgb(121 188 163 / 0.14);
 }
 
@@ -1463,4 +1495,337 @@ body:has(.home-shell) .site-footer [class*="border-line"] { border-color: rgb(12
   .home-teacher-dashboard-photo { min-height: 18rem; }
   .home-teacher-dashboard-metrics { grid-template-columns: 1fr; }
   .home-trust-grid { grid-template-columns: 1fr; }
+}
+
+/* ============================================================================
+   Homepage scroll chapters
+
+   Progress is published once per animation frame by <HomeStory>. Everything
+   below is transform/opacity-only, reversible, and disabled for reduced motion.
+   ========================================================================== */
+
+.home-teacher-cta-section {
+  padding-bottom: clamp(5.5rem, 8vw, 8rem);
+}
+
+@media (width > 64rem) and (prefers-reduced-motion: no-preference) {
+  .home-story[data-story-motion="true"] .home-story-scene {
+    opacity: calc(0.72 + (var(--story-enter) * 0.28) - (var(--story-exit) * 0.12));
+    transform:
+      perspective(var(--story-perspective))
+      translate3d(
+        0,
+        calc(((1 - var(--story-enter)) * var(--story-parallax)) - (var(--story-exit) * 1.25rem)),
+        calc((1 - var(--story-focus)) * var(--story-depth-far))
+      )
+      rotateX(calc((1 - var(--story-focus)) * var(--story-rotation)))
+      scale(calc(0.965 + (var(--story-focus) * 0.035)));
+    transform-origin: 50% 42%;
+    backface-visibility: hidden;
+  }
+
+  .home-story[data-story-motion="true"] .home-story-chapter[data-story-visible="true"] :is(
+    .home-hero-teacher,
+    .home-category-slot,
+    .home-featured-course,
+    .home-course-supporting > li,
+    .home-format-panel,
+    .home-teacher-grid > li,
+    .home-process-card,
+    .home-trust-card,
+    .home-teacher-dashboard
+  ) {
+    will-change: transform, opacity;
+    backface-visibility: hidden;
+  }
+
+  /* 01 → 02: teacher cards separate and recede as categories approach. */
+  .home-story[data-story-motion="true"] .home-story-hero .home-hero-teacher {
+    --story-hover-lift: 0rem;
+    transition-property: border-color, box-shadow;
+  }
+
+  .home-story[data-story-motion="true"] .home-story-hero .home-hero-teacher:hover {
+    --story-hover-lift: -0.35rem;
+  }
+
+  .home-story[data-story-motion="true"] .home-story-hero .home-hero-teacher-1 {
+    transform:
+      translate3d(
+        calc(var(--story-exit) * -3.5rem),
+        calc((var(--story-exit) * -1.5rem) + var(--story-hover-lift)),
+        calc(var(--story-exit) * -9rem)
+      )
+      rotateY(calc(var(--story-exit) * -6deg))
+      rotate(-6deg);
+  }
+
+  .home-story[data-story-motion="true"] .home-story-hero .home-hero-teacher-2 {
+    transform:
+      translate3d(
+        calc(var(--story-exit) * 3.75rem),
+        calc((var(--story-exit) * -0.75rem) + var(--story-hover-lift)),
+        calc(var(--story-exit) * -11rem)
+      )
+      rotateY(calc(var(--story-exit) * 7deg))
+      rotate(6deg);
+  }
+
+  .home-story[data-story-motion="true"] .home-story-hero .home-hero-teacher-3 {
+    transform:
+      translate3d(
+        0,
+        calc((var(--story-exit) * 2.5rem) + var(--story-hover-lift)),
+        calc(var(--story-exit) * -13rem)
+      )
+      rotateX(calc(var(--story-exit) * 5deg))
+      rotate(3deg);
+  }
+
+  .home-story[data-story-motion="true"] .home-story-hero .home-hero-teacher-count {
+    transform:
+      translate3d(
+        calc(var(--story-exit) * 2rem),
+        calc(var(--story-exit) * 1rem),
+        calc(var(--story-exit) * -8rem)
+      );
+    opacity: calc(1 - (var(--story-exit) * 0.32));
+  }
+
+  /* 02 → 03: the bento plane rises in, then recedes behind the course stage. */
+  .home-story[data-story-motion="true"] .home-story-categories .home-category-slot {
+    opacity: calc(0.58 + (var(--story-enter) * 0.42) - (var(--story-exit) * 0.18));
+  }
+
+  .home-story[data-story-motion="true"] .home-story-categories .home-category-slot:nth-child(odd) {
+    transform:
+      translate3d(
+        calc((1 - var(--story-enter)) * -2rem),
+        calc((1 - var(--story-enter)) * 4rem),
+        calc(((1 - var(--story-enter)) * -8rem) - (var(--story-exit) * 7rem))
+      )
+      rotateY(calc((1 - var(--story-enter)) * 4deg))
+      rotateX(calc(var(--story-exit) * 2.5deg));
+  }
+
+  .home-story[data-story-motion="true"] .home-story-categories .home-category-slot:nth-child(even) {
+    transform:
+      translate3d(
+        calc((1 - var(--story-enter)) * 2rem),
+        calc((1 - var(--story-enter)) * 5rem),
+        calc(((1 - var(--story-enter)) * -10rem) - (var(--story-exit) * 8rem))
+      )
+      rotateY(calc((1 - var(--story-enter)) * -4deg))
+      rotateX(calc(var(--story-exit) * 2.5deg));
+  }
+
+  /* 03 → 04: the featured course advances before the media plane opens out. */
+  .home-story[data-story-motion="true"] .home-story-courses .home-featured-course {
+    opacity: calc(0.62 + (var(--story-enter) * 0.38));
+    transform:
+      translate3d(
+        calc((1 - var(--story-enter)) * -2.5rem),
+        calc((1 - var(--story-enter)) * 2.5rem),
+        calc(((1 - var(--story-enter)) * -10rem) + (var(--story-enter) * var(--story-depth-near)) - (var(--story-exit) * 7rem))
+      )
+      rotateY(calc((1 - var(--story-enter)) * 4deg))
+      scale(calc(0.93 + (var(--story-enter) * 0.07) - (var(--story-exit) * 0.025)));
+  }
+
+  .home-story[data-story-motion="true"] .home-story-courses .home-course-supporting > li {
+    opacity: calc(0.5 + (var(--story-enter) * 0.5) - (var(--story-exit) * 0.14));
+    transform:
+      translate3d(
+        calc((1 - var(--story-enter)) * 2.5rem),
+        calc((1 - var(--story-enter)) * 3.5rem),
+        calc(((1 - var(--story-enter)) * -8rem) - (var(--story-exit) * 6rem))
+      )
+      rotateY(calc((1 - var(--story-enter)) * -3deg));
+  }
+
+  /* 04 → 05: format panels part with perspective; portraits take the centre. */
+  .home-story[data-story-motion="true"] .home-story-formats .home-format-online {
+    transform:
+      translate3d(
+        calc(((1 - var(--story-enter)) * -3rem) - (var(--story-exit) * 4rem)),
+        calc((1 - var(--story-enter)) * 2.5rem),
+        calc((1 - var(--story-enter)) * -8rem)
+      )
+      rotateY(calc(((1 - var(--story-enter)) * 5deg) - (var(--story-exit) * 5deg)));
+  }
+
+  .home-story[data-story-motion="true"] .home-story-formats .home-format-offline {
+    transform:
+      translate3d(
+        calc(((1 - var(--story-enter)) * 3rem) + (var(--story-exit) * 4rem)),
+        calc((1 - var(--story-enter)) * 3.25rem),
+        calc((1 - var(--story-enter)) * -9rem)
+      )
+      rotateY(calc(((1 - var(--story-enter)) * -5deg) + (var(--story-exit) * 5deg)));
+  }
+
+  .home-story[data-story-motion="true"] .home-story-formats .home-format-panel {
+    opacity: calc(0.58 + (var(--story-enter) * 0.42) - (var(--story-exit) * 0.16));
+  }
+
+  /* 05 → 06: portraits arrive on separate depth lanes, then recede together. */
+  .home-story[data-story-motion="true"] .home-story-teachers .home-teacher-grid > li {
+    opacity: calc(0.5 + (var(--story-enter) * 0.5) - (var(--story-exit) * 0.2));
+    transform:
+      translate3d(
+        0,
+        calc((1 - var(--story-enter)) * 3.5rem),
+        calc(((1 - var(--story-enter)) * -9rem) - (var(--story-exit) * 9rem))
+      )
+      rotateX(calc(((1 - var(--story-enter)) * 3deg) + (var(--story-exit) * 2deg)));
+  }
+
+  .home-story[data-story-motion="true"] .home-story-teachers .home-teacher-grid > li:nth-child(1) {
+    transform: translate3d(calc((1 - var(--story-enter)) * -3rem), calc((1 - var(--story-enter)) * 4rem), calc(((1 - var(--story-enter)) * -8rem) - (var(--story-exit) * 9rem))) rotateY(calc((1 - var(--story-enter)) * 4deg));
+  }
+
+  .home-story[data-story-motion="true"] .home-story-teachers .home-teacher-grid > li:nth-child(4) {
+    transform: translate3d(calc((1 - var(--story-enter)) * 3rem), calc((1 - var(--story-enter)) * 4rem), calc(((1 - var(--story-enter)) * -8rem) - (var(--story-exit) * 9rem))) rotateY(calc((1 - var(--story-enter)) * -4deg));
+  }
+
+  /* 06 → 07: the numbered path builds forward, then condenses into proof. */
+  .home-story[data-story-motion="true"] .home-story-process .home-process-card {
+    opacity: calc(0.46 + (var(--story-enter) * 0.54) - (var(--story-exit) * 0.16));
+    transform:
+      translate3d(
+        0,
+        calc((1 - var(--story-enter)) * 3rem),
+        calc(((1 - var(--story-enter)) * -8rem) - (var(--story-exit) * 6rem))
+      )
+      scale(calc(0.94 + (var(--story-enter) * 0.06) - (var(--story-exit) * 0.03)));
+  }
+
+  .home-story[data-story-motion="true"] .home-story-process .home-process-card:nth-child(2) {
+    transform: translate3d(0, calc((1 - var(--story-enter)) * 4.5rem), calc(((1 - var(--story-enter)) * -11rem) - (var(--story-exit) * 6rem))) scale(calc(0.93 + (var(--story-enter) * 0.07) - (var(--story-exit) * 0.03)));
+  }
+
+  .home-story[data-story-motion="true"] .home-story-process .home-process-card:nth-child(3) {
+    transform: translate3d(0, calc((1 - var(--story-enter)) * 6rem), calc(((1 - var(--story-enter)) * -14rem) - (var(--story-exit) * 6rem))) scale(calc(0.92 + (var(--story-enter) * 0.08) - (var(--story-exit) * 0.03)));
+  }
+
+  /* 07 → 08: trust signals converge while the final profile stage rises. */
+  .home-story[data-story-motion="true"] .home-story-trust .home-trust-card {
+    opacity: calc(0.48 + (var(--story-enter) * 0.52) - (var(--story-exit) * 0.18));
+    transform:
+      translate3d(
+        0,
+        calc(((1 - var(--story-enter)) * 3rem) - (var(--story-exit) * 1rem)),
+        calc(((1 - var(--story-enter)) * -8rem) - (var(--story-exit) * 5rem))
+      )
+      scale(calc(0.94 + (var(--story-enter) * 0.06) - (var(--story-exit) * 0.04)));
+  }
+
+  .home-story[data-story-motion="true"] .home-story-trust .home-trust-card:nth-child(1),
+  .home-story[data-story-motion="true"] .home-story-trust .home-trust-card:nth-child(2) {
+    translate: calc(var(--story-exit) * 1rem) 0;
+  }
+
+  .home-story[data-story-motion="true"] .home-story-trust .home-trust-card:nth-child(3),
+  .home-story[data-story-motion="true"] .home-story-trust .home-trust-card:nth-child(4) {
+    translate: calc(var(--story-exit) * -1rem) 0;
+  }
+
+  .home-story[data-story-motion="true"] .home-story-teacher-cta .home-teacher-cta {
+    opacity: calc(0.58 + (var(--story-enter) * 0.42));
+    transform:
+      translate3d(0, calc((1 - var(--story-enter)) * 4rem), calc((1 - var(--story-enter)) * -10rem))
+      rotateX(calc((1 - var(--story-enter)) * 3deg))
+      scale(calc(0.95 + (var(--story-enter) * 0.05)));
+  }
+
+  .home-story[data-story-motion="true"] .home-story-teacher-cta .home-teacher-dashboard {
+    transform:
+      translate3d(calc((1 - var(--story-enter)) * 2rem), calc((1 - var(--story-enter)) * 2rem), calc((1 - var(--story-enter)) * -6rem))
+      rotateY(calc((1 - var(--story-enter)) * -5deg))
+      rotate(2.5deg);
+  }
+}
+
+/* A short sticky pause is reserved for the two compact closing chapters. */
+@media (width >= 75rem) and (height >= 56rem) and (prefers-reduced-motion: no-preference) {
+  .home-story[data-story-motion="true"] .home-story-chapter[data-story-sticky="true"] {
+    min-height: calc(100svh + 5rem);
+  }
+
+  .home-story[data-story-motion="true"] .home-story-chapter[data-story-sticky="true"] > .home-story-scene {
+    position: sticky;
+    top: 5.25rem;
+  }
+}
+
+/* Tablet/mobile: keep the narrative cue, but remove layered 3D choreography. */
+@media (width <= 64rem) {
+  .home-hero {
+    display: block;
+    height: auto;
+    min-height: auto;
+    padding-top: 4.5rem;
+  }
+
+  .home-hero-grid {
+    height: auto;
+    min-height: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .home-hero-stage {
+    width: 100%;
+    height: auto;
+    min-height: 31rem;
+    max-height: none;
+    margin-inline: auto;
+  }
+}
+
+@media (width <= 64rem) and (prefers-reduced-motion: no-preference) {
+  .home-story[data-story-motion="true"] .home-story-scene {
+    opacity: calc(0.78 + (var(--story-enter) * 0.22));
+    transform: translate3d(0, calc((1 - var(--story-enter)) * 1rem), 0);
+  }
+}
+
+@media (width < 40rem) {
+  .home-hero {
+    padding-top: 3.5rem;
+  }
+
+  .home-hero-stage {
+    min-height: 25rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-story-chapter,
+  .home-story-scene,
+  .home-story-chapter :is(
+    .home-hero-teacher,
+    .home-hero-teacher-count,
+    .home-category-slot,
+    .home-featured-course,
+    .home-course-supporting > li,
+    .home-format-panel,
+    .home-teacher-grid > li,
+    .home-process-card,
+    .home-trust-card,
+    .home-teacher-cta,
+    .home-teacher-dashboard
+  ) {
+    opacity: 1 !important;
+    transform: none !important;
+    translate: none !important;
+  }
+
+  .home-story-chapter[data-story-sticky="true"] {
+    min-height: 0;
+  }
+
+  .home-story-chapter[data-story-sticky="true"] > .home-story-scene {
+    position: relative;
+    top: auto;
+  }
 }

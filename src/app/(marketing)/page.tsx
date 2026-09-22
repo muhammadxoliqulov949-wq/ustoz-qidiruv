@@ -6,6 +6,7 @@ import { TopTeachers } from "@/components/home/top-teachers";
 import { HowItWorks } from "@/components/home/how-it-works";
 import { TrustPromises } from "@/components/home/trust-promises";
 import { TeacherCta } from "@/components/home/teacher-cta";
+import { HomeStory, StoryChapter } from "@/components/home/storytelling";
 import { defaultBrowseParams } from "@/lib/course-search";
 import { applyTeacherBrowse, defaultTeacherParams } from "@/lib/teacher-search";
 import {
@@ -70,14 +71,32 @@ export default async function HomePage() {
 
   return (
     <div className="home-shell">
-      <Hero teachers={teachers} totalTeachers={rankedTeachers.length} />
-      <PopularCategories courseCounts={courseCounts} />
-      <RecommendedCourses courses={courses} />
-      <FormatEditorial courses={courses} />
-      <TopTeachers teachers={teachers} />
-      <HowItWorks />
-      <TeacherCta teacher={teachers[0] ?? null} />
-      <TrustPromises />
+      <HomeStory>
+        <StoryChapter index="01" kind="hero" name="Kirish">
+          <Hero teachers={teachers} totalTeachers={rankedTeachers.length} />
+        </StoryChapter>
+        <StoryChapter index="02" kind="categories" name="Yo‘nalishlar">
+          <PopularCategories courseCounts={courseCounts} />
+        </StoryChapter>
+        <StoryChapter index="03" kind="courses" name="Kurslar">
+          <RecommendedCourses courses={courses} />
+        </StoryChapter>
+        <StoryChapter index="04" kind="formats" name="Formatlar">
+          <FormatEditorial courses={courses} />
+        </StoryChapter>
+        <StoryChapter index="05" kind="teachers" name="Ustozlar">
+          <TopTeachers teachers={teachers} />
+        </StoryChapter>
+        <StoryChapter index="06" kind="process" name="Jarayon" sticky>
+          <HowItWorks />
+        </StoryChapter>
+        <StoryChapter index="07" kind="trust" name="Ishonch" sticky>
+          <TrustPromises />
+        </StoryChapter>
+        <StoryChapter index="08" kind="teacher-cta" name="Ustoz bo‘ling">
+          <TeacherCta teacher={teachers[0] ?? null} />
+        </StoryChapter>
+      </HomeStory>
     </div>
   );
 }
