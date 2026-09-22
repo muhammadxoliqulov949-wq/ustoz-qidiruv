@@ -57,7 +57,11 @@ export function HomeStory({ children }: { children: ReactNode }) {
         const headerOffset = window.innerWidth >= 640 ? 84 : 72;
         const scrollY = window.scrollY;
 
-        root.dataset.storyDirection = scrollY >= lastScrollY ? "down" : "up";
+        // Keep the last real direction when observers request an extra frame at
+        // the same scroll position. Treating equality as "down" made a settled
+        // reverse-scroll state report the wrong direction.
+        if (scrollY > lastScrollY) root.dataset.storyDirection = "down";
+        if (scrollY < lastScrollY) root.dataset.storyDirection = "up";
         lastScrollY = scrollY;
 
         // Read every rectangle first, then write styles. This avoids alternating
