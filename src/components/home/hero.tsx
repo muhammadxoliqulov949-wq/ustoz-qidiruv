@@ -1,10 +1,11 @@
+import Image from "next/image";
 import { HeroSearch } from "./hero-search";
 import { QuickFilters } from "./quick-filters";
 import { hero, quickFilters } from "@/data/site";
 
 /* -------------------------------------------------------------------------- */
 /* Hero — Phase 1 homepage top section.                                        */
-/* Phase 26: editorial split composition with a light, CSS-only depth object.   */
+/* Phase 26: editorial split composition with a lightweight depth visual.      */
 /* Spacing comes from --spacing section-rhythm tokens only.                     */
 /* -------------------------------------------------------------------------- */
 
@@ -38,7 +39,14 @@ export function Hero() {
         </div>
 
         <div className="hero-depth-object hidden lg:block" aria-hidden="true">
-          <span className="hero-depth-mark">U</span>
+          <Image
+            src="/media/ustoz-learning-pathways.jpg"
+            alt=""
+            fill
+            priority
+            sizes="(min-width: 1024px) 38vw, 0px"
+            className="hero-depth-image"
+          />
           <span className="absolute right-6 bottom-6 z-[3] rounded-pill border border-white/80 bg-white/80 px-4 py-2 text-sm font-semibold text-accent-700 shadow-sm backdrop-blur-sm">
             Bilimga yaqinroq
           </span>

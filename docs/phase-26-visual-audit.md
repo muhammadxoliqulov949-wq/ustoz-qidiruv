@@ -21,7 +21,7 @@ Phase 25 is structurally strong: spacing, contrast, responsive behavior and moti
 - Level 3: featured hero, filter, auth and identity surfaces.
 - Level 4: existing Phase 25 dialogs and floating panels.
 
-The hero depth object is CSS-only: no network request, layout shift, autoplay media or mobile cost. It is hidden below the large breakpoint. Generated image/video assets were intentionally omitted because they would add weight without improving marketplace comprehension.
+The hero depth object retains its fixed CSS frame and fallback geometry. A locally hosted, compressed editorial illustration now fills that frame on large screens; explicit dimensions are supplied through `next/image`, it remains hidden below the large breakpoint, and no video or runtime third-party request is introduced.
 
 ## R2 completion pass
 
@@ -30,6 +30,10 @@ R2 extends the depth system beyond the hero: homepage sections now have grouped 
 ### Higgsfield evaluation
 
 Three USTOZ-specific concepts were submitted for evaluation: an editorial knowledge-plane hero, a layered course/mentor marketplace composition, and a six-part category visual system. Higgsfield rejected all three before generation with `Requires basic plan or higher`; no credits were charged and no assets were produced. The final implementation therefore keeps the lighter CSS-only visual system and does not claim generated imagery was reviewed.
+
+### Runway fallback evaluation
+
+Runway generated three USTOZ-specific editorial learning-path concepts. Option one was rejected because it introduced illegible generated text. Options two and three matched the emerald/ivory identity and education-path metaphor; option two was selected for its strongest negative space, restrained detail and clean hierarchy. The 1376×768 source is approximately 128 KB, is served locally through `next/image`, is decorative (`alt=""`), and has no mobile download because the containing visual is hidden below the large breakpoint.
 
 ## Reference principles
 
