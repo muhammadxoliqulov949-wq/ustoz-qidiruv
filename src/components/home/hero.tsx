@@ -1,49 +1,115 @@
+import Image from "next/image";
+import Link from "next/link";
+import { ArrowRight, BadgeCheck, Star, Users } from "lucide-react";
 import { HeroSearch } from "./hero-search";
 import { QuickFilters } from "./quick-filters";
 import { hero, quickFilters } from "@/data/site";
+import type { Teacher } from "@/data/models";
+import { formatCount, formatRating } from "@/lib/format";
 
-/* -------------------------------------------------------------------------- */
-/* Hero — Phase 1 homepage top section.                                        */
-/* Phase 26: editorial split composition with a light, CSS-only depth object.   */
-/* Spacing comes from --spacing section-rhythm tokens only.                     */
-/* -------------------------------------------------------------------------- */
-
-export function Hero() {
+export function Hero({
+  teachers,
+  totalTeachers,
+}: {
+  teachers: Teacher[];
+  totalTeachers: number;
+}) {
   return (
-    <section
-      aria-labelledby="hero-title"
-      className="depth-canvas relative overflow-hidden pb-18 pt-[calc(var(--height-header)+3rem)] md:pb-26 md:pt-[calc(var(--height-header)+5rem)]"
-    >
-      <div className="motion-hero-reveal site-container grid items-center gap-12 lg:grid-cols-[minmax(0,1.08fr)_minmax(22rem,.72fr)] lg:gap-16">
-        <div className="flex flex-col items-start text-left">
-          <p className="mb-4 inline-flex rounded-pill border border-accent-600/15 bg-accent-50 px-3 py-1.5 text-sm font-semibold tracking-[0.08em] text-accent-700 uppercase">
+    <section aria-labelledby="hero-title" className="home-hero">
+      <div className="home-ambient home-ambient-emerald" aria-hidden="true" />
+      <div className="home-ambient home-ambient-amber" aria-hidden="true" />
+      <div className="site-container home-hero-grid motion-hero-reveal">
+        <div className="home-hero-copy">
+          <p className="home-eyebrow home-hero-eyebrow">
+            <span aria-hidden="true" />
             {hero.eyebrow}
           </p>
-
-        <h1
-          id="hero-title"
-          className="max-w-3xl text-4xl font-semibold tracking-[-0.035em] text-balance text-ink-900 sm:text-5xl lg:text-6xl"
-        >
-          {hero.title}
-        </h1>
-
-        <p className="mt-5 max-w-2xl text-lg text-pretty text-ink-500 md:text-xl md:leading-relaxed">
-          {hero.subtitle}
-        </p>
-
-        <div className="mt-10 flex w-full max-w-[44rem] flex-col gap-5">
-          <HeroSearch />
-          <QuickFilters filters={quickFilters} />
+          <h1 id="hero-title">
+            Zamonaviy ustozni topishning <span>ishonchli yo‘li</span>
+          </h1>
+          <p className="home-hero-lede">{hero.subtitle}</p>
+          <div className="home-hero-search-wrap">
+            <HeroSearch />
+          </div>
+          <div className="home-quick-row">
+            <span>Tezkor tanlov:</span>
+            <QuickFilters filters={quickFilters} />
+          </div>
         </div>
-        </div>
-
-        <div className="hero-depth-object hidden lg:block" aria-hidden="true">
-          <span className="hero-depth-mark">U</span>
-          <span className="absolute right-6 bottom-6 z-[3] rounded-pill border border-white/80 bg-white/80 px-4 py-2 text-sm font-semibold text-accent-700 shadow-sm backdrop-blur-sm">
-            Bilimga yaqinroq
-          </span>
-        </div>
+        <HeroTeacherStage teachers={teachers} totalTeachers={totalTeachers} />
+      </div>
+      <div className="site-container home-hero-proof" aria-label="Platforma imkoniyatlari">
+        <div><BadgeCheck aria-hidden="true" /><span>Tasdiqlangan profillar</span></div>
+        <div><Users aria-hidden="true" /><span>Online va offline tanlov</span></div>
+        <div><Star aria-hidden="true" /><span>Haqiqiy reyting va izohlar</span></div>
       </div>
     </section>
+  );
+}
+
+function HeroTeacherStage({
+  teachers,
+  totalTeachers,
+}: {
+  teachers: Teacher[];
+  totalTeachers: number;
+}) {
+  if (teachers.length === 0) {
+    return (
+      <div className="home-hero-stage home-hero-stage-empty" aria-label="Ustozlar katalogi">
+        <Users aria-hidden="true" />
+        <p>Yangi ustoz profillari e’lon qilinishi bilan shu yerda ko‘rinadi.</p>
+        <Link href="/teachers">Ustozlar katalogi <ArrowRight aria-hidden="true" /></Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="home-hero-stage" aria-label="Tavsiya etilgan ustozlar">
+      <div className="home-orbit home-orbit-one" aria-hidden="true" />
+      <div className="home-orbit home-orbit-two" aria-hidden="true" />
+      {teachers.slice(0, 3).map((teacher, index) => (
+        <HeroTeacherCard key={teacher.id} teacher={teacher} index={index} />
+      ))}
+      {totalTeachers > 0 ? (
+        <Link href="/teachers" className="home-hero-teacher-count">
+          <Users aria-hidden="true" />
+          <span><strong>{formatCount(totalTeachers)}</strong>faol ustoz</span>
+          <ArrowRight aria-hidden="true" />
+        </Link>
+      ) : null}
+    </div>
+  );
+}
+
+function HeroTeacherCard({ teacher, index }: { teacher: Teacher; index: number }) {
+  return (
+    <Link
+      href={`/teachers/${teacher.slug}`}
+      className={`home-hero-teacher home-hero-teacher-${index + 1}`}
+      aria-label={`${teacher.name} profilini ko‘rish`}
+    >
+      <div className="home-hero-teacher-photo">
+        {teacher.photo ? (
+          <Image
+            src={teacher.photo}
+            alt=""
+            fill
+            sizes="(min-width: 1024px) 260px, 45vw"
+            priority={index === 0}
+            className="object-cover object-top"
+          />
+        ) : (
+          <span aria-hidden="true">{teacher.name.slice(0, 1)}</span>
+        )}
+        {teacher.verified ? (
+          <span className="home-verified-pill"><BadgeCheck aria-hidden="true" /> Tasdiqlangan</span>
+        ) : null}
+      </div>
+      <div className="home-hero-teacher-info">
+        <div><strong>{teacher.name}</strong><span>{teacher.specialization}</span></div>
+        <span className="home-rating"><Star aria-hidden="true" /> {formatRating(teacher.rating)}</span>
+      </div>
+    </Link>
   );
 }

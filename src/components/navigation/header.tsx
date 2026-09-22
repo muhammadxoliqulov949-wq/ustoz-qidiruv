@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useScrolled } from "@/lib/use-scrolled";
@@ -26,6 +26,8 @@ const navLinkClass = cn(
 );
 
 export function Header() {
+  const pathname = usePathname();
+  const isHome = pathname === "/";
   const scrolled = useScrolled(8);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -65,13 +67,13 @@ export function Header() {
   const floating = scrolled || menuOpen;
 
   return (
-    <header className="sticky top-0 z-50 pt-0 sm:pt-3">
+    <header className={cn("site-header sticky top-0 z-50 pt-0 sm:pt-3", isHome && "home-site-header")}>
       {/* `relative` anchors the absolutely-positioned mobile menu to the
           container (not the viewport), so the panel matches the bar width. */}
       <div className="site-container relative">
         <div
           className={cn(
-            "relative flex h-header items-center gap-4 rounded-2xl px-3",
+            "site-header-bar relative flex h-header items-center gap-4 rounded-2xl px-3",
             "transition-[background-color,border-color,box-shadow,backdrop-filter]",
             "duration-base sm:px-4",
             floating
@@ -79,7 +81,7 @@ export function Header() {
               : "border border-transparent bg-transparent",
           )}
         >
-          <Logo />
+          <Logo tone={isHome ? "light" : "dark"} />
 
           {/* Desktop navigation */}
           <nav
@@ -91,7 +93,7 @@ export function Header() {
                 key={item.href}
                 href={item.href}
                 prefetch={item.prefetch} // unbuilt routes stay inert (site.ts data)
-                className={navLinkClass}
+                className={cn(navLinkClass, isHome && "home-site-nav-link")}
               >
                 {item.label}
               </Link>
@@ -109,7 +111,7 @@ export function Header() {
               prefetch={loginNav.prefetch}
               variant="ghost"
               size="sm"
-              className="max-lg:hidden"
+              className={cn("max-lg:hidden", isHome && "home-header-login")}
             >
               {loginNav.label}
             </ButtonLink>
@@ -119,7 +121,7 @@ export function Header() {
               href={becomeTeacherNav.href}
               prefetch={becomeTeacherNav.prefetch}
               size="sm"
-              className="max-lg:hidden"
+              className={cn("max-lg:hidden", isHome && "home-header-cta")}
             >
               {becomeTeacherNav.label}
             </ButtonLink>
@@ -129,7 +131,7 @@ export function Header() {
               label={menuOpen ? "Menyuni yopish" : "Menyu"}
               icon={menuOpen ? <X /> : <Menu />}
               onClick={() => setMenuOpen((open) => !open)}
-              className="lg:hidden"
+              className={cn("lg:hidden", isHome && "home-header-menu")}
               aria-expanded={menuOpen}
               aria-controls="mobile-menu"
             />

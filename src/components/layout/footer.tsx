@@ -11,7 +11,7 @@ import { footerGroups } from "@/data/site";
  */
 export function Footer() {
   return (
-    <footer className="mt-18 border-t border-line bg-surface md:mt-26">
+    <footer className="site-footer mt-18 border-t border-line bg-surface md:mt-26">
       <div className="site-container py-12 md:py-18">
         <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <div className="flex flex-col items-start gap-4 xl:col-span-2">

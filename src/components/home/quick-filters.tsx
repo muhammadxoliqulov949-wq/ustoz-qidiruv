@@ -29,7 +29,7 @@ export function QuickFilters({ filters, className }: QuickFiltersProps) {
       role="group"
       aria-label="Tezkor filtrlar"
       className={cn(
-        "flex flex-wrap items-center justify-center gap-2",
+        "home-quick-filters flex flex-wrap items-center gap-2",
         className,
       )}
     >
@@ -39,6 +39,7 @@ export function QuickFilters({ filters, className }: QuickFiltersProps) {
           as="link"
           href={filter.href}
           leadingIcon={icons[filter.id]}
+          className="home-filter-pill"
         >
           {filter.label}
         </Pill>

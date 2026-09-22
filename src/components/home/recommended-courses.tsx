@@ -1,79 +1,108 @@
-import { ArrowRight, SearchX } from "lucide-react";
-import { ButtonLink, Card, CourseCard, SectionHeader } from "@/components/ui";
+import Image from "next/image";
+import Link from "next/link";
+import { ArrowRight, MapPin, SearchX, Signal, Star, Users } from "lucide-react";
 import { Section } from "@/components/layout/section";
+import { SaveButton } from "@/components/ui/save-button";
+import { courseFormatLabels, courseLevelLabels } from "@/data/courses";
 import type { Course } from "@/data/models";
-
-/* -------------------------------------------------------------------------- */
-/* “Siz uchun tavsiya etilgan kurslar”.                                        */
-/* Grid: 1 col mobile → 2 tablet → 3 desktop (lg) → 4 large desktop (xl:       */
-/* 1200px content → ~282px cards, still comfortable). Six courses keep the     */
-/* default 3-col view perfectly balanced (3+3).                                */
-/*                                                                              */
-/* DATA: the page hands this section published courses read at request time     */
-/* from the public marketplace repository (src/server/public-repo.ts). There    */
-/* is no fixture list and no fallback row: every card here is a record the      */
-/* database returned, so every `/courses/[slug]` link it renders resolves —     */
-/* the detail page reads the same repository with the same `published` filter.  */
-/*                                                                              */
-/* An empty catalogue renders the honest empty state below (same visual         */
-/* language as the /courses results empty state) instead of invented cards.     */
-/* -------------------------------------------------------------------------- */
+import { formatCount, formatPrice, formatRating } from "@/lib/format";
+import { HomeSectionHeading } from "./home-section-heading";
 
 export interface RecommendedCoursesProps {
-  /** Published courses from the runtime repository, already ordered and capped. */
   courses: Course[];
 }
 
 export function RecommendedCourses({ courses }: RecommendedCoursesProps) {
+  const [featured, ...supporting] = courses;
+
   return (
-    <Section ariaLabelledby="recommended-courses-title">
-      <SectionHeader
-        title={
-          <span id="recommended-courses-title">
-            Siz uchun tavsiya etilgan kurslar
-          </span>
-        }
-        description="O‘quvchilar orasida mashhur kurslar."
+    <Section ariaLabelledby="recommended-courses-title" className="home-section">
+      <HomeSectionHeading
+        id="recommended-courses-title"
+        eyebrow="Siz uchun"
+        title={<>Tavsiya etilgan <span className="home-title-accent">kurslar</span></>}
+        description="Maqsadingizga mos kurslarni real reyting, format va narx bo‘yicha ko‘ring."
         action={
-          <ButtonLink
-            href="/courses"
-            variant="ghost"
-            size="sm"
-            trailingIcon={<ArrowRight className="size-4" />}
-          >
-            Barcha kurslar
-          </ButtonLink>
+          <Link href="/courses" className="home-outline-link">
+            Barcha kurslar <ArrowRight aria-hidden="true" />
+          </Link>
         }
       />
 
-      {courses.length > 0 ? (
-        <ul className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {courses.map((course) => (
-            <li key={course.id} className="flex">
-              <CourseCard course={course} className="w-full" />
-            </li>
-          ))}
-        </ul>
+      {featured ? (
+        <div className="home-course-layout">
+          <FeaturedCourse course={featured} />
+          <ul className="home-course-supporting">
+            {supporting.slice(0, 4).map((course) => (
+              <li key={course.id}><CompactCourse course={course} /></li>
+            ))}
+          </ul>
+        </div>
       ) : (
-        /* Nothing published yet — say so; never pad the row with fixtures. */
-        <Card
-          variant="quiet"
-          className="flex flex-col items-center gap-3 px-6 py-14 text-center"
-        >
-          <span
-            aria-hidden="true"
-            className="grid size-12 place-items-center rounded-pill bg-surface text-ink-400 shadow-xs [&>svg]:size-6 [&>svg]:stroke-[1.75]"
-          >
-            <SearchX />
-          </span>
-          <h3 className="text-xl font-semibold tracking-[-0.01em] text-ink-900">
-            Hozircha kurslar e’lon qilinmagan
-          </h3>
-          <p className="max-w-md text-base text-pretty text-ink-500">
-            Yangi kurslar joylashtirilishi bilan ular shu yerda ko‘rinadi.
-          </p>
-        </Card>
+        <div className="home-empty-state">
+          <SearchX aria-hidden="true" />
+          <h3>Hozircha kurslar e’lon qilinmagan</h3>
+          <p>Yangi kurslar joylashtirilishi bilan ular shu yerda ko‘rinadi.</p>
+        </div>
       )}
     </Section>
+  );
+}
+
+function FeaturedCourse({ course }: { course: Course }) {
+  return (
+    <article className="home-featured-course">
+      <div className="home-featured-course-media">
+        {course.image ? (
+          <Image
+            src={course.image}
+            alt=""
+            fill
+            sizes="(min-width: 1024px) 56vw, 100vw"
+            className="object-cover"
+          />
+        ) : null}
+        <span className="home-popular-badge"><Star aria-hidden="true" /> Yuqori reyting</span>
+        <SaveButton title={course.title} kind="course" entityId={course.id} className="home-save-button" />
+      </div>
+      <div className="home-featured-course-body">
+        <div className="home-meta-row">
+          <span className="home-format-badge">{courseFormatLabels[course.format]}</span>
+          <span><Signal aria-hidden="true" /> {courseLevelLabels[course.level]}</span>
+          {course.location ? <span><MapPin aria-hidden="true" /> {course.location}</span> : null}
+        </div>
+        <h3><Link href={`/courses/${course.slug}`}>{course.title}</Link></h3>
+        <p className="home-course-teacher">{course.teacher.name}</p>
+        <div className="home-course-facts">
+          <span className="home-rating"><Star aria-hidden="true" /> {formatRating(course.rating)} <small>({formatCount(course.reviews)})</small></span>
+          <span><Users aria-hidden="true" /> {formatCount(course.students)} o‘quvchi</span>
+        </div>
+        <div className="home-course-footer">
+          <strong>{formatPrice(course.priceUzs)}{course.priceUzs > 0 ? <small> / oyiga</small> : null}</strong>
+          <Link href={`/courses/${course.slug}`}>Batafsil <ArrowRight aria-hidden="true" /></Link>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function CompactCourse({ course }: { course: Course }) {
+  return (
+    <article className="home-compact-course">
+      <div className="home-compact-course-media">
+        {course.image ? (
+          <Image src={course.image} alt="" fill sizes="(min-width: 1024px) 220px, 40vw" className="object-cover" />
+        ) : null}
+        <span className="home-format-badge">{courseFormatLabels[course.format]}</span>
+      </div>
+      <div className="home-compact-course-body">
+        <h3><Link href={`/courses/${course.slug}`}>{course.title}</Link></h3>
+        <p>{course.teacher.name}</p>
+        <div>
+          <span className="home-rating"><Star aria-hidden="true" /> {formatRating(course.rating)}</span>
+          <strong>{formatPrice(course.priceUzs)}</strong>
+        </div>
+      </div>
+    </article>
   );
 }

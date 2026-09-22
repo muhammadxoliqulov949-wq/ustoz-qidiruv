@@ -44,7 +44,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-/** Row sizes the approved grid is balanced for: 6 course cards, 4 teachers. */
+/** Row sizes the homepage editorial composition is balanced for. */
 const COURSE_PICKS = 6;
 const TEACHER_PICKS = 4;
 
@@ -62,23 +62,22 @@ export default async function HomePage() {
 
   // “Eng yaxshi ustozlar” uses the SAME pure sorter as /teachers?sort=rating,
   // so the homepage and the directory can never disagree about who ranks first.
-  const teachers = applyTeacherBrowse(teacherRows, {
+  const rankedTeachers = applyTeacherBrowse(teacherRows, {
     ...defaultTeacherParams,
     sort: "rating",
-  })
-    .slice(0, TEACHER_PICKS)
-    .map((row) => row.teacher);
+  }).map((row) => row.teacher);
+  const teachers = rankedTeachers.slice(0, TEACHER_PICKS);
 
   return (
-    <>
-      <Hero />
+    <div className="home-shell">
+      <Hero teachers={teachers} totalTeachers={rankedTeachers.length} />
       <PopularCategories courseCounts={courseCounts} />
       <RecommendedCourses courses={courses} />
-      <FormatEditorial />
+      <FormatEditorial courses={courses} />
       <TopTeachers teachers={teachers} />
       <HowItWorks />
+      <TeacherCta teacher={teachers[0] ?? null} />
       <TrustPromises />
-      <TeacherCta />
-    </>
+    </div>
   );
 }

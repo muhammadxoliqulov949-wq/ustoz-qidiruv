@@ -1,55 +1,68 @@
-import { ArrowRight, Building2, Monitor } from "lucide-react";
-import { ButtonLink, Card, SectionHeader } from "@/components/ui";
+import Image from "next/image";
+import Link from "next/link";
+import { ArrowRight, Check, MapPin, Monitor } from "lucide-react";
 import { Section } from "@/components/layout/section";
 import { formatEditorial } from "@/data/site";
+import type { Course } from "@/data/models";
+import { HomeSectionHeading } from "./home-section-heading";
 
-const formatIcons = {
-  online: Monitor,
-  offline: Building2,
-} as const;
+const formatIcons = { online: Monitor, offline: MapPin } as const;
 
-/**
- * Online / Offline editorial duet — two large calm surfaces, flat fills,
- * hairline borders. No imagery, no 3D objects.
- */
-export function FormatEditorial() {
+export function FormatEditorial({ courses }: { courses: Course[] }) {
+  const examples = {
+    online: courses.find((course) => course.format === "online") ?? null,
+    offline: courses.find((course) => course.format !== "online") ?? null,
+  };
+
   return (
-    <Section ariaLabelledby="format-editorial-title">
-      <SectionHeader
-        title={
-          <span id="format-editorial-title">{formatEditorial.title}</span>
-        }
+    <Section ariaLabelledby="format-editorial-title" className="home-section">
+      <HomeSectionHeading
+        id="format-editorial-title"
+        eyebrow="Formatlar"
+        title={<>Sizga mos formatda <span className="home-title-accent">o‘rganing</span></>}
+        description="Uyda, ish oralig‘ida yoki ustoz bilan yuzma-yuz — o‘zingizga qulay usulni tanlang."
       />
 
-      <div className="grid gap-4 md:grid-cols-2 lg:gap-6">
+      <div className="home-format-grid">
         {formatEditorial.items.map((item) => {
-          const Icon = formatIcons[item.id as "online" | "offline"];
+          const id = item.id as "online" | "offline";
+          const Icon = formatIcons[id];
+          const example = examples[id];
+          const benefits = id === "online"
+            ? ["Joydan mustaqil", "Moslashuvchan vaqt", "Raqamli dars muhiti"]
+            : ["Yuzma-yuz muloqot", "Mahalliy ustozlar", "Amaliy mashg‘ulot"];
+
           return (
-            <Card key={item.id} variant="quiet" padded={false} className="overflow-hidden border border-accent-600/10">
-              <div className="flex h-full flex-col gap-4 p-8 sm:p-10 lg:p-12">
-                <span
-                  aria-hidden="true"
-                  className="grid size-12 place-items-center rounded-xl bg-surface text-accent-700 shadow-xs [&>svg]:size-6 [&>svg]:stroke-[1.75]"
-                >
-                  <Icon />
-                </span>
-                <h3 className="text-2xl font-semibold tracking-[-0.01em] text-ink-900">
-                  {item.title}
-                </h3>
-                <p className="max-w-md text-base text-pretty leading-relaxed text-ink-500">
-                  {item.text}
-                </p>
-                <ButtonLink
-                  href={item.action.href}
-                  variant="ghost"
-                  size="sm"
-                  className="-ml-3.5 mt-auto w-fit"
-                  trailingIcon={<ArrowRight className="size-4" />}
-                >
-                  {item.action.label}
-                </ButtonLink>
+            <article key={item.id} className={`home-format-panel home-format-${id}`}>
+              {example?.image ? (
+                <Image
+                  src={example.image}
+                  alt=""
+                  fill
+                  sizes="(min-width: 768px) 50vw, 100vw"
+                  className="home-format-image object-cover"
+                />
+              ) : null}
+              <div className="home-format-overlay" aria-hidden="true" />
+              <div className="home-format-content">
+                <span className="home-format-label"><Icon aria-hidden="true" /> {item.title}</span>
+                <h3>{item.title} darslar</h3>
+                <p>{item.text}</p>
+                <ul>
+                  {benefits.map((benefit) => (
+                    <li key={benefit}><Check aria-hidden="true" /> {benefit}</li>
+                  ))}
+                </ul>
+                {example ? (
+                  <p className="home-format-example">
+                    Hozirgi tanlov: <Link href={`/courses/${example.slug}`}>{example.title}</Link>
+                  </p>
+                ) : null}
+                <Link href={item.action.href} className="home-panel-link">
+                  {item.action.label} <ArrowRight aria-hidden="true" />
+                </Link>
               </div>
-            </Card>
+            </article>
           );
         })}
       </div>

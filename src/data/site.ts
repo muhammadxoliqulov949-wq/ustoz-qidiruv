@@ -231,14 +231,14 @@ export const howItWorks = {
     {
       id: "choose",
       number: "02",
-      title: "Tanlang",
-      text: "Kurslar va ustozlarni taqqoslang.",
+      title: "Taqqoslang",
+      text: "Reyting, tajriba, narx va formatlarni solishtiring.",
     },
     {
       id: "start",
       number: "03",
-      title: "Boshlang",
-      text: "Kursga yoziling va o‘rganishni boshlang.",
+      title: "Bog‘laning",
+      text: "Mos ustozga yoziling yoki kursga qo‘shiling.",
     },
   ],
 } as const;

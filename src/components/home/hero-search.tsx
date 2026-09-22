@@ -19,6 +19,7 @@ export function HeroSearch() {
       size="xl"
       label={hero.searchLabel}
       placeholder={hero.searchPlaceholder}
+      className="home-hero-search"
       onSubmit={(query) =>
         router.push(`/courses?q=${encodeURIComponent(query)}`)
       }
